@@ -16,6 +16,8 @@
     "@emotion/styled": "11.14.1",
     "@google/genai": "^2.13.0",
     "@googlemaps/js-api-loader": "^2.1.1",
+    "@langchain/core": "1.1.48",
+    "@langchain/langgraph": "1.4.9",
     "@mui/icons-material": "9.3.1",
     "@mui/material": "9.3.1",
     "@supabase/supabase-js": "2.112.3",
@@ -28,6 +30,7 @@
     "react-router-dom": "7.18.2"
   },
   "devDependencies": {
+    "@langchain/langgraph-checkpoint-validation": "1.1.0",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@types/google.maps": "^3.65.5",

@@ -3,7 +3,16 @@ import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 let configured = false
 export const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
 
-export async function loadGoogleMaps() {
+export type GoogleMapsLibraryName = 'maps' | 'marker' | 'places' | 'geocoding' | 'routes'
+type GoogleMapsLibraryMap = {
+  maps: google.maps.MapsLibrary
+  marker: google.maps.MarkerLibrary
+  places: google.maps.PlacesLibrary
+  geocoding: google.maps.GeocodingLibrary
+  routes: google.maps.RoutesLibrary
+}
+
+function configureGoogleMaps() {
   if (!googleMapsApiKey) {
     throw new Error('尚未設定 VITE_GOOGLE_MAPS_API_KEY')
   }
@@ -11,24 +20,68 @@ export async function loadGoogleMaps() {
   if (!configured) {
     setOptions({
       key: googleMapsApiKey,
-      language: 'zh-TW',
+      language: typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-TW',
       v: 'weekly',
     })
     configured = true
   }
+}
+
+export async function loadGoogleMapsLibrary<T extends GoogleMapsLibraryName>(name: T): Promise<GoogleMapsLibraryMap[T]> {
+  configureGoogleMaps()
+  return importLibrary(name) as Promise<GoogleMapsLibraryMap[T]>
+}
+
+export async function loadGoogleMaps() {
+  configureGoogleMaps()
 
   const [maps, marker, places, geocoding, routes] = await Promise.all([
-    importLibrary('maps'),
-    importLibrary('marker'),
-    importLibrary('places'),
-    importLibrary('geocoding'),
-    importLibrary('routes'),
+    loadGoogleMapsLibrary('maps'),
+    loadGoogleMapsLibrary('marker'),
+    loadGoogleMapsLibrary('places'),
+    loadGoogleMapsLibrary('geocoding'),
+    loadGoogleMapsLibrary('routes'),
   ])
 
   return { ...maps, ...marker, ...places, ...geocoding, ...routes }
 }
 
 export type GoogleMapLibraries = Awaited<ReturnType<typeof loadGoogleMaps>>
+
+/**
+ * Supports both the current Promise Geocoder API and older Maps JS builds
+ * that only complete the callback. Some browser-loaded versions return
+ * undefined when no callback is supplied.
+ */
+export function geocodeWithGoogle(
+  Geocoder: GoogleMapLibraries['Geocoder'] | google.maps.Geocoder,
+  request: google.maps.GeocoderRequest,
+): Promise<google.maps.GeocoderResponse> {
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      callback()
+    }
+    const callback = (results: google.maps.GeocoderResult[] | null, status: google.maps.GeocoderStatusString) => {
+      if (status === 'OK' || status === 'ZERO_RESULTS') {
+        finish(() => resolve({ results: results ?? [] }))
+      } else {
+        finish(() => reject(new Error(`Geocoder 狀態：${status}`)))
+      }
+    }
+    try {
+      const geocoder = typeof Geocoder === 'function' ? new Geocoder() : Geocoder
+      const response = geocoder.geocode(request, callback)
+      if (response && typeof response.then === 'function') {
+        response.then((value) => finish(() => resolve(value))).catch((error) => finish(() => reject(error)))
+      }
+    } catch (error) {
+      finish(() => reject(error))
+    }
+  })
+}
 
 export type GoogleRouteEstimate = {
   distanceMeters: number
@@ -205,7 +258,7 @@ async function ensurePointCoords(
     if (place.location) return { ...point, lat: place.location.lat(), lng: place.location.lng() }
   } catch {
     try {
-      const res = await new Geocoder().geocode({ placeId: point.placeId })
+      const res = await geocodeWithGoogle(Geocoder, { placeId: point.placeId })
       const loc = res.results?.[0]?.geometry?.location
       if (loc) return { ...point, lat: loc.lat(), lng: loc.lng() }
     } catch {
@@ -247,7 +300,7 @@ export async function estimateGoogleRoute(
       travelMode: googleTravelMode(mode),
       fields: ['distanceMeters', 'durationMillis'],
       routingPreference: mode === 'driving' ? 'TRAFFIC_AWARE' : undefined,
-      language: 'zh-TW',
+      language: typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-TW',
     })
     const route = response.routes?.[0]
     if (typeof route?.distanceMeters === 'number' && typeof route?.durationMillis === 'number') {

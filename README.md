@@ -33,6 +33,9 @@ Only the Supabase project URL, publishable key, browser-restricted Google Maps
 key, and non-secret model name belong in `VITE_` variables. Enable Maps
 JavaScript API, Places API, and Routes API for the Google Cloud project, and
 restrict the browser key to the local and production web origins.
+`Place.searchByText` specifically requires **Places API (New)**. For local
+testing, include both `http://localhost:*/*` and `http://127.0.0.1:*/*` in the
+key's Website restrictions; production must include its exact HTTPS origin.
 Never put `GEMINI_API_KEY`, a Supabase secret key, or a service-role key in the
 frontend environment.
 
@@ -47,6 +50,10 @@ npm run build
 ## Supabase
 
 See [`supabase/README.md`](supabase/README.md). The short version is:
+
+The browser-side trip assistant uses LangGraph with a Supabase/RLS
+checkpointer. See [`docs/assistant-langgraph.md`](docs/assistant-langgraph.md)
+before changing its state, nodes, checkpoint schema, or proposal resume flow.
 
 1. Apply the additive receipt-items migration.
 2. Set `GEMINI_API_KEY` and optionally `GEMINI_MODEL` as Supabase secrets.

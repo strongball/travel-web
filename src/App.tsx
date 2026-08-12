@@ -53,6 +53,7 @@ const ReceiptReviewPage = lazy(() =>
     default: module.ReceiptReviewPage,
   })),
 )
+const GoogleMapsApiTestPage = lazy(() => import('./features/google/GoogleMapsApiTestPage'))
 
 function App() {
   const { t } = useTranslation()
@@ -410,6 +411,7 @@ function App() {
             onDeleteExpense={handleDeleteExpense}
             onRefresh={loadData}
             onSignOut={signOut}
+            onOpenGoogleMapsTest={() => navigateView('google-maps-test')}
             onRegisterBrowserBackHandler={registerBrowserBackHandler}
             initialSection={workspaceRoute.section}
             initialWorkspaceView={workspaceRoute.workspaceView}
@@ -438,6 +440,9 @@ function App() {
             onApply={applyReceipt}
             onCancel={cancelReview}
           />
+        ) : null}
+        {view === 'google-maps-test' ? (
+          <GoogleMapsApiTestPage onBack={() => navigateView('workspace')} />
         ) : null}
       </Suspense>
       <Notice value={notice} onClose={() => setNotice(null)} />

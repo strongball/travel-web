@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
@@ -13,8 +16,13 @@ interface TravelWorkspaceHeaderProps {
   loading: boolean
   showBack: boolean
   canEdit: boolean
+  canOpenAssistant: boolean
+  assistantMode: boolean
+  assistantActions?: ReactNode
   onBack: () => void
   onEdit: () => void
+  onOpenAssistant: () => void
+  onOpenGoogleMapsTest: () => void
   onRefresh: () => void | Promise<void>
   onSignOut: () => void | Promise<void>
 }
@@ -25,8 +33,13 @@ export function TravelWorkspaceHeader({
   loading,
   showBack,
   canEdit,
+  canOpenAssistant,
+  assistantMode,
+  assistantActions,
   onBack,
   onEdit,
+  onOpenAssistant,
+  onOpenGoogleMapsTest,
   onRefresh,
   onSignOut,
 }: TravelWorkspaceHeaderProps) {
@@ -41,7 +54,14 @@ export function TravelWorkspaceHeader({
       onBack={showBack ? onBack : undefined}
       backLabel="返回我的行程"
       actions={(
-        <>
+        assistantMode ? assistantActions : <>
+          {canOpenAssistant ? (
+            <Tooltip title="開啟旅程助理">
+              <IconButton onClick={onOpenAssistant} aria-label="開啟旅程助理" color="primary">
+                <AutoAwesomeRoundedIcon />
+              </IconButton>
+            </Tooltip>
+          ) : null}
           {canEdit ? (
             <Tooltip title="編輯行程">
               <IconButton onClick={onEdit} aria-label="編輯行程">
@@ -69,6 +89,15 @@ export function TravelWorkspaceHeader({
                 transformOrigin={{ vertical: 'top', horizontal: 'right' }}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               >
+                <MenuItem
+                  onClick={() => {
+                    setMenuAnchor(null)
+                    onOpenGoogleMapsTest()
+                  }}
+                >
+                  <ListItemIcon><MapRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText>Google Maps API 測試</ListItemText>
+                </MenuItem>
                 <MenuItem
                   disabled={loading}
                   onClick={() => {
@@ -104,6 +133,34 @@ export function TravelWorkspaceHeader({
                   <LogoutRoundedIcon />
                 </IconButton>
               </Tooltip>
+              <Tooltip title="更多工具">
+                <IconButton
+                  aria-label="更多工具"
+                  aria-controls={menuAnchor ? 'travel-tools-menu' : undefined}
+                  aria-haspopup="true"
+                  onClick={(event) => setMenuAnchor(event.currentTarget)}
+                >
+                  <MoreVertRoundedIcon />
+                </IconButton>
+              </Tooltip>
+              <Menu
+                id="travel-tools-menu"
+                anchorEl={menuAnchor}
+                open={Boolean(menuAnchor)}
+                onClose={() => setMenuAnchor(null)}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              >
+                <MenuItem
+                  onClick={() => {
+                    setMenuAnchor(null)
+                    onOpenGoogleMapsTest()
+                  }}
+                >
+                  <ListItemIcon><MapRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText>Google Maps API 測試</ListItemText>
+                </MenuItem>
+              </Menu>
             </>
           )}
         </>

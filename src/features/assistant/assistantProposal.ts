@@ -1,0 +1,100 @@
+import type { Attraction, Itinerary, TripDay } from '../../types/database'
+import { recalculateDayTimes } from '../travel/travelWorkspaceUtils'
+import type { AssistantOperation } from './types'
+
+const normalizeTime = (day: TripDay, value: string) =>
+  value.includes('T') ? value : `${day.date.slice(0, 10)}T${value}:00`
+
+export function applyAssistantOperations(
+  itinerary: Itinerary,
+  operations: AssistantOperation[],
+): TripDay[] {
+  let days = (itinerary.days ?? []).map((day) => ({
+    ...day,
+    attractions: day.attractions.map((attraction) => ({ ...attraction })),
+  }))
+  const originalDayByAttraction = new Map(
+    days.flatMap((day) => day.attractions.map((attraction) => [attraction.id, day.id] as const)),
+  )
+
+  const findAttraction = (id: string) => {
+    for (const day of days) {
+      const index = day.attractions.findIndex((item) => item.id === id)
+      if (index >= 0) return { day, index, attraction: day.attractions[index] }
+    }
+    throw new Error(`找不到景點 ${id}`)
+  }
+
+  for (const operation of operations) {
+    if (operation.type === 'set_day_start_time') {
+      const day = days.find((item) => item.id === operation.dayId)
+      if (!day) throw new Error('找不到指定日期')
+      day.startTime = normalizeTime(day, operation.startTime)
+      continue
+    }
+    if (operation.type === 'add_attraction') {
+      const day = days.find((item) => item.id === operation.dayId)
+      if (!day) throw new Error('找不到指定日期')
+      if (!operation.attraction.name.trim()) throw new Error('景點名稱不可空白')
+      const attraction: Attraction = {
+        ...operation.attraction,
+        dayId: day.id,
+        name: operation.attraction.name.trim(),
+        startTime: null,
+        endTime: null,
+      }
+      const index = Math.max(0, Math.min(operation.index ?? day.attractions.length, day.attractions.length))
+      day.attractions.splice(index, 0, attraction)
+      continue
+    }
+    if (operation.type === 'update_attraction') {
+      const target = findAttraction(operation.attractionId)
+      target.day.attractions[target.index] = {
+        ...target.attraction,
+        ...operation.changes,
+        id: target.attraction.id,
+        dayId: target.day.id,
+      }
+      continue
+    }
+    if (operation.type === 'remove_attraction') {
+      const target = findAttraction(operation.attractionId)
+      target.day.attractions.splice(target.index, 1)
+      continue
+    }
+    if (operation.type === 'move_attraction') {
+      const target = findAttraction(operation.attractionId)
+      const destination = days.find((item) => item.id === operation.targetDayId)
+      if (!destination) throw new Error('找不到移動目的日期')
+      target.day.attractions.splice(target.index, 1)
+      const index = Math.max(0, Math.min(operation.index, destination.attractions.length))
+      destination.attractions.splice(index, 0, { ...target.attraction, dayId: destination.id, travelTime: null })
+      continue
+    }
+    const day = days.find((item) => item.id === operation.dayId)
+    if (!day) throw new Error('找不到指定日期')
+    if (new Set(operation.attractionIds).size !== day.attractions.length ||
+      operation.attractionIds.some((id) => !day.attractions.some((item) => item.id === id))) {
+      throw new Error('景點排序資料不完整')
+    }
+    const byId = new Map(day.attractions.map((item) => [item.id, item]))
+    day.attractions = operation.attractionIds.map((id) => byId.get(id)!)
+  }
+
+  const affected = new Set<string>()
+  for (const operation of operations) {
+    if ('dayId' in operation) affected.add(operation.dayId)
+    if (operation.type === 'move_attraction') affected.add(operation.targetDayId)
+    if ('attractionId' in operation) {
+      const originalDayId = originalDayByAttraction.get(operation.attractionId)
+      if (originalDayId) affected.add(originalDayId)
+    }
+  }
+  days = days.map((day) => affected.has(day.id) ? recalculateDayTimes(day, day.attractions) : day)
+  return days
+}
+
+export function changedDays(before: TripDay[], after: TripDay[]) {
+  const beforeById = new Map(before.map((day) => [day.id, day]))
+  return after.filter((day) => JSON.stringify(beforeById.get(day.id)) !== JSON.stringify(day))
+}

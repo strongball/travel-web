@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
@@ -44,6 +44,7 @@ import type {
 export type { WorkspaceRoute, WorkspaceSection, WorkspaceView } from './travelWorkspaceUtils'
 
 const MapPickerDialog = lazy(() => import('./MapPickerDialog'))
+const AssistantSection = lazy(() => import('../assistant/AssistantSection'))
 
 export interface TravelWorkspacePageProps {
   itineraries: Itinerary[]
@@ -62,6 +63,7 @@ export interface TravelWorkspacePageProps {
   onDeleteExpense: (expense: Expense) => void | Promise<void>
   onRefresh: () => void | Promise<void>
   onSignOut: () => void | Promise<void>
+  onOpenGoogleMapsTest: () => void
   onRegisterBrowserBackHandler?: (handler: (() => boolean) | null) => void
   initialSection?: WorkspaceSection
   initialWorkspaceView?: WorkspaceView
@@ -85,6 +87,7 @@ export function TravelWorkspacePage({
   onDeleteExpense,
   onRefresh,
   onSignOut,
+  onOpenGoogleMapsTest,
   onRegisterBrowserBackHandler,
   initialSection = 'schedule',
   initialWorkspaceView = 'trips',
@@ -102,6 +105,10 @@ export function TravelWorkspacePage({
   const [todoCategory, setTodoCategory] = useState('行前準備')
   const [saving, setSaving] = useState(false)
   const [todoSaving, setTodoSaving] = useState(false)
+  const [assistantToolbar, setAssistantToolbar] = useState<ReactNode>(null)
+  const handleAssistantToolbarChange = useCallback((toolbar: ReactNode) => {
+    setAssistantToolbar(toolbar)
+  }, [])
 
   const updateWorkspaceRoute = useCallback((
     next: Partial<WorkspaceRoute>,
@@ -116,6 +123,10 @@ export function TravelWorkspacePage({
     if (next.workspaceView) setWorkspaceView(next.workspaceView)
     onWorkspaceRouteChange?.(route)
   }, [onWorkspaceRouteChange, section, selectedItineraryId, workspaceView])
+
+  useEffect(() => {
+    if (section !== 'assistant') setAssistantToolbar(null)
+  }, [section])
 
   useEffect(() => {
     if (!onRegisterBrowserBackHandler) return
@@ -137,6 +148,10 @@ export function TravelWorkspacePage({
         setAttractionEditor(null)
         return true
       }
+      if (workspaceView === 'detail' && section === 'assistant') {
+        updateWorkspaceRoute({ section: 'schedule' })
+        return true
+      }
       if (workspaceView === 'detail') {
         updateWorkspaceRoute({ workspaceView: 'trips' })
         return true
@@ -146,7 +161,7 @@ export function TravelWorkspacePage({
 
     onRegisterBrowserBackHandler(handleBrowserBack)
     return () => onRegisterBrowserBackHandler(null)
-  }, [attractionEditor, mapPickerOpen, onRegisterBrowserBackHandler, travelEditor, tripEditor, updateWorkspaceRoute, workspaceView])
+  }, [attractionEditor, mapPickerOpen, onRegisterBrowserBackHandler, section, travelEditor, tripEditor, updateWorkspaceRoute, workspaceView])
 
   const selectedItinerary = itineraries.find(
     (itinerary) => itinerary.id === selectedItineraryId,
@@ -339,20 +354,27 @@ export function TravelWorkspacePage({
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default' }}>
       <TravelWorkspaceHeader
-        title={workspaceView === 'detail' ? selectedItinerary?.title ?? 'Travel' : 'Travel'}
-        subtitle={workspaceView === 'detail'
+        title={workspaceView === 'detail' && section === 'assistant' ? '旅程助理' : workspaceView === 'detail' ? selectedItinerary?.title ?? 'Travel' : 'Travel'}
+        subtitle={workspaceView === 'detail' && section === 'assistant'
+          ? selectedItinerary?.title ?? 'Travel'
+          : workspaceView === 'detail'
           ? `${formatDate(selectedItinerary?.startDate)} — ${formatDate(selectedItinerary?.endDate)} · ${selectedItinerary?.currency ?? ''}`
           : '把每一段旅程放在同一個地方'}
         loading={loading}
         showBack={workspaceView === 'detail'}
-        canEdit={workspaceView === 'detail' && Boolean(selectedItinerary)}
-        onBack={() => updateWorkspaceRoute({ workspaceView: 'trips' })}
+        canEdit={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
+        canOpenAssistant={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
+        assistantMode={workspaceView === 'detail' && section === 'assistant'}
+        assistantActions={assistantToolbar}
+        onBack={() => section === 'assistant' ? updateWorkspaceRoute({ section: 'schedule' }) : updateWorkspaceRoute({ workspaceView: 'trips' })}
         onEdit={() => selectedItinerary && setTripEditor(selectedItinerary)}
+        onOpenAssistant={() => updateWorkspaceRoute({ section: 'assistant' })}
+        onOpenGoogleMapsTest={onOpenGoogleMapsTest}
         onRefresh={onRefresh}
         onSignOut={onSignOut}
       />
 
-      <Container maxWidth="xl" sx={{ px: { xs: 1.5, md: 4 }, pt: { xs: 1.5, md: 2.5 }, pb: { xs: 10, md: 4 } }}>
+      <Container maxWidth={section === 'assistant' ? false : 'xl'} sx={{ px: section === 'assistant' ? 0 : { xs: 1.5, md: 4 }, pt: section === 'assistant' ? 0 : { xs: 1.5, md: 2.5 }, pb: section === 'assistant' ? 0 : { xs: 10, md: 4 } }}>
         {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
         {workspaceView === 'trips' ? (
           <TripListPage
@@ -364,16 +386,16 @@ export function TravelWorkspacePage({
           />
         ) : selectedItinerary ? (
           <Box component="main" sx={{ minWidth: 0 }}>
-            <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+            {section !== 'assistant' ? <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
               <Tabs value={section} onChange={(_, value: WorkspaceSection) => updateWorkspaceRoute({ section: value })} variant="scrollable" scrollButtons="auto" sx={{ display: { xs: 'none', md: 'flex' }, px: 1 }}>
                 <Tab value="schedule" label="日程" icon={<EventNoteRoundedIcon />} iconPosition="start" />
                 <Tab value="todos" label={`待辦 ${selectedTodos.length ? `(${completedTodos}/${selectedTodos.length})` : ''}`} icon={<TaskAltRoundedIcon />} iconPosition="start" />
                 <Tab value="expenses" label="費用" icon={<PaidRoundedIcon />} iconPosition="start" />
                 <Tab value="overview" label="總覽" icon={<PlaceRoundedIcon />} iconPosition="start" />
               </Tabs>
-            </Paper>
+            </Paper> : null}
 
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mt: section === 'assistant' ? 0 : 2 }}>
               {section === 'schedule' ? (
                 <ScheduleSection
                   days={days}
@@ -385,6 +407,11 @@ export function TravelWorkspacePage({
                   onStartTimeChange={(dayId, time) => void updateDayStartTime(dayId, time)}
                   onReorder={(nextDays) => void saveReorderedDays(nextDays)}
                 />
+              ) : null}
+              {section === 'assistant' ? (
+                <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: 300 }}>載入旅程助理…</Box>}>
+                  <AssistantSection itinerary={selectedItinerary} onItineraryApplied={onRefresh} fullPage onAssistantToolbarChange={handleAssistantToolbarChange} />
+                </Suspense>
               ) : null}
               {section === 'todos' ? (
                 <TodoSection
@@ -422,7 +449,7 @@ export function TravelWorkspacePage({
       <Paper
         elevation={8}
         sx={{
-          display: { xs: workspaceView === 'detail' ? 'block' : 'none', md: 'none' },
+          display: { xs: workspaceView === 'detail' && section !== 'assistant' ? 'block' : 'none', md: 'none' },
           position: 'fixed',
           left: 0,
           right: 0,

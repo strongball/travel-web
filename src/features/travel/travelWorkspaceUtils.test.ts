@@ -16,6 +16,7 @@ const day = (date: string): TripDay => ({
   itineraryId: 'trip-1',
   date,
   startTime: `${date}T09:00:00`,
+  revision: 0,
   attractions: [],
 })
 

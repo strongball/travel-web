@@ -22,6 +22,7 @@ export type TripDay = {
   itineraryId: string
   date: string
   startTime: string | null
+  revision: number
   attractions: Attraction[]
 }
 

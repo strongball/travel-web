@@ -3,7 +3,7 @@ import MyLocationRoundedIcon from '@mui/icons-material/MyLocationRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import { Alert, Box, Button, ClickAwayListener, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Paper, Stack, TextField, Typography } from '@mui/material'
-import { googleMapsApiKey, loadGoogleMaps } from './googleMaps'
+import { geocodeWithGoogle, googleMapsApiKey, loadGoogleMaps } from './googleMaps'
 
 export type MapLocation = { latitude: number; longitude: number; label: string; placeId?: string | null }
 
@@ -231,7 +231,7 @@ async function reverseGeocode(
 ) {
   if (!geocoder) return null
   try {
-    const response = await geocoder.geocode({ location })
+    const response = await geocodeWithGoogle(geocoder, { location })
     return response.results[0]?.formatted_address ?? null
   } catch {
     return null

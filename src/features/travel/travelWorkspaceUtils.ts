@@ -1,7 +1,7 @@
 import type { Attraction, Expense, Itinerary, TripDay } from '../../types/database'
 import type { GoogleRoutePoint } from './googleMaps'
 
-export type WorkspaceSection = 'schedule' | 'todos' | 'expenses' | 'overview'
+export type WorkspaceSection = 'schedule' | 'assistant' | 'todos' | 'expenses' | 'overview'
 export type WorkspaceView = 'trips' | 'detail'
 export type WorkspaceRoute = {
   section: WorkspaceSection
@@ -56,6 +56,7 @@ export const emptyDay = (itineraryId: string, date: string): TripDay => ({
   itineraryId,
   date,
   startTime: `${date}T09:00:00`,
+  revision: 0,
   attractions: [],
 })
 

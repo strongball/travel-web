@@ -124,6 +124,7 @@ const mapDay = (row: DatabaseRow): TripDay => ({
   itineraryId: asText(row.itinerary_id),
   date: asText(row.date),
   startTime: typeof row.start_time === 'string' ? row.start_time : null,
+  revision: asNumber(row.revision),
   attractions: Array.isArray(row.attractions)
     ? row.attractions.map((entry) => mapAttraction(entry as DatabaseRow)).sort((first, second) => {
         if (!first.startTime && !second.startTime) return 0

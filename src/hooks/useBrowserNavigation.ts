@@ -6,7 +6,7 @@ import type {
   WorkspaceView,
 } from '../features/travel/TravelWorkspacePage'
 
-export type AppView = 'workspace' | 'editor' | 'review'
+export type AppView = 'workspace' | 'editor' | 'review' | 'google-maps-test'
 type BrowserBackHandler = () => boolean
 type TravelHistoryState = {
   travelApp?: boolean
@@ -115,7 +115,7 @@ export function useBrowserNavigation(sessionActive: boolean) {
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state as TravelHistoryState | null
       const nextView = state?.travelView
-      const isKnownView = nextView === 'workspace' || nextView === 'editor' || nextView === 'review'
+      const isKnownView = nextView === 'workspace' || nextView === 'editor' || nextView === 'review' || nextView === 'google-maps-test'
 
       if (browserBackHandler.current?.()) {
         const route = workspaceRouteRef.current
