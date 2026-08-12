@@ -11,22 +11,24 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import { LoginPage, type AuthMode } from './features/auth/LoginPage'
+import { SyncNotice } from './components/SyncNotice'
 import {
   TravelWorkspacePage,
 } from './features/travel/TravelWorkspacePage'
 import { useExpenseWorkflow } from './features/expenses/useExpenseWorkflow'
 import { useBrowserNavigation } from './hooks/useBrowserNavigation'
+import { useOfflineSync } from './hooks/useOfflineSync'
 import {
-  deleteExpense,
-  deleteItinerary,
-  deleteTodo,
-  deleteReceiptImages,
   fetchExpenses,
   fetchItineraries,
   fetchTodos,
-  saveItinerary,
-  saveTodo,
 } from './lib/expensesApi'
+import {
+  applyPendingMutations,
+  listMutations,
+  loadSnapshot,
+  saveSnapshot,
+} from './lib/offlineStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import {
   appErrorAtom,
@@ -64,6 +66,7 @@ function App() {
   const [error, setError] = useAtom(appErrorAtom)
   const [selectedItineraryId, setSelectedItineraryId] = useState<string | null>(null)
   const [authLoading, setAuthLoading] = useState(false)
+  const [dataReady, setDataReady] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const dataMutationVersion = useRef(0)
   const {
@@ -74,6 +77,7 @@ function App() {
     view,
     workspaceRoute,
   } = useBrowserNavigation(Boolean(session))
+  const userId = session?.user.id ?? null
 
   const loadData = useCallback(async () => {
     const requestVersion = dataMutationVersion.current
@@ -87,28 +91,54 @@ function App() {
       ])
       if (dataMutationVersion.current === requestVersion) {
         const currentRoute = getWorkspaceRoute()
-        setItineraries(nextItineraries)
-        setExpenses(nextExpenses)
-        setTodos(nextTodos)
+        const pending = userId ? await listMutations(userId) : []
+        const nextData = applyPendingMutations({
+          itineraries: nextItineraries,
+          expenses: nextExpenses,
+          todos: nextTodos,
+        }, pending)
+        setItineraries(nextData.itineraries)
+        setExpenses(nextData.expenses)
+        setTodos(nextData.todos)
         setSelectedItineraryId((current) =>
           currentRoute.itineraryId &&
-          nextItineraries.some((itinerary) => itinerary.id === currentRoute.itineraryId)
+          nextData.itineraries.some((itinerary) => itinerary.id === currentRoute.itineraryId)
             ? currentRoute.itineraryId
-            : current && nextItineraries.some((itinerary) => itinerary.id === current)
+            : current && nextData.itineraries.some((itinerary) => itinerary.id === current)
               ? current
-            : nextItineraries[0]?.id ?? null,
+            : nextData.itineraries[0]?.id ?? null,
         )
+        if (userId) {
+          await saveSnapshot({
+            userId,
+            ...nextData,
+          })
+        }
       }
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : t('app.unexpectedError'),
-      )
+      const snapshot = userId ? await loadSnapshot(userId).catch(() => null) : null
+      if (snapshot) {
+        setItineraries(snapshot.itineraries)
+        setExpenses(snapshot.expenses)
+        setTodos(snapshot.todos)
+        setSelectedItineraryId((current) =>
+          current && snapshot.itineraries.some((item) => item.id === current)
+            ? current
+            : snapshot.itineraries[0]?.id ?? null,
+        )
+        setNotice(t('app.offlineLoaded'))
+      } else {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : t('app.unexpectedError'),
+        )
+      }
     } finally {
+      setDataReady(true)
       setLoading(false)
     }
-  }, [getWorkspaceRoute, setError, setExpenses, setItineraries, setLoading, t])
+  }, [getWorkspaceRoute, setError, setExpenses, setItineraries, setLoading, t, userId])
 
   useEffect(() => {
     let active = true
@@ -128,8 +158,25 @@ function App() {
   }, [setAuthReady, setSession])
 
   useEffect(() => {
+    setDataReady(false)
+  }, [userId])
+
+  useEffect(() => {
     if (session) void loadData()
   }, [session, loadData])
+
+  useEffect(() => {
+    if (!dataReady || !userId) return
+    void saveSnapshot({ userId, itineraries, expenses, todos })
+  }, [dataReady, expenses, itineraries, todos, userId])
+
+  const {
+    enqueue: enqueueOfflineMutation,
+    flush: flushOfflineMutations,
+    pendingCount,
+    syncError,
+    syncState,
+  } = useOfflineSync(userId, loadData)
 
   const handleAuth = async (email: string, password: string, mode: AuthMode) => {
     setAuthLoading(true)
@@ -197,9 +244,10 @@ function App() {
     itineraries,
     selectedItineraryId,
     navigateView,
-    loadData,
+    enqueueOfflineMutation,
     markDataMutation,
     showNotice,
+    queuedMessage: navigator.onLine ? t('app.queued') : t('app.savedOffline'),
     unexpectedErrorMessage: t('app.unexpectedError'),
     savedMessage: t('app.saved'),
   })
@@ -217,7 +265,11 @@ function App() {
     dataMutationVersion.current += 1
     setError(null)
     try {
-      await saveItinerary(itinerary)
+      await enqueueOfflineMutation({
+        operation: 'saveItinerary',
+        entityId: itinerary.id,
+        payload: itinerary,
+      })
       setItineraries((current) => {
         const exists = current.some((item) => item.id === itinerary.id)
         return exists
@@ -225,7 +277,7 @@ function App() {
           : [itinerary, ...current]
       })
       setSelectedItineraryId(itinerary.id)
-      setNotice('行程已儲存')
+      setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (saveError) {
       setError(
         saveError instanceof Error ? saveError.message : t('app.unexpectedError'),
@@ -238,7 +290,11 @@ function App() {
     dataMutationVersion.current += 1
     setError(null)
     try {
-      await saveTodo(todo)
+      await enqueueOfflineMutation({
+        operation: 'saveTodo',
+        entityId: todo.id,
+        payload: todo,
+      })
       setTodos((current) => {
         const exists = current.some((item) => item.id === todo.id)
         return exists
@@ -255,7 +311,7 @@ function App() {
   const handleDeleteTodo = async (id: string) => {
     setError(null)
     try {
-      await deleteTodo(id)
+      await enqueueOfflineMutation({ operation: 'deleteTodo', entityId: id, payload: { id } })
       setTodos((current) => current.filter((todo) => todo.id !== id))
     } catch (deleteError) {
       setError(
@@ -270,10 +326,13 @@ function App() {
     if (!window.confirm(`確定要刪除「${expense.title}」嗎？`)) return
     setError(null)
     try {
-      await deleteExpense(expense.id)
-      await deleteReceiptImages(expense.receiptImagePaths).catch(() => undefined)
-      setNotice('費用已刪除')
-      await loadData()
+      await enqueueOfflineMutation({
+        operation: 'deleteExpense',
+        entityId: expense.id,
+        payload: { id: expense.id, receiptImagePaths: expense.receiptImagePaths },
+      })
+      setExpenses((current) => current.filter((item) => item.id !== expense.id))
+      setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
@@ -288,9 +347,12 @@ function App() {
     if (!itinerary || !window.confirm(`確定要刪除「${itinerary.title}」嗎？`)) return
     setError(null)
     try {
-      await deleteItinerary(id)
-      setNotice('行程已刪除')
-      await loadData()
+      await enqueueOfflineMutation({ operation: 'deleteItinerary', entityId: id, payload: { id } })
+      setItineraries((current) => current.filter((item) => item.id !== id))
+      setExpenses((current) => current.filter((expense) => expense.itineraryId !== id))
+      setTodos((current) => current.filter((todo) => todo.itineraryId !== id))
+      setSelectedItineraryId((current) => current === id ? null : current)
+      setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
@@ -379,6 +441,12 @@ function App() {
         ) : null}
       </Suspense>
       <Notice value={notice} onClose={() => setNotice(null)} />
+      <SyncNotice
+        count={pendingCount}
+        state={syncState}
+        error={syncError}
+        onRetry={() => void flushOfflineMutations()}
+      />
     </>
   )
 }

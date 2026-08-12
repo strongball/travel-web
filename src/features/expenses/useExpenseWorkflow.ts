@@ -2,12 +2,10 @@ import { useAtom, useSetAtom } from 'jotai'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
-  deleteReceiptImages,
   downloadReceiptFiles,
-  saveExpense,
   signedReceiptUrl,
-  uploadReceiptImages,
 } from '../../lib/expensesApi'
+import type { OfflineMutation } from '../../lib/offlineStore'
 import {
   appErrorAtom,
   expenseDraftAtom,
@@ -29,9 +27,10 @@ type UseExpenseWorkflowOptions = {
   itineraries: Itinerary[]
   selectedItineraryId: string | null
   navigateView: NavigateView
-  loadData: () => Promise<void>
+  enqueueOfflineMutation: (mutation: OfflineMutation) => Promise<void>
   markDataMutation: () => void
   showNotice: (message: string) => void
+  queuedMessage: string
   unexpectedErrorMessage: string
   savedMessage: string
 }
@@ -40,9 +39,10 @@ export function useExpenseWorkflow({
   itineraries,
   selectedItineraryId,
   navigateView,
-  loadData,
+  enqueueOfflineMutation,
   markDataMutation,
   showNotice,
+  queuedMessage,
   unexpectedErrorMessage,
   savedMessage,
 }: UseExpenseWorkflowOptions) {
@@ -143,22 +143,19 @@ export function useExpenseWorkflow({
     markDataMutation()
     setIsSaving(true)
     setError(null)
-    let uploaded: string[] = []
-    let saved = false
     try {
-      uploaded = await uploadReceiptImages(draft.imageFiles)
       const nextDraft = {
         ...draft,
         id: draft.id ?? crypto.randomUUID(),
-        receiptImagePaths: [...draft.receiptImagePaths, ...uploaded],
-        imageFiles: [],
       }
-      await saveExpense(nextDraft)
-      saved = true
-      const removed = originalImagePaths.current.filter(
-        (reference) => !nextDraft.receiptImagePaths.includes(reference),
-      )
-      await deleteReceiptImages(removed).catch(() => undefined)
+      await enqueueOfflineMutation({
+        operation: 'saveExpense',
+        entityId: nextDraft.id,
+        payload: {
+          draft: nextDraft,
+          originalImagePaths: originalImagePaths.current,
+        },
+      })
       const savedExpense: Expense = {
         ...nextDraft,
         id: nextDraft.id,
@@ -173,15 +170,13 @@ export function useExpenseWorkflow({
       })
       setDraft(null)
       navigateView('workspace', 'replace')
-      showNotice(savedMessage)
+      showNotice(queuedMessage || savedMessage)
     } catch (saveError) {
-      if (!saved) await deleteReceiptImages(uploaded).catch(() => undefined)
       setError(saveError instanceof Error ? saveError.message : unexpectedErrorMessage)
     } finally {
       setIsSaving(false)
     }
-    if (saved) void loadData()
-  }, [draft, loadData, markDataMutation, navigateView, savedMessage, setDraft, setError, setExpenses, showNotice, unexpectedErrorMessage])
+  }, [draft, enqueueOfflineMutation, markDataMutation, navigateView, queuedMessage, savedMessage, setDraft, setError, setExpenses, showNotice, unexpectedErrorMessage])
 
   const cancelEditor = useCallback(() => {
     setDraft(null)

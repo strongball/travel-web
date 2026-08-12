@@ -83,5 +83,7 @@ do not require a `404.html` workaround.
 
 The production build registers a service worker and includes an installable
 manifest. On GitHub Pages the PWA scope is `/travel-web/`; the service worker
-caches the app shell for an offline fallback, while Supabase, Google Maps, and
-receipt scanning still require a network connection.
+caches the app shell for an offline fallback. Previously loaded trip data and
+queued itinerary, todo, and expense changes are stored per user in IndexedDB
+and sync automatically after reconnecting or reopening the app. Google Maps
+and receipt scanning still require a network connection.

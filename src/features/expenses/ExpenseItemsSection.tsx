@@ -94,16 +94,43 @@ export function ExpenseItemsSection({ draft, isBusy, onChange }: ExpenseItemsSec
           >
             <AccordionSummary
               expandIcon={<ExpandMoreRoundedIcon />}
-              sx={{ minHeight: 56, px: 1.5, '& .MuiAccordionSummary-content': { my: 1 } }}
+              sx={{
+                minHeight: 64,
+                px: { xs: 1, sm: 1.5 },
+                gap: 0.25,
+                '& .MuiAccordionSummary-content': {
+                  minWidth: 0,
+                  my: 1,
+                  overflow: 'hidden',
+                },
+                '& .MuiAccordionSummary-expandIconWrapper': {
+                  flexShrink: 0,
+                  ml: 0.25,
+                },
+              }}
             >
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, width: '100%', pr: 0.5 }}>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                  alignItems: 'center',
+                  columnGap: { xs: 0.5, sm: 1 },
+                  minWidth: 0,
+                  width: '100%',
+                }}
+              >
+                <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
                   <Typography noWrap sx={{ fontWeight: 700 }}>{itemName}</Typography>
                   {hasDifferentSource ? (
                     <Typography noWrap variant="caption" color="text.secondary">{item.sourceName}</Typography>
                   ) : null}
                 </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                <Typography
+                  noWrap
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ maxWidth: { xs: 132, sm: 'none' }, minWidth: 0 }}
+                >
                   {item.quantity} × {item.lineTotal === null ? '—' : `${draft.currency} ${item.lineTotal.toLocaleString('zh-TW')}`}
                 </Typography>
                 <IconButton
@@ -116,7 +143,7 @@ export function ExpenseItemsSection({ draft, isBusy, onChange }: ExpenseItemsSec
                 >
                   <DeleteOutlineRoundedIcon />
                 </IconButton>
-              </Stack>
+              </Box>
             </AccordionSummary>
             <AccordionDetails sx={{ p: 1.5, pt: 0.5 }}>
               <Stack spacing={1.25}>
