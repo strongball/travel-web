@@ -73,7 +73,17 @@ const thinkingSteps = {
 } as const
 
 const friendlyError = (value: unknown, fallback: string) => {
-  const raw = value instanceof Error ? value.message : typeof value === 'string' ? value : fallback
+  const errorRecord = value && typeof value === 'object' ? value as { code?: unknown; message?: unknown; details?: unknown } : null
+  if (errorRecord?.code === '40001') return '行程已被其他分頁或裝置修改，請重新載入後再產生提案。'
+  if (errorRecord?.code === 'P0002') return '這個行程提案已不存在，請重新產生提案。'
+  if (errorRecord?.code === '22023') return '行程提案包含不合法的景點資料，請重新描述要調整的景點。'
+  const raw = value instanceof Error
+    ? value.message
+    : typeof value === 'string'
+      ? value
+      : errorRecord && typeof errorRecord.message === 'string'
+        ? errorRecord.message
+        : fallback
   try {
     const parsed = JSON.parse(raw) as { error?: { code?: number; message?: string } }
     if (parsed.error?.code === 429) return 'AI 服務額度已用完，請補充 Gemini API 額度後再重試。這則訊息已保留，不會重複送出。'
@@ -86,6 +96,10 @@ const friendlyError = (value: unknown, fallback: string) => {
   }
   return raw || fallback
 }
+
+const isRecoverableGraphStateError = (value: unknown) =>
+  value instanceof AssistantGraphVersionError ||
+  (value instanceof Error && value.message.includes('Assistant turn request is missing'))
 
 const timeLabel = (value: string) => new Intl.DateTimeFormat('zh-TW', {
   hour: '2-digit', minute: '2-digit', hour12: false,
@@ -126,11 +140,13 @@ export function AssistantSection({
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [rejectingProposalId, setRejectingProposalId] = useState<string | null>(null)
   const [thinkingContext, setThinkingContext] = useState<keyof typeof thinkingSteps>('reply')
   const [thinkingStep, setThinkingStep] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [retryRequest, setRetryRequest] = useState<{ thread: AssistantThread; request: AssistantTurnRequest } | null>(null)
   const activeThreadRef = useRef<string | null>(null)
+  const conversationLoadRef = useRef(0)
   const conversationEndRef = useRef<HTMLDivElement>(null)
   const manualSummarizeRef = useRef<() => Promise<void>>(async () => {})
   const threadStorageKey = `assistant-active-thread:${itinerary.id}`
@@ -182,13 +198,14 @@ export function AssistantSection({
   }, [refreshThreads])
 
   const refreshConversation = useCallback(async (id: string) => {
+    const loadId = ++conversationLoadRef.current
     const [nextMessages, nextProposals] = await Promise.all([
       listAssistantMessages(id),
       listAssistantProposals(id),
     ])
     // A previous thread can finish loading after the user has switched.
     // Never let that stale response overwrite the selected conversation.
-    if (activeThreadRef.current !== id) return
+    if (activeThreadRef.current !== id || loadId !== conversationLoadRef.current) return
     setMessages(nextMessages)
     setProposals(nextProposals)
   }, [])
@@ -244,7 +261,7 @@ export function AssistantSection({
     try {
       result = await runner.sendTurn(request)
     } catch (graphError) {
-      if (!(graphError instanceof AssistantGraphVersionError)) throw graphError
+      if (!isRecoverableGraphStateError(graphError)) throw graphError
       await checkpointer.deleteThread(thread.id)
       result = await runner.sendTurn({
         ...request,
@@ -325,29 +342,72 @@ export function AssistantSection({
 
   const decideProposal = async (proposal: StoredAssistantProposal, approved: boolean) => {
     if (!navigator.onLine) return
+    if (!approved) {
+      // Rejection is not an AI turn and does not mutate the itinerary. Mark it
+      // locally first so the composer is immediately available without the
+      // thinking/loading bubble, then persist the status in the idempotent RPC.
+      setError(null)
+      setRejectingProposalId(proposal.id)
+      setProposals((current) => current.map((item) => item.id === proposal.id
+        ? { ...item, status: 'rejected' as const }
+        : item))
+      try {
+        await applyStoredAssistantProposal(proposal.id, false)
+        try {
+          await runner.resumeProposal(proposal.threadId, false)
+        } catch {
+          // Canonical status is already rejected. Remove a stale interrupted
+          // runtime so the next message rebuilds from canonical history.
+          await checkpointer.deleteThread(proposal.threadId)
+        }
+        await refreshConversation(proposal.threadId)
+      } catch (rejectionError) {
+        setProposals((current) => current.map((item) => item.id === proposal.id
+          ? { ...item, status: 'pending' as const }
+          : item))
+        setError(friendlyError(rejectionError, '無法拒絕行程提案'))
+      } finally {
+        setRejectingProposalId(null)
+      }
+      return
+    }
     setThinkingContext('proposal')
     setSending(true)
     setError(null)
+    setProposals((current) => current.map((item) => item.id === proposal.id
+      ? { ...item, status: 'approved' as const }
+      : item))
     try {
+      let status: 'applied' | 'expired'
       try {
-        await runner.resumeProposal(proposal.threadId, approved)
-      } catch (graphError) {
-        if (!(graphError instanceof AssistantGraphVersionError)) throw graphError
+        const result = await runner.resumeProposal(proposal.threadId, true)
+        if (result.state.proposalStatus !== 'applied' && result.state.proposalStatus !== 'expired') {
+          throw new Error('行程提案沒有完成套用')
+        }
+        status = result.state.proposalStatus
+      } catch {
+        // Applying is idempotent. If graph persistence failed after (or before)
+        // the RPC, ask the canonical proposal directly and rebuild the runtime.
+        const canonicalStatus = await applyStoredAssistantProposal(proposal.id, true)
+        if (canonicalStatus !== 'applied' && canonicalStatus !== 'expired') {
+          throw new Error('這個行程提案已經未套用，請重新產生提案。')
+        }
+        status = canonicalStatus
         await checkpointer.deleteThread(proposal.threadId)
-        await applyStoredAssistantProposal(proposal.id, approved)
       }
-      if (!approved) {
-        // Unlock the composer immediately; the rejection only dismisses this
-        // proposal and does not mutate the itinerary.
-        setProposals((current) => current.map((item) => item.id === proposal.id
-          ? { ...item, status: 'rejected' as const }
-          : item))
-      }
+      setProposals((current) => current.map((item) => item.id === proposal.id
+        ? { ...item, status }
+        : item))
+      if (status === 'applied') await onItineraryApplied()
       await refreshConversation(proposal.threadId)
-      if (approved) await onItineraryApplied()
+      // Keep the canonical terminal state even if an older list request was
+      // already in flight when the user pressed confirm.
+      setProposals((current) => current.map((item) => item.id === proposal.id
+        ? { ...item, status }
+        : item))
     } catch (decisionError) {
-      setError(decisionError instanceof Error ? decisionError.message : '無法處理行程提案')
-      await refreshConversation(proposal.threadId)
+      setError(friendlyError(decisionError, '無法處理行程提案'))
+      await refreshConversation(proposal.threadId).catch(() => {})
     } finally {
       setSending(false)
     }
@@ -425,7 +485,7 @@ export function AssistantSection({
             ) : messages.map((message) => <Stack key={message.id} spacing={1}>
               <MessageBubble message={message} />
               {message.role === 'assistant'
-                ? proposals.filter((proposal) => proposal.turnId === message.turnId).map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} busy={sending} onDecision={decideProposal} />)
+                ? proposals.filter((proposal) => proposal.turnId === message.turnId).map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} busy={sending || rejectingProposalId === proposal.id} onDecision={decideProposal} />)
                 : null}
             </Stack>)}
             {sending ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary' }}><Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}><AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} /></Avatar><Paper elevation={0} sx={{ px: 1.5, py: 1, borderRadius: '18px 18px 18px 5px' }}><Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><CircularProgress size={14} /><Typography variant="caption" aria-live="polite">{thinkingLabel}</Typography></Stack></Paper></Stack> : null}
@@ -527,7 +587,7 @@ function ProposalCard({ proposal, busy, onDecision }: { proposal: StoredAssistan
       {proposal.status === 'pending' ? <Stack direction="row" spacing={1} sx={{ mt: 1.5, justifyContent: 'flex-end' }}>
         <Button disabled={busy} onClick={() => onDecision(proposal, false)}>不套用，繼續討論</Button>
         <Button variant="contained" disabled={busy || !navigator.onLine} onClick={() => onDecision(proposal, true)}>確認儲存</Button>
-      </Stack> : <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{proposal.status === 'applied' ? '已套用' : proposal.status === 'expired' ? '行程已變更，提案已過期' : '未套用'}</Typography>}
+      </Stack> : <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{proposal.status === 'approved' ? '正在套用…' : proposal.status === 'applied' ? '已套用' : proposal.status === 'expired' ? '行程已變更，提案已過期' : '未套用'}</Typography>}
     </Paper>
   )
 }

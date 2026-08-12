@@ -1,5 +1,7 @@
 import type { Itinerary } from '../../types/database'
 
+export const ASSISTANT_GRAPH_VERSION = 2
+
 export type AssistantMessageRole = 'user' | 'assistant'
 
 export type AssistantMessage = {

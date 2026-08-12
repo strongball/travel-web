@@ -7,6 +7,7 @@ import {
   type BaseCheckpointSaver,
 } from '@langchain/langgraph/web'
 import { supabase } from '../../lib/supabase'
+import i18n from '../../i18n'
 import type { Attraction, Itinerary } from '../../types/database'
 import type {
   AssistantAttractionDraft,
@@ -22,11 +23,13 @@ import type {
   AssistantTurnResult,
   ItineraryChangeProposal,
 } from './types'
+import { ASSISTANT_GRAPH_VERSION } from './types'
 
-export const ASSISTANT_GRAPH_VERSION = 1
+export { ASSISTANT_GRAPH_VERSION }
 export const DEFAULT_SUMMARY_MESSAGE_THRESHOLD = 30
 export const DEFAULT_SUMMARY_CHARACTER_THRESHOLD = 24_000
 export const DEFAULT_RECENT_MESSAGE_COUNT = 10
+const transportModes = new Set(['driving', 'walking', 'transit', 'bicycling'])
 
 type UnknownRecord = Record<string, unknown>
 
@@ -72,7 +75,9 @@ const attractionDraft = (value: unknown): AssistantAttractionDraft => {
     latitude: nullableNumber(value.latitude ?? null, 'attraction.latitude'),
     longitude: nullableNumber(value.longitude ?? null, 'attraction.longitude'),
     duration: integer(value.duration ?? 60, 'attraction.duration'),
-    transportMode: nullableText(value.transportMode ?? null, 'attraction.transportMode'),
+    transportMode: typeof value.transportMode === 'string' && transportModes.has(value.transportMode)
+      ? value.transportMode
+      : null,
     travelTime: nullableNumber(value.travelTime ?? null, 'attraction.travelTime', 0),
     placeId: nullableText(value.placeId ?? null, 'attraction.placeId'),
     locationName: nullableText(value.locationName ?? null, 'attraction.locationName'),
@@ -265,9 +270,12 @@ export const createGeminiAssistantModel = (): AssistantModel => ({
   async respond(request) {
     const ai = await proxyClient()
     const transcript = request.messages.map((message) => `${message.role}: ${message.content}`).join('\n')
-    const locale = typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-TW'
+    const locale = i18n.resolvedLanguage || i18n.language || 'zh-TW'
     const prompt = [
       `You are a travel itinerary assistant. Answer in the user's language (${locale}).`,
+      'Before answering, combine the earlier summary, recent conversation, and complete current itinerary. Newer preferences, corrections, and rejections override older context.',
+      'Recommendations must fit the city, date, pace, preferences, nearby scheduled places, and open time discussed by the user. Do not recommend an attraction already in the itinerary.',
+      'If the intended day, location, or change is ambiguous, ask a clarifying question and return no proposal. Preserve unrelated days and attractions.',
       'Only create a proposal when the user explicitly asks to change the itinerary.',
       'Allowed operation types: set_day_start_time, add_attraction, update_attraction, remove_attraction, move_attraction, reorder_attractions.',
       'Never invent IDs. Existing IDs must come from the supplied itinerary.',
@@ -296,7 +304,7 @@ export const createGeminiAssistantModel = (): AssistantModel => ({
         role: 'user',
         parts: [{
           text: [
-            `Summarize this travel-planning conversation in the user's language (${typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-TW'}).`,
+            `Summarize this travel-planning conversation in the user's language (${i18n.resolvedLanguage || i18n.language || 'zh-TW'}).`,
             'Preserve decisions, preferences, constraints, dates, and unresolved questions. Do not include proposal JSON.',
             currentSummary ? `Existing summary:\n${currentSummary}` : '',
             messages.map((message) => `${message.role}: ${message.content}`).join('\n'),
@@ -416,7 +424,6 @@ export const createAssistantGraph = (
         messages: [...state.messages, assistantMessage],
         pendingProposal: proposal,
         proposalStatus: proposal?.status ?? null,
-        request: null,
         error: null,
       }
     })
@@ -435,6 +442,7 @@ export const createAssistantGraph = (
       return {
         proposalStatus: status,
         pendingProposal: { ...state.pendingProposal, status },
+        request: null,
       }
     })
     .addNode('reject_proposal', async (state) => {
@@ -443,12 +451,13 @@ export const createAssistantGraph = (
       return {
         proposalStatus: 'rejected' as const,
         pendingProposal: { ...state.pendingProposal, status: 'rejected' as const },
+        request: null,
       }
     })
     .addNode('summarize', async (state) => {
-      if (!shouldSummarizeMessages(state.messages, summaryMessageThreshold, summaryCharacterThreshold)) return {}
+      if (!shouldSummarizeMessages(state.messages, summaryMessageThreshold, summaryCharacterThreshold)) return { request: null }
       const summary = await dependencies.model.summarize(state.summary, state.messages)
-      return { summary, messages: recentAssistantMessages(state.messages, recentMessageCount) }
+      return { summary, messages: recentAssistantMessages(state.messages, recentMessageCount), request: null }
     })
     .addEdge(START, 'respond')
     .addConditionalEdges('respond', (state) => state.pendingProposal ? 'proposal' : 'answer', {
@@ -491,7 +500,8 @@ export const createAssistantGraph = (
         message.turnId === request.turnId && message.role === 'assistant')
       if (completedTurn && previous) return result({ ...previous, assistantMessage: completedTurn })
       const existingUserMessage = previous?.messages.find((message) =>
-        message.turnId === request.turnId && message.role === 'user')
+        message.turnId === request.turnId && message.role === 'user') ??
+        request.rehydratedMessages?.find((message) => message.turnId === request.turnId && message.role === 'user')
       const userMessage: AssistantMessage = existingUserMessage ?? {
         id: crypto.randomUUID(),
         turnId: request.turnId,

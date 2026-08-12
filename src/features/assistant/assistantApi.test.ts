@@ -1,11 +1,38 @@
 import { describe, expect, it } from 'vitest'
-import { parseAssistantModelResult, verifyGooglePlace } from './assistantApi'
+import type { Itinerary } from '../../types/database'
+import { buildAssistantPrompt, localizedPlaceText, parseAssistantModelResult, verifyGooglePlace } from './assistantApi'
 
 describe('parseAssistantModelResult', () => {
   it('parses a regular assistant answer', () => {
     expect(parseAssistantModelResult({ reply: '第二天可以安排上野。', proposal: null })).toEqual({
       reply: '第二天可以安排上野。',
     })
+  })
+
+  it('includes recent preferences and the current itinerary in recommendation context', () => {
+    const itinerary = {
+      title: '東京旅行',
+      startDate: '2026-09-01',
+      endDate: '2026-09-02',
+      days: [{
+        id: 'day-1', date: '2026-09-01', startTime: '2026-09-01T09:00:00',
+        attractions: [{
+          id: 'place-1', name: '淺草寺', locationName: '東京淺草',
+          startTime: '2026-09-01T09:00:00', endTime: '2026-09-01T10:00:00',
+          duration: 60, transportMode: 'transit', travelTime: null,
+        }],
+      }],
+    } as Itinerary
+    const value = buildAssistantPrompt({
+      summary: '使用者喜歡慢步調。',
+      messages: [{ id: '1', turnId: '1', role: 'user', content: '不想走太多路', createdAt: '2026-08-12T00:00:00Z' }],
+      userText: '推薦附近景點',
+      itinerary,
+      dayRevisions: { 'day-1': 0 },
+    })
+    expect(value).toContain('不想走太多路')
+    expect(value).toContain('淺草寺')
+    expect(value).toContain('避開目前行程已有的景點')
   })
 
   it('rejects unknown itinerary operations', () => {
@@ -17,6 +44,12 @@ describe('parseAssistantModelResult', () => {
 })
 
 describe('verifyGooglePlace', () => {
+  it('does not replace a Chinese place name with Google romanization', () => {
+    expect(localizedPlaceText('道頓堀', 'Dotonbori', 'zh-TW')).toBe('道頓堀')
+    expect(localizedPlaceText('Dotonbori', '道頓堀', 'zh-TW')).toBe('道頓堀')
+    expect(localizedPlaceText('道頓堀', 'Dotonbori', 'en')).toBe('Dotonbori')
+  })
+
   it('falls back to the Maps JavaScript geocoder when Places Text Search is denied', async () => {
     class FakeGeocoder {
       async geocode() {

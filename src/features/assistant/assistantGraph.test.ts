@@ -247,11 +247,13 @@ describe('createAssistantGraph', () => {
     const turn = request()
     const pending = await graph.sendTurn(turn)
     expect(pending.interrupt?.kind).toBe('itinerary_proposal')
+    expect(pending.state.request?.turnId).toBe(turn.turnId)
     expect(proposals.saved).toHaveLength(1)
     expect(proposals.applied).toHaveLength(0)
 
     const completed = await graph.resumeProposal(turn.threadId, true)
     expect(completed.state.proposalStatus).toBe('applied')
+    expect(completed.state.request).toBeNull()
     expect(proposals.applied).toEqual(proposals.saved)
   })
 

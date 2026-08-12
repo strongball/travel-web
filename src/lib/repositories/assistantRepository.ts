@@ -3,6 +3,7 @@ import type {
   AssistantMessage,
   ItineraryChangeProposal,
 } from '../../features/assistant/types'
+import { ASSISTANT_GRAPH_VERSION } from '../../features/assistant/types'
 import { supabase } from '../supabase'
 
 export type AssistantThread = {
@@ -49,7 +50,7 @@ export async function createAssistantThread(itineraryId: string, ownerId: string
     itinerary_id: itineraryId,
     owner_id: ownerId,
     title: '新對話',
-    graph_version: 1,
+    graph_version: ASSISTANT_GRAPH_VERSION,
   }).select('*').single()
   if (error) throw error
   return mapThread(data as Row)
@@ -110,7 +111,12 @@ export async function saveAssistantProposal(
     after_snapshot: afterDays,
     expected_revisions: proposal.expectedDayRevisions,
     change_summary: proposal.explanation || proposal.title,
-  }, { onConflict: 'thread_id,turn_id' })
+  }, {
+    onConflict: 'thread_id,turn_id',
+    // A replay after confirmation must never turn an applied/rejected proposal
+    // back into pending. The first canonical proposal wins for this turn.
+    ignoreDuplicates: true,
+  })
   if (error) throw error
 }
 

@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai'
 import type { Attraction, Itinerary } from '../../types/database'
 import { supabase } from '../../lib/supabase'
+import i18n from '../../i18n'
 import { geocodeWithGoogle, loadGoogleMaps } from '../travel/googleMaps'
 import type {
   AssistantAttractionDraft,
@@ -12,6 +13,7 @@ import type {
 } from './types'
 
 const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
+const transportModes = new Set(['driving', 'walking', 'transit', 'bicycling'])
 
 async function gemini() {
   const { data } = await supabase.auth.getSession()
@@ -54,7 +56,12 @@ const itineraryForPrompt = (itinerary: Itinerary) => ({
   })),
 })
 
-const userLanguage = () => typeof navigator !== 'undefined' && navigator.language ? navigator.language : 'zh-TW'
+const userLanguage = (sample = '') => {
+  // The app can be opened with an English browser locale while the user is
+  // clearly writing Traditional Chinese. Prefer the language of this turn.
+  if (/[㐀-鿿]/.test(sample)) return 'zh-TW'
+  return i18n.resolvedLanguage || i18n.language || 'zh-TW'
+}
 
 const responseShape = `{
   "reply":"answer in the user's language",
@@ -72,15 +79,18 @@ const responseShape = `{
   }
 }`
 
-function prompt(request: AssistantModelRequest) {
+export function buildAssistantPrompt(request: AssistantModelRequest) {
   const history = request.messages.slice(-10).map((message) => `${message.role}: ${message.content}`).join('\n')
   return [
     '你是旅遊行程助理。回答使用者問題，也能在使用者明確要求時提出每日行程修改。',
+    '回覆前必須先綜合先前摘要、近期對話與目前完整行程。近期對話中較新的偏好、否定或修正優先於較舊內容。',
+    '推薦必須對應使用者正在討論的城市、日期、步調與偏好，避開目前行程已有的景點，並利用既有行程的空檔與鄰近區域；不可像全新對話一樣忽略前文。',
+    '若使用者指的日期、地區或修改方向不明確，先提問澄清且 proposal 必須為 null。修改時只動使用者要求的部分，保留其他日期與景點。',
     '只能修改現有日期的開始時間與景點；不可修改旅程日期、幣別、費用或待辦。',
     '一般推薦或詢問只回答，不要產生 proposal。只有「加入、刪除、移動、調整、幫我排」等明確操作要求才產生 proposal。',
     '所有既有 dayId/attractionId 必須逐字使用提供資料。新增景點 id 必須使用 UUID。',
     'reorder_attractions 可以只列出要移動的景點，未列出的景點會維持原本相對順序。',
-    `請使用使用者語言（${userLanguage()}）回答。新增景點的 locationName 請包含城市與國家（例如「道頓堀，大阪，日本」）；可先將座標和 placeId 設 null，系統會用 Google Places 查證，找不到時會保留空值。不要虛構地址或價格；交通時間請依景點距離、transportMode 與行程脈絡估算整數分鐘，無法合理估算時填 null。`,
+    `請使用使用者語言（${userLanguage(request.userText)}）回答，景點名稱與地點名稱也要使用這個語言；不要把日文或中文轉成英文羅馬拼音。新增景點的 locationName 請包含城市與國家（例如「道頓堀，大阪，日本」）；可先將座標和 placeId 設 null，系統會用 Google Places 查證，找不到時會保留空值。不要虛構地址或價格；交通時間請依景點距離、transportMode 與行程脈絡估算整數分鐘，無法合理估算時填 null。`,
     'update_attraction 的 changes 只放需要變動的欄位。',
     `只回傳合法 JSON，格式：${responseShape}`,
     request.summary ? `先前摘要：${request.summary}` : '',
@@ -105,7 +115,9 @@ function parseAttraction(value: unknown): AssistantAttractionDraft {
     latitude: typeof value.latitude === 'number' ? value.latitude : null,
     longitude: typeof value.longitude === 'number' ? value.longitude : null,
     duration: typeof value.duration === 'number' && value.duration >= 0 ? Math.round(value.duration) : 60,
-    transportMode: typeof value.transportMode === 'string' ? value.transportMode : 'transit',
+    transportMode: typeof value.transportMode === 'string' && transportModes.has(value.transportMode)
+      ? value.transportMode
+      : 'transit',
     travelTime: typeof value.travelTime === 'number' && Number.isFinite(value.travelTime) && value.travelTime >= 0
       ? Math.round(value.travelTime)
       : null,
@@ -170,6 +182,25 @@ const itineraryLocationContext = (itinerary: Itinerary) => [
   ...(itinerary.days ?? []).flatMap((day) => day.attractions.slice(0, 2).flatMap((attraction) => [attraction.name, attraction.locationName ?? ''])),
 ].filter(Boolean).join(' ').slice(0, 160)
 
+const hasHanCharacters = (value: string) => /[\u3400-\u9fff]/.test(value)
+
+export const localizedPlaceText = (
+  modelText: string | null,
+  googleText: string | null,
+  language: string,
+) => {
+  const modelValue = modelText?.trim() || null
+  const googleValue = googleText?.trim() || null
+  if (language.toLowerCase().startsWith('zh')) {
+    // Places sometimes returns a romanized label even for a zh-TW request.
+    // Prefer whichever source actually contains Han characters.
+    if (modelValue && hasHanCharacters(modelValue)) return modelValue
+    if (googleValue && hasHanCharacters(googleValue)) return googleValue
+    return modelValue ?? googleValue
+  }
+  return googleValue ?? modelValue
+}
+
 async function verifyPlaces(result: AssistantModelResult, itinerary: Itinerary, language = userLanguage()): Promise<AssistantModelResult> {
   if (!result.proposal) return result
   const addOperations = result.proposal.operations.filter((operation) => operation.type === 'add_attraction')
@@ -180,8 +211,12 @@ async function verifyPlaces(result: AssistantModelResult, itinerary: Itinerary, 
     const place = await verifyGooglePlace(operation.attraction.locationName || operation.attraction.name, loadGoogleMaps, context, language)
     verified.set(operation.attraction.id, {
       ...operation.attraction,
-      name: place?.name || operation.attraction.name,
-      locationName: place?.address || place?.name || operation.attraction.locationName,
+      name: localizedPlaceText(operation.attraction.name, place?.name ?? null, language) || operation.attraction.name,
+      locationName: localizedPlaceText(
+        operation.attraction.locationName,
+        place?.address || place?.name || null,
+        language,
+      ),
       placeId: place?.placeId ?? null,
       latitude: place?.latitude ?? null,
       longitude: place?.longitude ?? null,
@@ -283,8 +318,8 @@ async function generateJson(contents: string) {
 
 export const browserAssistantModel: AssistantModel = {
   async respond(request) {
-    const language = userLanguage()
-    const verified = await verifyPlaces(parseAssistantModelResult(await generateJson(prompt(request))), request.itinerary, language)
+    const language = userLanguage(request.userText)
+    const verified = await verifyPlaces(parseAssistantModelResult(await generateJson(buildAssistantPrompt(request))), request.itinerary, language)
     return verified
   },
   async summarize(currentSummary: string, messages: AssistantMessage[]) {

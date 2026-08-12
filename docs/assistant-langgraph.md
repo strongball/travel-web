@@ -32,7 +32,7 @@ const runner = createAssistantGraph(checkpointer, {
 
 | 欄位 | 用途 |
 | --- | --- |
-| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 1`。 |
+| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 2`。 |
 | `summary` | 已壓縮的舊對話脈絡。 |
 | `messages` | graph 目前保留的近期 user/assistant 訊息，不一定是完整聊天歷史。 |
 | `request` | 當次尚待 `respond` 處理的 `AssistantTurnRequest`；完成後清為 `null`。 |
@@ -53,7 +53,7 @@ START -> respond
 ```
 
 - `respond` 呼叫 `AssistantModel.respond`、建立 assistant message、解析並驗證 operations。
-- `assistantApi` 會把 `navigator.language` 傳給 Gemini、Places 與 Geocoder；Google 找不到新增景點時保留 `placeId`、座標為 `null`，不讓整個提案失敗。給模型的行程 context 只保留旅程名稱/日期範圍、每日日期/開始時間，以及供提案引用的 day/attraction ID、順序、名稱、地點、時段、停留時間與交通資訊；不包含費用、描述、revision、Place ID 或座標等內部欄位。交通時間由 Gemini 依景點脈絡與交通方式估算整數分鐘；不確定時填 `null`。此流程不呼叫 Routes/Directions，因此不會因路線 API 延遲。
+- `assistantApi` 會依 i18n 的目前語言（中文輸入時優先使用 `zh-TW`）傳給 Gemini、Places 與 Geocoder，並要求景點名稱不要使用英文羅馬拼音。中文介面若 Google 仍回傳羅馬拼音，會優先保留模型產生的中文名稱；Google 找不到新增景點時保留 `placeId`、座標為 `null`，不讓整個提案失敗。給模型的行程 context 只保留旅程名稱/日期範圍、每日日期/開始時間，以及供提案引用的 day/attraction ID、順序、名稱、地點、時段、停留時間與交通資訊；不包含費用、描述、revision、Place ID 或座標等內部欄位。prompt 要求推薦先合併摘要、近期對話與完整行程，尊重較新的偏好/否定、避開已排景點並配合當日區域與步調。交通時間由 Gemini 依景點脈絡與交通方式估算整數分鐘；不確定時填 `null`。此流程不呼叫 Routes/Directions，因此不會因路線 API 延遲。
 - `persist_proposal` 在暫停前寫入 canonical pending proposal。這個寫入必須能以 proposal/turn ID 冪等重試。
 - `approval` 本身不做副作用；它是恢復流程的 routing marker。
 - `apply_proposal`、`reject_proposal` 位於確認決策之後，才呼叫 proposal persistence。拒絕是控制決策，不會再觸發摘要或另一個模型回合；輸入框會直接恢復，可繼續討論。
@@ -211,9 +211,11 @@ checkpointer 變更還應以 Supabase local/preview 環境測試 RLS、RPC CAS�
 | --- | --- |
 | `Called interrupt() outside the context of a graph` | 使用了動態 `interrupt()`；恢復 `interruptBefore: ['approval']` 的 browser-safe 設計。 |
 | `AssistantGraphVersionError` | 本地程式與 checkpoint 版本不同；從 canonical messages/proposal 重建，不要直接 resume。 |
+| `Assistant turn request is missing` | 舊 checkpoint 的 request 狀態不完整；UI 會刪除該 runtime checkpoint，依 canonical messages 與本次 request 重建後重試。 |
 | `Assistant thread changed on another device` / `40001` | CAS 偵測到同 thread 已前進；重新載入 thread/state，禁止覆蓋或無限自動重試。 |
 | Proposal 一直停在 pending | 確認 canonical proposal 已由 `savePending` 寫入，再檢查 `resumeProposal` 是否使用同一 `threadId`。 |
 | 核准後重複套用 | `AssistantProposalPersistence.apply` 未以 proposal ID 使用原子、冪等 RPC；應呼叫 `apply_assistant_proposal`。 |
+| 套用後確認按鈕再次出現 | canonical proposal 被 replay 的 `savePending` 重設為 pending，或舊的列表請求覆蓋新狀態。保存 proposal 必須使用 `ignoreDuplicates`，UI 以 load sequence 排除過期回應，並在確認後固定顯示 RPC 的 `applied`/`expired` 終態。 |
 | 核准後變成 expired | 目標 day revision 已改變；這是預期的衝突保護，重新產生 proposal。 |
 | Checkpoint 無法反序列化 | type/payload 配對被改壞、base64 被截斷，或 graph version 未升；不可嘗試用純 JSON 強行恢復。 |
 | 摘要後舊訊息在聊天室消失 | UI 錯把 graph `messages` 當完整歷史；聊天室應查 `assistant_messages`，state 只保留模型近期上下文。 |
