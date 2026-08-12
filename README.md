@@ -78,3 +78,10 @@ In GitHub:
 
 This app does not need client-side pathname routing, so GitHub Pages refreshes
 do not require a `404.html` workaround.
+
+## PWA
+
+The production build registers a service worker and includes an installable
+manifest. On GitHub Pages the PWA scope is `/travel-web/`; the service worker
+caches the app shell for an offline fallback, while Supabase, Google Maps, and
+receipt scanning still require a network connection.
