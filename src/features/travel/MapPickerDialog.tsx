@@ -143,7 +143,6 @@ export function MapPickerDialog({
         textQuery: query.trim(),
         fields: ['id', 'displayName', 'formattedAddress', 'location', 'googleMapsURI'],
         language: 'zh-TW',
-        region: 'TW',
         maxResultCount: 5,
       })
       setResults(response.places)

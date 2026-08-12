@@ -84,12 +84,63 @@ export const fetchItineraries = async (): Promise<Itinerary[]> => {
   return data.map((row) => mapItinerary(row as Row))
 }
 
-const parseLocation = (value: unknown) => {
-  if (typeof value !== 'string') return { latitude: null, longitude: null }
-  const match = value.match(/POINT\s*\(([-\d.]+)\s+([-\d.]+)\)/i)
-  return match
-    ? { longitude: Number(match[1]), latitude: Number(match[2]) }
-    : { latitude: null, longitude: null }
+const emptyLocation = { latitude: null, longitude: null }
+
+const coordinates = (longitude: unknown, latitude: unknown) => {
+  const nextLongitude = Number(longitude)
+  const nextLatitude = Number(latitude)
+  return Number.isFinite(nextLongitude) && Number.isFinite(nextLatitude)
+    ? { longitude: nextLongitude, latitude: nextLatitude }
+    : emptyLocation
+}
+
+const parseLocation = (value: unknown): { latitude: number | null; longitude: number | null } => {
+  if (Array.isArray(value) && value.length >= 2) {
+    return coordinates(value[0], value[1])
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Row
+    if (Array.isArray(record.coordinates) && record.coordinates.length >= 2) {
+      return coordinates(record.coordinates[0], record.coordinates[1])
+    }
+    if ('longitude' in record || 'latitude' in record || 'lng' in record || 'lat' in record) {
+      return coordinates(record.longitude ?? record.lng, record.latitude ?? record.lat)
+    }
+    return emptyLocation
+  }
+
+  if (typeof value !== 'string') return emptyLocation
+  const text = value.trim()
+  const wktMatch = text.match(/POINT(?:\s+Z)?\s*\(([-\d.]+)\s+([-\d.]+)/i)
+  if (wktMatch) return coordinates(wktMatch[1], wktMatch[2])
+
+  if (/^\{/.test(text)) {
+    try {
+      return parseLocation(JSON.parse(text))
+    } catch {
+      return emptyLocation
+    }
+  }
+
+  const hex = text.replace(/^0x/i, '')
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length < 42 || hex.length % 2 !== 0) {
+    return emptyLocation
+  }
+  try {
+    const bytes = new Uint8Array(hex.match(/.{2}/g)!.map((pair) => Number.parseInt(pair, 16)))
+    const view = new DataView(bytes.buffer)
+    const littleEndian = view.getUint8(0) === 1
+    const geometryType = view.getUint32(1, littleEndian)
+    const hasSrid = (geometryType & 0x20000000) !== 0
+    const pointOffset = hasSrid ? 9 : 5
+    return coordinates(
+      view.getFloat64(pointOffset, littleEndian),
+      view.getFloat64(pointOffset + 8, littleEndian),
+    )
+  } catch {
+    return emptyLocation
+  }
 }
 
 const mapAttraction = (row: Row): Attraction => {

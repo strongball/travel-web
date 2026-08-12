@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -20,6 +21,7 @@ import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import RouteRoundedIcon from '@mui/icons-material/RouteRounded'
+import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
 import {
   Alert,
@@ -115,7 +117,7 @@ const transportOptions = [
 ]
 
 const transportLabel = (mode: string | null) =>
-  transportOptions.find((option) => option.value === mode)?.label ?? '尚未設定交通'
+  transportOptions.find((option) => option.value === mode)?.label ?? '大眾運輸'
 
 const transportIcon = (mode: string | null) => {
   switch (mode) {
@@ -128,7 +130,7 @@ const transportIcon = (mode: string | null) => {
     case 'transit':
       return <DirectionsTransitRoundedIcon />
     default:
-      return <RouteRoundedIcon />
+      return <DirectionsTransitRoundedIcon />
   }
 }
 
@@ -219,7 +221,7 @@ const emptyAttraction = (dayId: string): Attraction => ({
   latitude: null,
   longitude: null,
   duration: 60,
-  transportMode: null,
+  transportMode: 'transit',
   travelTime: null,
   placeId: null,
   locationName: null,
@@ -237,9 +239,17 @@ const hasAttractionMapReference = (attraction: Attraction) =>
   )
 
 const attractionRoutePoint = (attraction: Attraction): GoogleRoutePoint | null => {
-  if (attraction.placeId) return { placeId: attraction.placeId }
-  if (attraction.latitude !== null && attraction.longitude !== null) {
-    return { lat: attraction.latitude, lng: attraction.longitude }
+  const hasCoords = attraction.latitude !== null && attraction.longitude !== null
+  const hasPlaceId = Boolean(attraction.placeId)
+  const label = attraction.locationName?.trim() || attraction.name.trim() || null
+
+  if (hasCoords || hasPlaceId || label) {
+    return {
+      lat: attraction.latitude,
+      lng: attraction.longitude,
+      placeId: attraction.placeId,
+      label,
+    }
   }
   return null
 }
@@ -421,7 +431,7 @@ export function TravelWorkspacePage({
 
   const openTravelEditor = (origin: Attraction, attraction: Attraction) => {
     setTravelOrigin({ ...origin })
-    setTravelEditor({ ...attraction })
+    setTravelEditor({ ...attraction, transportMode: attraction.transportMode ?? 'transit' })
   }
 
   const saveTravelInfo = async () => {
@@ -480,20 +490,6 @@ export function TravelWorkspacePage({
 
   const saveReorderedDays = async (nextDays: TripDay[]) => {
     if (!selectedItinerary) return
-    await onSaveItinerary({ ...selectedItinerary, days: nextDays })
-  }
-
-  const applyGoogleEstimate = async (attractionId: string, estimate: GoogleRouteEstimate, mode: string) => {
-    if (!selectedItinerary) return
-    const nextDays = days.map((day) => {
-      if (!day.attractions.some((attraction) => attraction.id === attractionId)) return day
-      const nextAttractions = day.attractions.map((attraction) =>
-        attraction.id === attractionId
-          ? { ...attraction, transportMode: attraction.transportMode ?? mode, travelTime: estimate.durationMinutes }
-          : attraction,
-      )
-      return recalculateDayTimes(day, nextAttractions)
-    })
     await onSaveItinerary({ ...selectedItinerary, days: nextDays })
   }
 
@@ -799,10 +795,6 @@ export function TravelWorkspacePage({
         }}
         onChange={setTravelEditor}
         onSave={() => void saveTravelInfo()}
-        onApplyGoogleEstimate={(estimate, mode) => {
-          if (!travelEditor) return Promise.resolve()
-          return applyGoogleEstimate(travelEditor.id, estimate, mode)
-        }}
       />
 
       <Suspense fallback={null}>
@@ -910,6 +902,131 @@ function TripListPage({
   )
 }
 
+function AttractionSortDialog({
+  open,
+  day,
+  onClose,
+  onApply,
+}: {
+  open: boolean
+  day: TripDay
+  onClose: () => void
+  onApply: (attractions: Attraction[]) => void
+}) {
+  const [draftAttractions, setDraftAttractions] = useState(day.attractions)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const draftRef = useRef(draftAttractions)
+  const cleanupDrag = useRef<(() => void) | null>(null)
+  const draggedIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    draftRef.current = day.attractions
+    setDraftAttractions(day.attractions)
+    setDraggingId(null)
+    cleanupDrag.current?.()
+  }, [day, open])
+
+  useEffect(() => () => cleanupDrag.current?.(), [])
+
+  const moveDraft = (attractionId: string, overId: string, after: boolean) => {
+    const current = draftRef.current
+    const fromIndex = current.findIndex((item) => item.id === attractionId)
+    const overIndex = current.findIndex((item) => item.id === overId)
+    if (fromIndex < 0 || overIndex < 0 || fromIndex === overIndex) return
+    const insertionIndex = after ? overIndex + 1 : overIndex
+    const next = [...current]
+    const [moved] = next.splice(fromIndex, 1)
+    const adjustedIndex = fromIndex < insertionIndex ? insertionIndex - 1 : insertionIndex
+    next.splice(adjustedIndex, 0, moved)
+    draftRef.current = next
+    setDraftAttractions(next)
+  }
+
+  const beginPointerDrag = (event: ReactPointerEvent<HTMLElement>, attractionId: string) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    cleanupDrag.current?.()
+    draggedIdRef.current = attractionId
+    setDraggingId(attractionId)
+    const finish = () => {
+      cleanupDrag.current?.()
+      cleanupDrag.current = null
+      draggedIdRef.current = null
+      setDraggingId(null)
+    }
+    const handleMove = (moveEvent: PointerEvent) => {
+      moveEvent.preventDefault()
+      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest<HTMLElement>('[data-sort-id]')
+      const overId = target?.dataset.sortId
+      if (!overId || overId === draggedIdRef.current) return
+      const bounds = target.getBoundingClientRect()
+      moveDraft(attractionId, overId, moveEvent.clientY > bounds.top + bounds.height / 2)
+    }
+    window.addEventListener('pointermove', handleMove, { passive: false })
+    window.addEventListener('pointerup', finish, { once: true })
+    window.addEventListener('pointercancel', finish, { once: true })
+    cleanupDrag.current = () => {
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+    }
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle sx={{ pb: 1 }}>編排景點順序</DialogTitle>
+      <DialogContent dividers>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          這裡先預覽新的順序，按「套用排序」後才會更新行程。
+        </Typography>
+        {draftAttractions.length === 0 ? (
+          <Alert severity="info">這天還沒有可以排序的景點。</Alert>
+        ) : (
+          <Stack spacing={1}>
+            {draftAttractions.map((attraction, index) => (
+              <Paper
+                key={attraction.id}
+                data-sort-id={attraction.id}
+                variant="outlined"
+                sx={{
+                  p: 0.75,
+                  borderRadius: 1.5,
+                  opacity: draggingId === attraction.id ? 0.48 : 1,
+                  transition: 'opacity 120ms ease, border-color 120ms ease',
+                  borderColor: draggingId === attraction.id ? 'primary.main' : 'divider',
+                }}
+              >
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                  <IconButton
+                    size="small"
+                    aria-label={`拖曳排序 ${attraction.name}`}
+                    onPointerDown={(event) => beginPointerDrag(event, attraction.id)}
+                    sx={{ width: 42, height: 42, touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', color: 'primary.main', bgcolor: 'rgba(13, 118, 110, 0.08)' }}
+                  >
+                    <DragHandleRoundedIcon />
+                  </IconButton>
+                  <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem', bgcolor: 'action.hover', color: 'text.secondary' }}>{index + 1}</Avatar>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>{attraction.name || '未命名景點'}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                      {attraction.startTime?.slice(11, 16) ?? '尚未安排時間'} · {attraction.duration} 分鐘
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Paper>
+            ))}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>取消</Button>
+        <Button variant="contained" onClick={() => onApply(draftAttractions)}>套用排序</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 function ScheduleSection({
   days,
   currency,
@@ -931,85 +1048,43 @@ function ScheduleSection({
 }) {
   const [activeDayIndex, setActiveDayIndex] = useState(0)
   const [visibleDays, setVisibleDays] = useState(days)
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [savingOrder, setSavingOrder] = useState(false)
   const [mapOpen, setMapOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
   const visibleDaysRef = useRef(visibleDays)
-  const cleanupDrag = useRef<(() => void) | null>(null)
-  const draggedIdRef = useRef<string | null>(null)
-  const changedDuringDrag = useRef(false)
   const saveQueue = useRef(Promise.resolve())
 
   useEffect(() => {
     visibleDaysRef.current = days
     setVisibleDays(days)
-    return () => cleanupDrag.current?.()
   }, [days])
 
   useEffect(() => {
     if (activeDayIndex >= days.length) setActiveDayIndex(Math.max(days.length - 1, 0))
   }, [activeDayIndex, days.length])
 
-  const moveAttraction = (dayId: string, attractionId: string, overId: string, after: boolean) => {
+  const applyAttractionOrder = (attractions: Attraction[]) => {
     const currentDays = visibleDaysRef.current
-    const day = currentDays.find((item) => item.id === dayId)
-    if (!day) return false
-    const fromIndex = day.attractions.findIndex((item) => item.id === attractionId)
-    const overIndex = day.attractions.findIndex((item) => item.id === overId)
-    if (fromIndex < 0 || overIndex < 0 || fromIndex === overIndex) return false
-
-    const insertionIndex = after ? overIndex + 1 : overIndex
-    const nextAttractions = [...day.attractions]
-    const [moved] = nextAttractions.splice(fromIndex, 1)
-    const adjustedIndex = fromIndex < insertionIndex ? insertionIndex - 1 : insertionIndex
-    nextAttractions.splice(adjustedIndex, 0, { ...moved, travelTime: null })
-    const nextDays = currentDays.map((item) => item.id === dayId ? recalculateDayTimes(item, nextAttractions) : item)
+    const currentDay = currentDays[Math.min(activeDayIndex, currentDays.length - 1)]
+    if (!currentDay) return
+    const previousAttractionIds = currentDay.attractions.map((item) => item.id)
+    const nextAttractions = attractions.map((attraction, index) => {
+      const previousIndex = previousAttractionIds.indexOf(attraction.id)
+      const previousOriginId = previousIndex > 0 ? previousAttractionIds[previousIndex - 1] : null
+      const nextOriginId = index > 0 ? attractions[index - 1].id : null
+      return previousOriginId === nextOriginId ? attraction : { ...attraction, travelTime: null }
+    })
+    const hasChanged = nextAttractions.some((attraction, index) => attraction.id !== previousAttractionIds[index])
+    if (!hasChanged) {
+      setSortOpen(false)
+      return
+    }
+    const nextDays = currentDays.map((item) => item.id === currentDay.id ? recalculateDayTimes(item, nextAttractions) : item)
     visibleDaysRef.current = nextDays
     setVisibleDays(nextDays)
-    changedDuringDrag.current = true
-    return true
-  }
-
-  const beginPointerDrag = (event: ReactPointerEvent<HTMLElement>, attractionId: string, dayId: string) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return
-    event.preventDefault()
-    cleanupDrag.current?.()
-    draggedIdRef.current = attractionId
-    changedDuringDrag.current = false
-    setDraggingId(attractionId)
-
-    const finish = () => {
-      cleanupDrag.current?.()
-      cleanupDrag.current = null
-      setDraggingId(null)
-      draggedIdRef.current = null
-      if (changedDuringDrag.current) {
-        const snapshot = visibleDaysRef.current
-        setSavingOrder(true)
-        saveQueue.current = saveQueue.current
-          .catch(() => undefined)
-          .then(() => onReorder(snapshot))
-          .finally(() => setSavingOrder(false))
-      }
-    }
-    const handleMove = (moveEvent: PointerEvent) => {
-      moveEvent.preventDefault()
-      const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)
-        ?.closest<HTMLElement>('[data-sort-id]')
-      const overId = target?.dataset.sortId
-      if (!overId || overId === draggedIdRef.current) return
-      const bounds = target.getBoundingClientRect()
-      moveAttraction(dayId, attractionId, overId, moveEvent.clientY > bounds.top + bounds.height / 2)
-    }
-    const handleUp = () => finish()
-    window.addEventListener('pointermove', handleMove, { passive: false })
-    window.addEventListener('pointerup', handleUp, { once: true })
-    window.addEventListener('pointercancel', handleUp, { once: true })
-    cleanupDrag.current = () => {
-      window.removeEventListener('pointermove', handleMove)
-      window.removeEventListener('pointerup', handleUp)
-      window.removeEventListener('pointercancel', handleUp)
-    }
+    setSortOpen(false)
+    saveQueue.current = saveQueue.current
+      .catch(() => undefined)
+      .then(() => onReorder(nextDays))
   }
 
   if (days.length === 0) {
@@ -1043,104 +1118,141 @@ function ScheduleSection({
         </Tabs>
       </Paper>
 
-      <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: { xs: 1.25, md: 2 } }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 1.5, sm: 0 }} sx={{ alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', mb: 2 }}>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: { xs: 1, md: 1.5 } }}>
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, flex: 1 }}>
             <Avatar sx={{ bgcolor: 'secondary.main', color: 'common.white', width: 34, height: 34, fontWeight: 900 }}>{activeDayIndex + 1}</Avatar>
-            <Box>
+            <Box sx={{ minWidth: 0 }}>
               <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 800 }}>DAY {activeDayIndex + 1}</Typography>
-              <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>{formatDate(activeDay.date)}</Typography>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }} noWrap>{formatDate(activeDay.date)}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                {activeDay.startTime?.slice(11, 16) ?? '09:00'} 開始 · {activeDay.attractions.length} 個景點
+              </Typography>
             </Box>
           </Stack>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-            <TextField size="small" type="time" label="開始" value={activeDay.startTime?.slice(11, 16) ?? '09:00'} slotProps={{ inputLabel: { shrink: true } }} onChange={(event) => onStartTimeChange(activeDay.id, event.target.value)} sx={{ width: 110 }} />
-            <Button size="small" startIcon={<MapRoundedIcon />} onClick={() => setMapOpen(true)}>開啟地圖</Button>
-          </Stack>
-        </Stack>
-        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', mb: 1, color: 'text.secondary' }}>
-          <DragHandleRoundedIcon fontSize="small" />
-          <Typography variant="caption">拖曳右側把手即可調整順序</Typography>
-          {savingOrder ? <Stack direction="row" spacing={0.5} sx={{ ml: 'auto', alignItems: 'center' }}><CircularProgress size={12} /><Typography variant="caption">儲存中…</Typography></Stack> : null}
-        </Stack>
-        {activeDay.attractions.length === 0 ? (
-          <Box sx={{ bgcolor: 'action.hover', borderRadius: 2, p: 2.5, textAlign: 'center' }}>
-            <PlaceRoundedIcon color="disabled" />
-            <Typography color="text.secondary" variant="body2">這天還沒有排景點</Typography>
-          </Box>
-        ) : (
-          <Stack spacing={1.25}>
-            {activeDay.attractions.map((attraction, attractionIndex) => (
-              <Box
-                key={attraction.id}
-                data-sort-id={attraction.id}
-                sx={{
-                  opacity: draggingId === attraction.id ? 0.48 : 1,
-                  borderRadius: 2,
-                }}
+          <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+            <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
+              <IconButton
+                color="primary"
+                aria-label="查看今日景點地圖"
+                onClick={() => setMapOpen(true)}
+                sx={{ width: 40, height: 40, bgcolor: 'rgba(13, 118, 110, 0.07)' }}
               >
-                {attractionIndex > 0 ? <TravelInfoCard origin={activeDay.attractions[attractionIndex - 1]} attraction={attraction} onEdit={() => onEditTravelInfo(activeDay.attractions[attractionIndex - 1], attraction)} /> : null}
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'stretch' }}>
-                  <Box sx={{ width: { xs: 42, sm: 56 }, pt: 1, textAlign: 'right', flexShrink: 0 }}>
-                    <Typography variant="caption" color="text.secondary">{attraction.startTime ? attraction.startTime.slice(11, 16) : `${9 + attractionIndex}:00`}</Typography>
-                  </Box>
-                  <Box sx={{ width: 2, bgcolor: 'primary.light', borderRadius: 2 }} />
-                  <Card variant="outlined" sx={{ flex: 1, borderRadius: 2.5 }}>
-                    <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
-                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 800 }}>{attraction.name}</Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>{attraction.locationName || attraction.description || `${attraction.duration} 分鐘`}</Typography>
-                        </Box>
-                        <Stack direction="row" sx={{ alignItems: 'center' }}>
-                          <IconButton
-                            size="small"
-                            aria-label={`拖曳排序 ${attraction.name}`}
-                            onPointerDown={(event) => beginPointerDrag(event, attraction.id, activeDay.id)}
-                            sx={{ touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', width: 44, height: 44 }}
-                          >
-                            <DragHandleRoundedIcon fontSize="small" color="action" />
-                          </IconButton>
-                          <IconButton size="small" aria-label={`編輯 ${attraction.name}`} onClick={() => onEditAttraction(activeDay, attraction)}><EditRoundedIcon fontSize="small" /></IconButton>
-                          <IconButton size="small" color="error" aria-label={`刪除 ${attraction.name}`} onClick={() => onDeleteAttraction(activeDay, attraction.id)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
-                        </Stack>
-                      </Stack>
-                      <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
-                        <Chip size="small" label={`${attraction.duration} 分鐘`} />
-                        {attraction.cost > 0 ? <Chip size="small" label={formatAmount(attraction.cost, currency)} /> : null}
-                        {attractionMapPoint(attraction) ? (
-                          <Tooltip title="在 Google 地圖查看景點">
-                            <IconButton
-                              component="a"
-                              size="small"
-                              href={googlePlaceUrl(attractionMapPoint(attraction), attraction.placeId)}
-                              target="_blank"
-                              rel="noreferrer"
-                              color="primary"
-                              aria-label={`在 Google 地圖查看 ${attraction.name}`}
-                              sx={{ width: 40, height: 40 }}
-                            >
-                              <PlaceRoundedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        ) : null}
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                </Stack>
-              </Box>
-            ))}
+                <MapRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="編排今日景點順序">
+              <IconButton
+                color="primary"
+                aria-label="編排今日景點順序"
+                onClick={() => setSortOpen(true)}
+                sx={{ width: 40, height: 40, bgcolor: 'rgba(13, 118, 110, 0.07)' }}
+              >
+                <SortRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Stack>
-        )}
-        <Button
-          fullWidth
-          variant="outlined"
-          startIcon={<AddRoundedIcon />}
-          onClick={() => onAddAttraction(activeDay.id)}
-          sx={{ mt: 1.5 }}
-        >
-          新增景點
-        </Button>
+        </Stack>
+        <Divider sx={{ my: 1 }} />
+          {activeDay.attractions.length === 0 ? (
+            <Box sx={{ bgcolor: 'action.hover', borderRadius: 2, p: 2.5, textAlign: 'center' }}>
+              <PlaceRoundedIcon color="disabled" />
+              <Typography color="text.secondary" variant="body2">這天還沒有排景點</Typography>
+            </Box>
+          ) : (
+            <Stack spacing={1.25}>
+              {activeDay.attractions.map((attraction, attractionIndex) => (
+                <Box key={attraction.id} sx={{ borderRadius: 2 }}>
+                  {attractionIndex === 0 ? (
+                    <Paper
+                      variant="outlined"
+                      sx={{
+                        width: { xs: 'calc(100% - 50px)', sm: 'calc(100% - 64px)' },
+                        ml: { xs: '50px', sm: '64px' },
+                        mb: 1,
+                        p: 0.65,
+                        borderRadius: 2,
+                        borderColor: 'primary.main',
+                        bgcolor: 'rgba(13, 118, 110, 0.06)',
+                      }}
+                    >
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <Box sx={{ width: 28, height: 28, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: 'primary.main', color: 'common.white', flexShrink: 0 }}>
+                          <AccessTimeRoundedIcon sx={{ fontSize: 17 }} />
+                        </Box>
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
+                          <Typography variant="caption" color="primary.main" sx={{ display: 'block', fontWeight: 900 }}>當日開始</Typography>
+                        </Box>
+                        <TextField
+                          size="small"
+                          type="time"
+                          value={activeDay.startTime?.slice(11, 16) ?? '09:00'}
+                          slotProps={{ htmlInput: { step: 300, 'aria-label': '每日開始時間' } }}
+                          onChange={(event) => onStartTimeChange(activeDay.id, event.target.value)}
+                          sx={{
+                            width: { xs: 148, sm: 164 },
+                            '& .MuiOutlinedInput-root': { bgcolor: 'background.paper', borderRadius: 1.5 },
+                            '& input': { py: 0.6, fontSize: '0.84rem', fontWeight: 800, letterSpacing: 0.1 },
+                          }}
+                        />
+                      </Stack>
+                    </Paper>
+                  ) : null}
+                  {attractionIndex > 0 ? <TravelInfoCard origin={activeDay.attractions[attractionIndex - 1]} attraction={attraction} onEdit={() => onEditTravelInfo(activeDay.attractions[attractionIndex - 1], attraction)} /> : null}
+                  <Stack direction="row" spacing={1.25} sx={{ alignItems: 'stretch' }}>
+                    <Box sx={{ width: { xs: 42, sm: 56 }, pt: 1, textAlign: 'right', flexShrink: 0 }}>
+                      <Typography variant="caption" color="text.secondary">{attraction.startTime ? attraction.startTime.slice(11, 16) : `${9 + attractionIndex}:00`}</Typography>
+                    </Box>
+                    <Box sx={{ width: 2, bgcolor: 'primary.light', borderRadius: 2 }} />
+                    <Card variant="outlined" sx={{ flex: 1, borderRadius: 2.5 }}>
+                      <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+                      <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>{attraction.name}</Typography>
+                            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{attraction.locationName || attraction.description || `${attraction.duration} 分鐘`}</Typography>
+                          </Box>
+                          <Stack direction="row" sx={{ alignItems: 'center' }}>
+                            {attractionMapPoint(attraction) ? (
+                              <Tooltip title="在 Google 地圖查看景點">
+                                <IconButton
+                                  component="a"
+                                  size="small"
+                                  href={googlePlaceUrl(attractionMapPoint(attraction), attraction.placeId)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  color="primary"
+                                  aria-label={`在 Google 地圖查看 ${attraction.name}`}
+                                >
+                                  <PlaceRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            ) : null}
+                            <IconButton size="small" aria-label={`編輯 ${attraction.name}`} onClick={() => onEditAttraction(activeDay, attraction)}><EditRoundedIcon fontSize="small" /></IconButton>
+                            <IconButton size="small" color="error" aria-label={`刪除 ${attraction.name}`} onClick={() => onDeleteAttraction(activeDay, attraction.id)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+                          </Stack>
+                        </Stack>
+                        <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: 'wrap' }}>
+                          <Chip size="small" label={`${attraction.duration} 分鐘`} />
+                          {attraction.cost > 0 ? <Chip size="small" label={formatAmount(attraction.cost, currency)} /> : null}
+                        </Stack>
+                      </CardContent>
+                    </Card>
+                  </Stack>
+                </Box>
+              ))}
+            </Stack>
+          )}
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<AddRoundedIcon />}
+            onClick={() => onAddAttraction(activeDay.id)}
+            sx={{ mt: 1.5 }}
+          >
+            新增景點
+          </Button>
       </Paper>
+      <AttractionSortDialog open={sortOpen} day={activeDay} onClose={() => setSortOpen(false)} onApply={applyAttractionOrder} />
       <Suspense fallback={null}>
         <GoogleItineraryMapDialog open={mapOpen} day={activeDay} onClose={() => setMapOpen(false)} />
       </Suspense>
@@ -1156,7 +1268,6 @@ function TravelEditorDialog({
   onClose,
   onChange,
   onSave,
-  onApplyGoogleEstimate,
 }: {
   open: boolean
   origin: Attraction | null
@@ -1165,25 +1276,21 @@ function TravelEditorDialog({
   onClose: () => void
   onChange: (attraction: Attraction) => void
   onSave: () => void
-  onApplyGoogleEstimate: (estimate: GoogleRouteEstimate, mode: string) => void | Promise<void>
 }) {
   const [estimate, setEstimate] = useState<GoogleRouteEstimate | null>(null)
   const [estimating, setEstimating] = useState(false)
-  const [applying, setApplying] = useState(false)
   const [estimateError, setEstimateError] = useState<string | null>(null)
 
   useEffect(() => {
     setEstimate(null)
     setEstimateError(null)
-  }, [attraction?.id, attraction?.transportMode, open])
+  }, [attraction?.id, open])
 
   const originRoutePoint = origin ? attractionRoutePoint(origin) : null
   const destinationRoutePoint = attraction ? attractionRoutePoint(attraction) : null
   const canEstimate = Boolean(originRoutePoint && destinationRoutePoint)
-  const estimateMode = attraction?.transportMode ?? 'driving'
-  const estimateModeLabel = attraction?.transportMode
-    ? transportLabel(attraction.transportMode)
-    : '開車'
+  const estimateMode = attraction?.transportMode ?? 'transit'
+  const estimateModeLabel = transportLabel(estimateMode)
 
   const estimateRoute = async () => {
     if (!originRoutePoint || !destinationRoutePoint) return
@@ -1196,25 +1303,17 @@ function TravelEditorDialog({
         estimateMode,
       )
       setEstimate(nextEstimate)
+      if (attraction) {
+        onChange({
+          ...attraction,
+          transportMode: attraction.transportMode ?? 'transit',
+          travelTime: nextEstimate.durationMinutes,
+        })
+      }
     } catch (error) {
       setEstimateError(error instanceof Error ? error.message : 'Google 路線估算失敗')
     } finally {
       setEstimating(false)
-    }
-  }
-
-  const applyEstimate = async () => {
-    if (!estimate || !attraction) return
-    setApplying(true)
-    try {
-      await onApplyGoogleEstimate(estimate, estimateMode)
-      onChange({
-        ...attraction,
-        transportMode: attraction.transportMode ?? estimateMode,
-        travelTime: estimate.durationMinutes,
-      })
-    } finally {
-      setApplying(false)
     }
   }
 
@@ -1229,10 +1328,9 @@ function TravelEditorDialog({
               <Select
                 labelId="transport-mode-label"
                 label="移動方式"
-                value={attraction.transportMode ?? ''}
+                value={attraction.transportMode ?? 'transit'}
                 onChange={(event) => onChange({ ...attraction, transportMode: event.target.value || null })}
               >
-                <MenuItem value="">尚未設定（估算預設開車）</MenuItem>
                 {transportOptions.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}
               </Select>
             </FormControl>
@@ -1248,7 +1346,7 @@ function TravelEditorDialog({
                 <Box>
                   <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>Google 路線估算</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    目前方式：{transportLabel(attraction.transportMode)}{!attraction.transportMode ? '（預設開車）' : ''}
+                    目前方式：{transportLabel(attraction.transportMode ?? 'transit')}
                   </Typography>
                 </Box>
                 <Tooltip title={canEstimate ? '依目前選擇的交通方式估算' : '起點與景點至少都要有座標或景點 ID'}>
@@ -1257,7 +1355,7 @@ function TravelEditorDialog({
                       fullWidth
                       variant="outlined"
                       startIcon={estimating ? <CircularProgress size={18} /> : <RouteRoundedIcon />}
-                      disabled={!canEstimate || estimating || applying}
+                      disabled={!canEstimate || estimating}
                       onClick={() => void estimateRoute()}
                     >
                       {estimating ? '估算中…' : `以${estimateModeLabel}估算`}
@@ -1269,15 +1367,9 @@ function TravelEditorDialog({
                     <Typography variant="body2" color="text.secondary">
                       距離：{estimate.distanceMeters >= 1000 ? `${(estimate.distanceMeters / 1000).toFixed(1)} 公里` : `${Math.round(estimate.distanceMeters)} 公尺`} · 約 {estimate.durationMinutes} 分鐘
                     </Typography>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      disabled={applying}
-                      startIcon={applying ? <CircularProgress size={16} color="inherit" /> : undefined}
-                      onClick={() => void applyEstimate()}
-                    >
-                      {applying ? '套用中…' : '套用估算時間'}
-                    </Button>
+                    <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700 }}>
+                      已自動帶入移動時間，可直接儲存或手動調整。
+                    </Typography>
                   </Stack>
                 ) : null}
                 {estimateError ? <Typography variant="caption" color="error">{estimateError}</Typography> : null}
@@ -1336,7 +1428,7 @@ function TravelInfoCard({
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             {transportLabel(attraction.transportMode)}
           </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+          <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
             {attraction.travelTime !== null ? `${attraction.travelTime} 分鐘` : '尚未估算移動時間'}
           </Typography>
         </Box>

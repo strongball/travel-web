@@ -31,10 +31,47 @@ export const theme = createTheme({
       styleOverrides: {
         root: {
           minHeight: 52,
-          borderRadius: 10,
+          borderRadius: 8,
           '&.MuiInputBase-multiline': { minHeight: 'auto' },
         },
         input: { padding: '14px 14px' },
+        notchedOutline: {
+          '& legend': {
+            maxWidth: '0 !important',
+            padding: 0,
+          },
+        },
+      },
+    },
+    MuiInputLabel: {
+      styleOverrides: {
+        root: {
+          position: 'relative',
+          top: 'auto',
+          left: 'auto',
+          transform: 'none',
+          maxWidth: 'none',
+          marginBottom: 6,
+          color: '#53615d',
+          fontSize: '0.82rem',
+          fontWeight: 700,
+          lineHeight: 1.25,
+          pointerEvents: 'auto',
+          '&.Mui-focused': { color: '#0d766e' },
+          '&.Mui-error': { color: '#d32f2f' },
+          '&.Mui-disabled': { color: 'rgba(23, 33, 31, 0.38)' },
+        },
+        formControl: {
+          position: 'relative',
+          top: 'auto',
+          left: 'auto',
+          transform: 'none',
+          maxWidth: 'none',
+        },
+        shrink: {
+          transform: 'none',
+        },
+        asterisk: { color: '#d32f2f' },
       },
     },
     MuiSelect: {
