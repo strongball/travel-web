@@ -79,6 +79,7 @@ function prompt(request: AssistantModelRequest) {
     '只能修改現有日期的開始時間與景點；不可修改旅程日期、幣別、費用或待辦。',
     '一般推薦或詢問只回答，不要產生 proposal。只有「加入、刪除、移動、調整、幫我排」等明確操作要求才產生 proposal。',
     '所有既有 dayId/attractionId 必須逐字使用提供資料。新增景點 id 必須使用 UUID。',
+    'reorder_attractions 可以只列出要移動的景點，未列出的景點會維持原本相對順序。',
     `請使用使用者語言（${userLanguage()}）回答。新增景點的 locationName 請包含城市與國家（例如「道頓堀，大阪，日本」）；可先將座標和 placeId 設 null，系統會用 Google Places 查證，找不到時會保留空值。不要虛構地址或價格；交通時間請依景點距離、transportMode 與行程脈絡估算整數分鐘，無法合理估算時填 null。`,
     'update_attraction 的 changes 只放需要變動的欄位。',
     `只回傳合法 JSON，格式：${responseShape}`,

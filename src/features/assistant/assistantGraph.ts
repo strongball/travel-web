@@ -154,6 +154,30 @@ const attractionById = (itinerary: Itinerary) => new Map(
   (itinerary.days ?? []).flatMap((day) => day.attractions).map((attraction) => [attraction.id, attraction]),
 )
 
+/**
+ * Models often return only the attractions they intend to move. Materialize
+ * that shorthand into the full order expected by the proposal applier while
+ * leaving unknown or duplicate IDs untouched for validation to reject.
+ */
+export const normalizeAssistantOperations = (
+  itinerary: Itinerary,
+  operations: AssistantOperation[],
+): AssistantOperation[] => operations.map((operation) => {
+  if (operation.type !== 'reorder_attractions') return operation
+  const day = (itinerary.days ?? []).find((item) => item.id === operation.dayId)
+  if (!day) return operation
+  const currentIds = day.attractions.map((item) => item.id)
+  const requestedIds = operation.attractionIds
+  const requestedSet = new Set(requestedIds)
+  if (requestedSet.size !== requestedIds.length || requestedIds.some((id) => !currentIds.includes(id))) {
+    return operation
+  }
+  return {
+    ...operation,
+    attractionIds: [...requestedIds, ...currentIds.filter((id) => !requestedSet.has(id))],
+  }
+})
+
 export const validateAssistantOperations = (
   itinerary: Itinerary,
   operations: AssistantOperation[],
@@ -247,6 +271,7 @@ export const createGeminiAssistantModel = (): AssistantModel => ({
       'Only create a proposal when the user explicitly asks to change the itinerary.',
       'Allowed operation types: set_day_start_time, add_attraction, update_attraction, remove_attraction, move_attraction, reorder_attractions.',
       'Never invent IDs. Existing IDs must come from the supplied itinerary.',
+      'A reorder operation may list only the attractions being moved; omitted attractions keep their relative order.',
       'A newly added attraction may have null Google Place ID/coordinates when it cannot be found; never invent location data.',
       'Estimate travelTime as non-negative integer minutes from the itinerary context and transport mode; use null when uncertain.',
       'Return JSON only: {"reply":"...","proposal":null} or {"reply":"...","proposal":{"title":"...","explanation":"...","operations":[...]}}.',
@@ -371,7 +396,8 @@ export const createAssistantGraph = (
       }
       let proposal: ItineraryChangeProposal | null = null
       if (result.proposal) {
-        validateAssistantOperations(request.itinerary, result.proposal.operations)
+        const operations = normalizeAssistantOperations(request.itinerary, result.proposal.operations)
+        validateAssistantOperations(request.itinerary, operations)
         proposal = {
           id: crypto.randomUUID(),
           threadId: request.threadId,
@@ -380,7 +406,7 @@ export const createAssistantGraph = (
           title: result.proposal.title,
           explanation: result.proposal.explanation,
           expectedDayRevisions: request.dayRevisions,
-          operations: result.proposal.operations,
+          operations,
           status: 'pending',
           createdAt: new Date().toISOString(),
         }

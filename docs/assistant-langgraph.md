@@ -74,7 +74,7 @@ START -> respond
 ### Proposal 暫停與恢復
 
 1. `respond` 只有在使用者明確要求修改時才建立 proposal。
-2. `validateAssistantOperations` 驗證 day/attraction ID 與 reorder 完整性；新增景點可以沒有 Google 位置資料，禁止虛構座標即可。
+2. `normalizeAssistantOperations` 先把模型只列出部分景點的 reorder 補成完整順序（未提及的景點維持原順序），再由 `validateAssistantOperations` 驗證 day/attraction ID 與重複/未知 ID；新增景點可以沒有 Google 位置資料，禁止虛構座標即可。
 3. `persist_proposal` 保存 canonical proposal。
 4. graph 在 `approval` 前暫停；`sendTurn` 回傳 `interrupt.kind === 'itinerary_proposal'`，UI 顯示 diff 與確認按鈕。
 5. UI 呼叫 `runner.resumeProposal(threadId, approved)`。

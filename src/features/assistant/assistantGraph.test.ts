@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../types/database'
 import {
   createAssistantGraph,
+  normalizeAssistantOperations,
   parseAssistantOperations,
   recentAssistantMessages,
   shouldSummarizeMessages,
@@ -110,6 +111,24 @@ describe('assistant graph helpers', () => {
         locationName: null,
       },
     }])).not.toThrow()
+  })
+
+  it('completes a partial reorder using the existing order for omitted attractions', () => {
+    const second = { ...itinerary.days![0].attractions[0], id: 'place-2', name: '上野公園' }
+    const reorderItinerary: Itinerary = {
+      ...itinerary,
+      days: [{ ...itinerary.days![0], attractions: [itinerary.days![0].attractions[0], second] }],
+    }
+    expect(normalizeAssistantOperations(reorderItinerary, [{
+      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['place-2'],
+    }])).toEqual([{
+      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['place-2', 'place-1'],
+    }])
+    expect(normalizeAssistantOperations(reorderItinerary, [{
+      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['missing'],
+    }])).toEqual([{
+      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['missing'],
+    }])
   })
 
   it('uses message and character thresholds and keeps the recent window', () => {
