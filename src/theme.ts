@@ -86,13 +86,44 @@ export const theme = createTheme({
       },
     },
     MuiCard: {
-      styleOverrides: { root: { borderRadius: 14 } },
+      defaultProps: { elevation: 0 },
+      styleOverrides: {
+        root: {
+          borderRadius: 14,
+          border: '1px solid rgba(13, 118, 110, 0.12)',
+        },
+      },
     },
     MuiChip: {
       styleOverrides: { root: { borderRadius: 8, minHeight: 30 } },
     },
     MuiDialog: {
       styleOverrides: { paper: { borderRadius: 16 } },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          padding: '12px 16px max(12px, env(safe-area-inset-bottom))',
+          borderTop: '1px solid rgba(23, 33, 31, 0.12)',
+          backgroundColor: '#ffffff',
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        rounded: { borderRadius: 14 },
+      },
+    },
+    MuiBottomNavigation: {
+      styleOverrides: {
+        root: { minHeight: 64 },
+      },
+    },
+    MuiBottomNavigationAction: {
+      styleOverrides: {
+        root: { minWidth: 64, paddingBlock: 8 },
+        label: { fontWeight: 700 },
+      },
     },
     MuiTab: {
       styleOverrides: {

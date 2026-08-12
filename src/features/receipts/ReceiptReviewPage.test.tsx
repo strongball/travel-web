@@ -64,4 +64,36 @@ describe('ReceiptReviewPage', () => {
 
     expect(screen.getByRole('button', { name: '套用結果' })).toBeDisabled()
   })
+
+  it('keeps reorder and delete actions available inside the expanded item', () => {
+    render(
+      <ReceiptReviewPage
+        result={{
+          ...result,
+          items: [
+            result.items[0],
+            {
+              position: 1,
+              sourceName: '水',
+              localizedName: '水',
+              quantity: 1,
+              unitPrice: 20,
+              lineTotal: 20,
+            },
+          ],
+        }}
+        onApply={() => undefined}
+        onCancel={() => undefined}
+      />,
+    )
+
+    fireEvent.click(screen.getByText('茶'))
+    fireEvent.click(screen.getByRole('button', { name: '品項 1 下移' }))
+
+    const itemHeadings = screen.getAllByText(/^(茶|水)$/)
+    expect(itemHeadings.map((heading) => heading.textContent)).toEqual(['水', '茶'])
+
+    fireEvent.click(screen.getByRole('button', { name: '刪除 品項 2' }))
+    expect(screen.queryByText('茶')).not.toBeInTheDocument()
+  })
 })

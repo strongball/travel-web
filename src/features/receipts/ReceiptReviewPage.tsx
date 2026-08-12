@@ -1,20 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
-import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Alert,
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Button,
   Card,
   CardContent,
   Divider,
   FormControl,
-  IconButton,
   InputLabel,
   MenuItem,
   Select,
@@ -23,12 +16,19 @@ import {
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
-import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import { MobileShell } from '../../components/MobileShell'
 import type { ExpenseItem, ReceiptScanResult } from '../../types/receipt'
 import { supportedCurrencies } from '../../lib/currencies'
-
-type EditableItem = ExpenseItem & { clientKey: string }
+import { ReceiptItemCard } from './ReceiptItemCard'
+import {
+  createClientKey,
+  formatReceiptAmount as formatAmount,
+  normalizePositions,
+  parseNullableNumber,
+  roundAmount,
+  toEditableItems,
+  type EditableExpenseItem,
+} from './receiptReviewUtils'
 
 export interface ReceiptReviewPageProps {
   result: ReceiptScanResult
@@ -44,7 +44,7 @@ export function ReceiptReviewPage({
   currency = 'TWD',
 }: ReceiptReviewPageProps) {
   const { t } = useTranslation()
-  const [items, setItems] = useState<EditableItem[]>(() => toEditableItems(result.items))
+  const [items, setItems] = useState<EditableExpenseItem[]>(() => toEditableItems(result.items))
   const [receiptTotal, setReceiptTotal] = useState<number | null>(result.receiptTotal)
   const [detectedCurrency, setDetectedCurrency] = useState(result.detectedCurrency ?? currency)
 
@@ -203,7 +203,7 @@ export function ReceiptReviewPage({
 
         <Stack spacing={1.5} component="section" aria-label={t('review.items')}>
           {items.map((item, index) => (
-            <ItemCard
+            <ReceiptItemCard
               key={item.clientKey}
               item={item}
               index={index}
@@ -261,133 +261,6 @@ export function ReceiptReviewPage({
   )
 }
 
-interface ItemCardProps {
-  item: EditableItem
-  index: number
-  count: number
-  currency: string
-  onChange: (changes: Partial<ExpenseItem>) => void
-  onDelete: () => void
-  onMoveUp: () => void
-  onMoveDown: () => void
-}
-
-function ItemCard({
-  item,
-  index,
-  count,
-  currency,
-  onChange,
-  onDelete,
-  onMoveUp,
-  onMoveDown,
-}: ItemCardProps) {
-  const { t } = useTranslation()
-  const label = t('review.item', { count: index + 1 })
-
-  const itemName = item.localizedName || item.sourceName || label
-  const sourceDiffers = Boolean(item.sourceName && item.localizedName && item.sourceName !== item.localizedName)
-
-  return (
-    <Accordion
-      disableGutters
-      elevation={0}
-      sx={{
-        border: 1,
-        borderColor: 'divider',
-        borderRadius: 3,
-        overflow: 'hidden',
-        '&:before': { display: 'none' },
-      }}
-    >
-      <AccordionSummary
-        expandIcon={<ExpandMoreRoundedIcon />}
-        sx={{ minHeight: 56, px: 1.5, '& .MuiAccordionSummary-content': { my: 1 } }}
-      >
-        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0, width: '100%', pr: 0.5 }}>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography noWrap sx={{ fontWeight: 700 }}>{itemName}</Typography>
-            {sourceDiffers ? <Typography noWrap variant="caption" color="text.secondary">{item.sourceName}</Typography> : null}
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-            {item.quantity} × {formatAmount(item.lineTotal, currency)}
-          </Typography>
-          <IconButton
-            aria-label={t('review.moveUp', { label })}
-            disabled={index === 0}
-            onClick={(event) => { event.stopPropagation(); onMoveUp() }}
-            onFocus={(event) => event.stopPropagation()}
-            sx={{ width: 40, height: 40 }}
-          >
-            <ArrowUpwardRoundedIcon />
-          </IconButton>
-          <IconButton
-            aria-label={t('review.moveDown', { label })}
-            disabled={index === count - 1}
-            onClick={(event) => { event.stopPropagation(); onMoveDown() }}
-            onFocus={(event) => event.stopPropagation()}
-            sx={{ width: 40, height: 40 }}
-          >
-            <ArrowDownwardRoundedIcon />
-          </IconButton>
-          <IconButton
-            aria-label={t('review.delete', { label })}
-            color="error"
-            onClick={(event) => { event.stopPropagation(); onDelete() }}
-            onFocus={(event) => event.stopPropagation()}
-            sx={{ width: 40, height: 40 }}
-          >
-            <DeleteOutlineRoundedIcon />
-          </IconButton>
-        </Stack>
-      </AccordionSummary>
-      <AccordionDetails sx={{ p: 1.5, pt: 0.5 }}>
-        <Stack spacing={1.25}>
-          <TextField
-            fullWidth
-            required
-            label={t('review.sourceName')}
-            value={item.sourceName}
-            onChange={(event) => onChange({ sourceName: event.target.value })}
-          />
-          <TextField
-            fullWidth
-            label={t('review.localizedName')}
-            value={item.localizedName}
-            onChange={(event) => onChange({ localizedName: event.target.value })}
-          />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            <TextField
-              fullWidth
-              type="number"
-              label={t('review.quantity')}
-              value={item.quantity}
-              slotProps={{ htmlInput: { min: 0.001, step: '0.001', inputMode: 'decimal' } }}
-              onChange={(event) => onChange({ quantity: Number.parseFloat(event.target.value) || 0 })}
-            />
-            <TextField
-              fullWidth
-              type="number"
-              label={t('review.unitPrice', { currency })}
-              value={item.unitPrice ?? ''}
-              slotProps={{ htmlInput: { min: 0, step: '0.01', inputMode: 'decimal' } }}
-              onChange={(event) => onChange({ unitPrice: parseNullableNumber(event.target.value) })}
-            />
-          </Stack>
-          <TextField
-            fullWidth
-            type="number"
-            label={t('review.lineTotal', { currency })}
-            value={item.lineTotal ?? ''}
-            slotProps={{ htmlInput: { min: 0, step: '0.01', inputMode: 'decimal' } }}
-            onChange={(event) => onChange({ lineTotal: parseNullableNumber(event.target.value) })}
-          />
-        </Stack>
-      </AccordionDetails>
-    </Accordion>
-  )
-}
-
 interface SummaryRowProps {
   label: string
   value: string
@@ -406,45 +279,4 @@ function SummaryRow({ label, value, emphasize = false }: SummaryRowProps) {
       </Typography>
     </Stack>
   )
-}
-
-function toEditableItems(items: readonly ExpenseItem[]): EditableItem[] {
-  return items.map((item, index) => ({
-    ...item,
-    position: index,
-    clientKey: item.id ?? `${index}-${item.sourceName}-${createClientKey()}`,
-  }))
-}
-
-function normalizePositions(items: readonly EditableItem[]): EditableItem[] {
-  return items.map((item, position) => ({ ...item, position }))
-}
-
-function parseNullableNumber(value: string): number | null {
-  if (value.trim() === '') return null
-  const parsed = Number.parseFloat(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function roundAmount(value: number): number {
-  return Math.round((value + Number.EPSILON) * 10_000) / 10_000
-}
-
-function formatAmount(value: number | null, currency: string): string {
-  if (value === null) return '—'
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: 'currency',
-      currency,
-      maximumFractionDigits: 4,
-    }).format(value)
-  } catch {
-    return `${currency} ${value.toFixed(2)}`
-  }
-}
-
-function createClientKey(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random()}`
 }

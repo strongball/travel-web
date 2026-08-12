@@ -101,7 +101,7 @@ export function LoginPage({
 
             <Divider>{t('auth.orEmail')}</Divider>
 
-            <Box component="form" onSubmit={handleSubmit} noValidate>
+            <Box component="form" onSubmit={handleSubmit}>
               <Stack spacing={2.25}>
                 <TextField
                   autoComplete="email"

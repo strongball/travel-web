@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Box } from '@mui/material'
 import { PageHeader } from './PageHeader'
+import { FormActions } from './FormActions'
 
 export interface MobileShellProps {
   title: string
@@ -51,21 +52,8 @@ export function MobileShell({
         </Box>
 
         {footer ? (
-          <Box
-            component="footer"
-            sx={{
-              position: 'sticky',
-              bottom: 0,
-              zIndex: 10,
-              px: 2,
-              pt: 1.5,
-              pb: 'max(12px, env(safe-area-inset-bottom))',
-              bgcolor: 'background.paper',
-              borderTop: 1,
-              borderColor: 'divider',
-            }}
-          >
-            {footer}
+          <Box component="footer">
+            <FormActions>{footer}</FormActions>
           </Box>
         ) : null}
       </Box>
