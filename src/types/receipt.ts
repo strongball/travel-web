@@ -17,6 +17,7 @@ export type ReceiptScanResult = {
   schemaVersion: 1
   sourceLocale: string
   targetLocale: string
+  detectedCurrency: string | null
   items: ExpenseItem[]
   receiptTotal: number | null
   itemsTotal: number

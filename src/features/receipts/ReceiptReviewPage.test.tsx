@@ -8,6 +8,7 @@ const result: ReceiptScanResult = {
   schemaVersion: 1,
   sourceLocale: 'ja',
   targetLocale: 'zh-TW',
+  detectedCurrency: 'JPY',
   items: [
     {
       position: 0,

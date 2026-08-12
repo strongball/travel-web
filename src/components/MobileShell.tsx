@@ -1,13 +1,6 @@
 import type { ReactNode } from 'react'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import {
-  AppBar,
-  Box,
-  IconButton,
-  Toolbar,
-  Typography,
-} from '@mui/material'
-import { useTranslation } from 'react-i18next'
+import { Box } from '@mui/material'
+import { PageHeader } from './PageHeader'
 
 export interface MobileShellProps {
   title: string
@@ -26,9 +19,6 @@ export function MobileShell({
   footer,
   backLabel,
 }: MobileShellProps) {
-  const { t } = useTranslation()
-  const resolvedBackLabel = backLabel ?? t('common.back')
-
   return (
     <Box
       sx={{
@@ -49,50 +39,12 @@ export function MobileShell({
           flexDirection: 'column',
         }}
       >
-        <AppBar
-          color="inherit"
-          elevation={0}
-          position="sticky"
-          sx={{
-            borderBottom: 1,
-            borderColor: 'divider',
-            pt: 'env(safe-area-inset-top)',
-          }}
-        >
-          <Toolbar sx={{ minHeight: 56, px: { xs: 1, sm: 2 } }}>
-            <Box sx={{ width: 48, display: 'flex', justifyContent: 'flex-start' }}>
-              {onBack ? (
-                <IconButton
-                  aria-label={resolvedBackLabel}
-                  edge="start"
-                  onClick={onBack}
-                  sx={{ width: 48, height: 48 }}
-                >
-                  <ArrowBackRoundedIcon />
-                </IconButton>
-              ) : null}
-            </Box>
-            <Typography
-              component="h1"
-              variant="h6"
-              noWrap
-              sx={{ flex: 1, textAlign: 'center', fontWeight: 700 }}
-            >
-              {title}
-            </Typography>
-            <Box
-              sx={{
-                width: 48,
-                minHeight: 48,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-              }}
-            >
-              {headerAction}
-            </Box>
-          </Toolbar>
-        </AppBar>
+        <PageHeader
+          title={title}
+          onBack={onBack}
+          actions={headerAction}
+          backLabel={backLabel}
+        />
 
         <Box component="main" sx={{ flex: 1, minWidth: 0 }}>
           {children}

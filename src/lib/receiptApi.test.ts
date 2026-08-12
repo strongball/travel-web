@@ -5,6 +5,7 @@ describe('parseReceiptResult', () => {
   it('validates items and calculates totals in the browser', () => {
     expect(parseReceiptResult({
       sourceLocale: 'ja',
+      detectedCurrency: 'JPY',
       items: [{ sourceName: 'お茶', localizedName: '茶', quantity: 2, unitPrice: 10, lineTotal: 20 }],
       receiptTotal: 25,
     }, 'zh-TW')).toMatchObject({
@@ -12,6 +13,7 @@ describe('parseReceiptResult', () => {
       targetLocale: 'zh-TW',
       itemsTotal: 20,
       difference: 5,
+      detectedCurrency: 'JPY',
     })
   })
 

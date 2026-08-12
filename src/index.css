@@ -24,6 +24,11 @@ body {
   min-width: 320px;
   min-height: 100dvh;
   overscroll-behavior-y: none;
+  overflow-x: hidden;
+}
+
+img {
+  max-width: 100%;
 }
 
 button,

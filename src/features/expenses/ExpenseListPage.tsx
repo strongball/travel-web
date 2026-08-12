@@ -5,7 +5,6 @@ import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import {
   Alert,
-  AppBar,
   Box,
   Button,
   Card,
@@ -15,10 +14,10 @@ import {
   Fab,
   IconButton,
   Stack,
-  Toolbar,
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import { PageHeader } from '../../components/PageHeader'
 import type { Expense } from '../../types/database'
 
 export interface ExpenseListPageProps {
@@ -68,7 +67,7 @@ function ExpenseCard({
   onEdit: (expense: Expense) => void
 }) {
   const { t } = useTranslation()
-  const visibleItems = expense.items.slice(0, 2)
+  const visibleItems = expense.items.slice(0, 1)
   const remainingItems = expense.items.length - visibleItems.length
 
   return (
@@ -80,13 +79,13 @@ function ExpenseCard({
       <CardActionArea
         aria-label={t('list.edit', { title: expense.title })}
         onClick={() => onEdit(expense)}
-        sx={{ p: 2 }}
+        sx={{ p: { xs: 1.5, sm: 2 } }}
       >
-        <Stack spacing={1.5}>
+        <Stack spacing={0.75}>
           <Stack
             direction="row"
-            spacing={2}
-            sx={{ justifyContent: 'space-between' }}
+            spacing={1.5}
+            sx={{ alignItems: 'center', justifyContent: 'space-between' }}
           >
             <Box sx={{ minWidth: 0 }}>
               <Typography component="h2" noWrap sx={{ fontWeight: 700 }}>
@@ -96,7 +95,7 @@ function ExpenseCard({
                 {formatDate(expense.date, locale)}
               </Typography>
             </Box>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: 'flex-end' }}>
+            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
               <Typography
                 color="primary.main"
                 sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}
@@ -116,48 +115,31 @@ function ExpenseCard({
             <Box
               sx={{
                 bgcolor: 'action.hover',
-                borderRadius: 2,
-                px: 1.5,
-                py: 1.25,
+                borderRadius: 1.5,
+                px: 1,
+                py: 0.75,
               }}
             >
-              <Stack spacing={0.9}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 {visibleItems.map((item) => {
-                  const showSourceName =
-                    item.sourceName.trim() !== item.localizedName.trim()
-
                   return (
-                    <Stack
-                      direction="row"
-                      spacing={1.5}
+                    <Typography
                       key={item.id ?? `${item.position}-${item.sourceName}`}
-                      sx={{ justifyContent: 'space-between' }}
+                      noWrap
+                      variant="body2"
+                      sx={{ flex: 1, minWidth: 0, fontWeight: 600 }}
                     >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography noWrap variant="body2" sx={{ fontWeight: 600 }}>
-                          {item.localizedName || item.sourceName}
-                        </Typography>
-                        {showSourceName ? (
-                          <Typography color="text.secondary" noWrap variant="caption">
-                            {item.sourceName}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                      <Typography
-                        color="text.secondary"
-                        variant="body2"
-                        sx={{ whiteSpace: 'nowrap' }}
-                      >
-                        × {item.quantity.toLocaleString(locale)} ·{' '}
-                        {item.lineTotal === null
-                          ? '—'
-                          : formatAmount(item.lineTotal, expense.currency, locale)}
-                      </Typography>
-                    </Stack>
+                      {item.localizedName || item.sourceName}
+                    </Typography>
                   )
                 })}
                 {remainingItems > 0 ? (
-                  <Typography color="text.secondary" variant="caption">
+                  <Typography
+                    color="text.secondary"
+                    noWrap
+                    variant="caption"
+                    sx={{ flexShrink: 0 }}
+                  >
                     {t('list.moreItems', { count: remainingItems })}
                   </Typography>
                 ) : null}
@@ -191,27 +173,23 @@ export function ExpenseListPage({
         pb: 'calc(96px + env(safe-area-inset-bottom))',
       }}
     >
-      <AppBar color="inherit" elevation={0} position="sticky">
-        <Toolbar sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Typography
-            component="h1"
-            sx={{ flexGrow: 1, fontWeight: 800 }}
-            variant="h6"
-          >
-            {t('list.title')}
-          </Typography>
-          <IconButton
-            aria-label={t('list.refresh')}
-            disabled={loading}
-            onClick={() => void onRefresh()}
-          >
-            <RefreshIcon />
-          </IconButton>
-          <IconButton aria-label={t('list.signOut')} onClick={() => void onSignOut()}>
-            <LogoutIcon />
-          </IconButton>
-        </Toolbar>
-      </AppBar>
+      <PageHeader
+        title={t('list.title')}
+        actions={(
+          <>
+            <IconButton
+              aria-label={t('list.refresh')}
+              disabled={loading}
+              onClick={() => void onRefresh()}
+            >
+              <RefreshIcon />
+            </IconButton>
+            <IconButton aria-label={t('list.signOut')} onClick={() => void onSignOut()}>
+              <LogoutIcon />
+            </IconButton>
+          </>
+        )}
+      />
 
       <Container component="main" maxWidth="sm" sx={{ px: 2, py: 2.5 }}>
         {error ? (

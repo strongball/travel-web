@@ -5,6 +5,7 @@ import type {
   ReceiptScanRequest,
   ReceiptScanResult,
 } from '../types/receipt'
+import { normalizeCurrency } from './currencies'
 
 export class ReceiptScanError extends Error {
   readonly code: string
@@ -14,39 +15,6 @@ export class ReceiptScanError extends Error {
     this.code = code
   }
 }
-
-const receiptSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    sourceLocale: { type: 'string' },
-    items: {
-      type: 'array',
-      minItems: 1,
-      maxItems: 250,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          sourceName: { type: 'string' },
-          localizedName: { type: 'string' },
-          quantity: { type: 'number', exclusiveMinimum: 0 },
-          unitPrice: { type: ['number', 'null'], minimum: 0 },
-          lineTotal: { type: ['number', 'null'], minimum: 0 },
-        },
-        required: [
-          'sourceName',
-          'localizedName',
-          'quantity',
-          'unitPrice',
-          'lineTotal',
-        ],
-      },
-    },
-    receiptTotal: { type: ['number', 'null'], minimum: 0 },
-  },
-  required: ['sourceLocale', 'items', 'receiptTotal'],
-} as const
 
 const numberOrNull = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -89,6 +57,7 @@ export const parseReceiptResult = (
     throw new ReceiptScanError('INVALID_RESPONSE', 'Gemini 回傳格式錯誤')
   }
   const items = result.items.map(parseItem)
+  const detectedCurrency = normalizeCurrency(result.detectedCurrency)
   const receiptTotal = numberOrNull(result.receiptTotal)
   const itemsTotal = Math.round(
     items.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0) * 10_000,
@@ -97,6 +66,7 @@ export const parseReceiptResult = (
     schemaVersion: 1,
     sourceLocale: result.sourceLocale,
     targetLocale,
+    detectedCurrency,
     items,
     receiptTotal,
     itemsTotal,
@@ -117,6 +87,9 @@ const promptFor = ({ targetLocale, currencyHint }: ReceiptScanRequest) => [
   'Never invent unreadable text or numeric values.',
   'Exclude subtotal, tax, discount, coupon, service fee, tip, payment method, tendered cash, and change.',
   `The form currency is ${currencyHint}; use it only as a reading hint and do not convert currencies.`,
+  'Detect the currency actually printed on the receipt. Return its three-letter ISO 4217 code in detectedCurrency, such as TWD, JPY, USD, EUR, KRW, or CNY. Return null when it cannot be determined.',
+  'Return only valid JSON with this exact shape: {"sourceLocale":"string","detectedCurrency":null,"items":[{"sourceName":"string","localizedName":"string","quantity":1,"unitPrice":null,"lineTotal":null}],"receiptTotal":null}.',
+  'Do not wrap the JSON in markdown or add explanatory text.',
 ].join('\n')
 
 export const scanReceipt = async (
@@ -140,7 +113,6 @@ export const scanReceipt = async (
         apikey: publishableKey,
       },
       timeout: 45_000,
-      retryOptions: { attempts: 1 },
     },
   })
 
@@ -158,7 +130,6 @@ export const scanReceipt = async (
       }],
       config: {
         responseMimeType: 'application/json',
-        responseJsonSchema: receiptSchema,
       },
     })
     if (!response.text) {

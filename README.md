@@ -29,8 +29,10 @@ npm ci
 npm run dev
 ```
 
-Only the Supabase project URL, publishable key, and non-secret model name belong
-in `VITE_` variables.
+Only the Supabase project URL, publishable key, browser-restricted Google Maps
+key, and non-secret model name belong in `VITE_` variables. Enable Maps
+JavaScript API, Places API, and Routes API for the Google Cloud project, and
+restrict the browser key to the local and production web origins.
 Never put `GEMINI_API_KEY`, a Supabase secret key, or a service-role key in the
 frontend environment.
 
@@ -65,6 +67,7 @@ In GitHub:
 2. Add Actions repository variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_PUBLISHABLE_KEY`
+   - `VITE_GOOGLE_MAPS_API_KEY`
 3. In Supabase Auth URL configuration, allow:
    `https://<github-user>.github.io/travel-web/`
 4. Enable the Google Auth provider. In Google Cloud, set the authorized redirect

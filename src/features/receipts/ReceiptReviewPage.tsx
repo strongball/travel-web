@@ -5,19 +5,28 @@ import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Alert,
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
   CardContent,
   Divider,
+  FormControl,
   IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import { MobileShell } from '../../components/MobileShell'
 import type { ExpenseItem, ReceiptScanResult } from '../../types/receipt'
+import { supportedCurrencies } from '../../lib/currencies'
 
 type EditableItem = ExpenseItem & { clientKey: string }
 
@@ -37,11 +46,16 @@ export function ReceiptReviewPage({
   const { t } = useTranslation()
   const [items, setItems] = useState<EditableItem[]>(() => toEditableItems(result.items))
   const [receiptTotal, setReceiptTotal] = useState<number | null>(result.receiptTotal)
+  const [detectedCurrency, setDetectedCurrency] = useState(result.detectedCurrency ?? currency)
 
   useEffect(() => {
     setItems(toEditableItems(result.items))
     setReceiptTotal(result.receiptTotal)
-  }, [result])
+    setDetectedCurrency(result.detectedCurrency ?? currency)
+  }, [currency, result])
+
+  const displayCurrency = detectedCurrency || currency
+  const currencyOptions = Array.from(new Set([displayCurrency, ...supportedCurrencies]))
 
   const itemsTotal = useMemo(
     () => roundAmount(items.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0)),
@@ -105,6 +119,7 @@ export function ReceiptReviewPage({
       ...result,
       items: normalizePositions(items).map(({ clientKey: _clientKey, ...item }) => item),
       receiptTotal,
+      detectedCurrency: displayCurrency || null,
       itemsTotal,
       difference,
     })
@@ -154,7 +169,7 @@ export function ReceiptReviewPage({
         {hasMismatch ? (
           <Alert severity="warning">
             {t('review.mismatch', {
-              amount: formatAmount(Math.abs(difference), currency),
+              amount: formatAmount(Math.abs(difference), displayCurrency),
             })}
           </Alert>
         ) : receiptTotal !== null ? (
@@ -169,6 +184,23 @@ export function ReceiptReviewPage({
           </Alert>
         ) : null}
 
+        <FormControl fullWidth>
+          <InputLabel id="receipt-currency-label">{t('review.detectedCurrency')}</InputLabel>
+          <Select
+            labelId="receipt-currency-label"
+            label={t('review.detectedCurrency')}
+            value={displayCurrency}
+            onChange={(event) => setDetectedCurrency(event.target.value)}
+          >
+            {currencyOptions.map((item) => (
+              <MenuItem key={item} value={item}>{item}</MenuItem>
+            ))}
+          </Select>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.75, ml: 1.5 }}>
+            {t('review.currencyHelp')}
+          </Typography>
+        </FormControl>
+
         <Stack spacing={1.5} component="section" aria-label={t('review.items')}>
           {items.map((item, index) => (
             <ItemCard
@@ -176,7 +208,7 @@ export function ReceiptReviewPage({
               item={item}
               index={index}
               count={items.length}
-              currency={currency}
+              currency={displayCurrency}
               onChange={(changes) => updateItem(index, changes)}
               onDelete={() => removeItem(index)}
               onMoveUp={() => moveItem(index, index - 1)}
@@ -206,7 +238,7 @@ export function ReceiptReviewPage({
           <CardContent>
             <Stack spacing={1.5}>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('review.totals')}</Typography>
-              <SummaryRow label={t('review.itemsTotal')} value={formatAmount(itemsTotal, currency)} />
+              <SummaryRow label={t('review.itemsTotal')} value={formatAmount(itemsTotal, displayCurrency)} />
               <TextField
                 fullWidth
                 type="number"
@@ -218,7 +250,7 @@ export function ReceiptReviewPage({
               <Divider />
               <SummaryRow
                 label={t('review.difference')}
-                value={difference === null ? '—' : formatAmount(difference, currency)}
+                value={difference === null ? '—' : formatAmount(difference, displayCurrency)}
                 emphasize={hasMismatch}
               />
             </Stack>
@@ -253,40 +285,64 @@ function ItemCard({
   const { t } = useTranslation()
   const label = t('review.item', { count: index + 1 })
 
-  return (
-    <Card variant="outlined" sx={{ borderRadius: 3 }}>
-      <CardContent>
-        <Stack spacing={1.5}>
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 700 }}>
-              {label}
-            </Typography>
-            <IconButton
-              aria-label={t('review.moveUp', { label })}
-              disabled={index === 0}
-              onClick={onMoveUp}
-              sx={{ width: 44, height: 44 }}
-            >
-              <ArrowUpwardRoundedIcon />
-            </IconButton>
-            <IconButton
-              aria-label={t('review.moveDown', { label })}
-              disabled={index === count - 1}
-              onClick={onMoveDown}
-              sx={{ width: 44, height: 44 }}
-            >
-              <ArrowDownwardRoundedIcon />
-            </IconButton>
-            <IconButton
-              aria-label={t('review.delete', { label })}
-              color="error"
-              onClick={onDelete}
-              sx={{ width: 44, height: 44 }}
-            >
-              <DeleteOutlineRoundedIcon />
-            </IconButton>
-          </Stack>
+  const itemName = item.localizedName || item.sourceName || label
+  const sourceDiffers = Boolean(item.sourceName && item.localizedName && item.sourceName !== item.localizedName)
 
+  return (
+    <Accordion
+      disableGutters
+      elevation={0}
+      sx={{
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 3,
+        overflow: 'hidden',
+        '&:before': { display: 'none' },
+      }}
+    >
+      <AccordionSummary
+        expandIcon={<ExpandMoreRoundedIcon />}
+        sx={{ minHeight: 56, px: 1.5, '& .MuiAccordionSummary-content': { my: 1 } }}
+      >
+        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0, width: '100%', pr: 0.5 }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography noWrap sx={{ fontWeight: 700 }}>{itemName}</Typography>
+            {sourceDiffers ? <Typography noWrap variant="caption" color="text.secondary">{item.sourceName}</Typography> : null}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+            {item.quantity} × {formatAmount(item.lineTotal, currency)}
+          </Typography>
+          <IconButton
+            aria-label={t('review.moveUp', { label })}
+            disabled={index === 0}
+            onClick={(event) => { event.stopPropagation(); onMoveUp() }}
+            onFocus={(event) => event.stopPropagation()}
+            sx={{ width: 40, height: 40 }}
+          >
+            <ArrowUpwardRoundedIcon />
+          </IconButton>
+          <IconButton
+            aria-label={t('review.moveDown', { label })}
+            disabled={index === count - 1}
+            onClick={(event) => { event.stopPropagation(); onMoveDown() }}
+            onFocus={(event) => event.stopPropagation()}
+            sx={{ width: 40, height: 40 }}
+          >
+            <ArrowDownwardRoundedIcon />
+          </IconButton>
+          <IconButton
+            aria-label={t('review.delete', { label })}
+            color="error"
+            onClick={(event) => { event.stopPropagation(); onDelete() }}
+            onFocus={(event) => event.stopPropagation()}
+            sx={{ width: 40, height: 40 }}
+          >
+            <DeleteOutlineRoundedIcon />
+          </IconButton>
+        </Stack>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 1.5, pt: 0.5 }}>
+        <Stack spacing={1.25}>
           <TextField
             fullWidth
             required
@@ -300,17 +356,14 @@ function ItemCard({
             value={item.localizedName}
             onChange={(event) => onChange({ localizedName: event.target.value })}
           />
-
-          <Stack direction="row" spacing={1}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
             <TextField
               fullWidth
               type="number"
               label={t('review.quantity')}
               value={item.quantity}
               slotProps={{ htmlInput: { min: 0.001, step: '0.001', inputMode: 'decimal' } }}
-              onChange={(event) =>
-                onChange({ quantity: Number.parseFloat(event.target.value) || 0 })
-              }
+              onChange={(event) => onChange({ quantity: Number.parseFloat(event.target.value) || 0 })}
             />
             <TextField
               fullWidth
@@ -318,25 +371,20 @@ function ItemCard({
               label={t('review.unitPrice', { currency })}
               value={item.unitPrice ?? ''}
               slotProps={{ htmlInput: { min: 0, step: '0.01', inputMode: 'decimal' } }}
-              onChange={(event) =>
-                onChange({ unitPrice: parseNullableNumber(event.target.value) })
-              }
+              onChange={(event) => onChange({ unitPrice: parseNullableNumber(event.target.value) })}
             />
           </Stack>
-
           <TextField
             fullWidth
             type="number"
             label={t('review.lineTotal', { currency })}
             value={item.lineTotal ?? ''}
             slotProps={{ htmlInput: { min: 0, step: '0.01', inputMode: 'decimal' } }}
-            onChange={(event) =>
-              onChange({ lineTotal: parseNullableNumber(event.target.value) })
-            }
+            onChange={(event) => onChange({ lineTotal: parseNullableNumber(event.target.value) })}
           />
         </Stack>
-      </CardContent>
-    </Card>
+      </AccordionDetails>
+    </Accordion>
   )
 }
 

@@ -1,4 +1,11 @@
-import type { Expense, ExpenseDraft, Itinerary } from '../types/database'
+import type {
+  Attraction,
+  Expense,
+  ExpenseDraft,
+  Itinerary,
+  TodoItem,
+  TripDay,
+} from '../types/database'
 import type { ExpenseItem } from '../types/receipt'
 import {
   canonicalizeImageReference,
@@ -71,15 +78,224 @@ const mapExpense = (row: Row): Expense => {
 export const fetchItineraries = async (): Promise<Itinerary[]> => {
   const { data, error } = await supabase
     .from('itineraries')
-    .select('id,title,owner_id,currency')
+    .select('*,days(*,attractions(*))')
     .order('start_date', { ascending: false })
   if (error) throw error
+  return data.map((row) => mapItinerary(row as Row))
+}
+
+const parseLocation = (value: unknown) => {
+  if (typeof value !== 'string') return { latitude: null, longitude: null }
+  const match = value.match(/POINT\s*\(([-\d.]+)\s+([-\d.]+)\)/i)
+  return match
+    ? { longitude: Number(match[1]), latitude: Number(match[2]) }
+    : { latitude: null, longitude: null }
+}
+
+const mapAttraction = (row: Row): Attraction => {
+  const location = parseLocation(row.location)
+  return {
+    id: asText(row.id),
+    dayId: asText(row.day_id),
+    name: asText(row.name),
+    description: asText(row.description),
+    startTime: typeof row.start_time === 'string' ? row.start_time : null,
+    endTime: typeof row.end_time === 'string' ? row.end_time : null,
+    cost: asNumber(row.cost),
+    latitude:
+      typeof row.latitude === 'number' ? row.latitude : location.latitude,
+    longitude:
+      typeof row.longitude === 'number' ? row.longitude : location.longitude,
+    duration: asNumber(row.duration) || 60,
+    transportMode:
+      typeof row.transport_mode === 'string' ? row.transport_mode : null,
+    travelTime:
+      row.travel_time == null ? null : asNumber(row.travel_time),
+    placeId: typeof row.place_id === 'string' ? row.place_id : null,
+    locationName:
+      typeof row.location_name === 'string' ? row.location_name : null,
+  }
+}
+
+const mapDay = (row: Row): TripDay => ({
+  id: asText(row.id),
+  itineraryId: asText(row.itinerary_id),
+  date: asText(row.date),
+  startTime: typeof row.start_time === 'string' ? row.start_time : null,
+  attractions: Array.isArray(row.attractions)
+    ? row.attractions
+        .map((entry) => mapAttraction(entry as Row))
+        .sort((first, second) => {
+          if (!first.startTime && !second.startTime) return 0
+          if (!first.startTime) return 1
+          if (!second.startTime) return -1
+          return first.startTime.localeCompare(second.startTime)
+        })
+    : [],
+})
+
+const mapItinerary = (row: Row): Itinerary => ({
+  id: asText(row.id),
+  title: asText(row.title),
+  ownerId: asText(row.owner_id),
+  currency: asText(row.currency) || 'TWD',
+  startDate: typeof row.start_date === 'string' ? row.start_date : undefined,
+  endDate: typeof row.end_date === 'string' ? row.end_date : undefined,
+  days: Array.isArray(row.days)
+    ? row.days
+        .map((entry) => mapDay(entry as Row))
+        .sort((first, second) => first.date.slice(0, 10).localeCompare(second.date.slice(0, 10)))
+    : [],
+  exchangeRates:
+    row.exchange_rates && typeof row.exchange_rates === 'object'
+      ? Object.fromEntries(
+          Object.entries(row.exchange_rates as Record<string, unknown>).map(
+            ([key, value]) => [key, asNumber(value)],
+          ),
+        )
+      : { [asText(row.currency) || 'TWD']: 1 },
+  todoCategories: Array.isArray(row.todo_categories)
+    ? row.todo_categories.filter(
+        (category): category is string => typeof category === 'string',
+      )
+    : [],
+})
+
+export const fetchTodos = async (itineraryId?: string): Promise<TodoItem[]> => {
+  let query = supabase
+    .from('todo_items')
+    .select('*')
+    .order('category', { ascending: true })
+    .order('content', { ascending: true })
+  if (itineraryId) query = query.eq('itinerary_id', itineraryId)
+  const { data, error } = await query
+  if (error) throw error
   return data.map((row) => ({
-    id: row.id,
-    title: row.title,
-    ownerId: row.owner_id,
-    currency: row.currency || 'TWD',
+    id: asText(row.id),
+    itineraryId: asText(row.itinerary_id),
+    title: asText(row.content) || asText(row.title),
+    isCompleted: Boolean(row.is_checked ?? row.is_completed),
+    category: asText(row.category) || '其他',
+    imagePath: typeof row.image_path === 'string' ? row.image_path : null,
+    images: Array.isArray(row.images)
+      ? row.images.filter((path: unknown): path is string => typeof path === 'string')
+      : [],
   }))
+}
+
+export const saveItinerary = async (itinerary: Itinerary): Promise<void> => {
+  const { data: userData } = await supabase.auth.getUser()
+  if (!userData.user) throw new Error('請先登入')
+  const days = itinerary.days ?? []
+  const startDate = itinerary.startDate ?? days[0]?.date ?? new Date().toISOString()
+  const endDate = itinerary.endDate ?? days.at(-1)?.date ?? startDate
+
+  const { error } = await supabase.from('itineraries').upsert({
+    id: itinerary.id,
+    owner_id: itinerary.ownerId || userData.user.id,
+    title: itinerary.title.trim(),
+    start_date: startDate,
+    end_date: endDate,
+    currency: itinerary.currency,
+    exchange_rates: itinerary.exchangeRates ?? { [itinerary.currency]: 1 },
+    todo_categories: itinerary.todoCategories ?? [],
+  })
+  if (error) throw error
+
+  const { data: existingDays, error: existingDaysError } = await supabase
+    .from('days')
+    .select('id')
+    .eq('itinerary_id', itinerary.id)
+  if (existingDaysError) throw existingDaysError
+  const currentDayIds = new Set(days.map((day) => day.id))
+  const removedDayIds = existingDays
+    .map((row) => row.id)
+    .filter((id) => !currentDayIds.has(id))
+  if (removedDayIds.length > 0) {
+    const { error: deleteDaysError } = await supabase
+      .from('days')
+      .delete()
+      .in('id', removedDayIds)
+    if (deleteDaysError) throw deleteDaysError
+  }
+
+  for (const day of days) {
+    const { data: existingAttractions, error: existingAttractionsError } =
+      await supabase
+        .from('attractions')
+        .select('id')
+        .eq('day_id', day.id)
+    if (existingAttractionsError) throw existingAttractionsError
+    const currentAttractionIds = new Set(day.attractions.map((item) => item.id))
+    const removedAttractionIds = existingAttractions
+      .map((row) => row.id)
+      .filter((id) => !currentAttractionIds.has(id))
+    if (removedAttractionIds.length > 0) {
+      const { error: deleteAttractionsError } = await supabase
+        .from('attractions')
+        .delete()
+        .in('id', removedAttractionIds)
+      if (deleteAttractionsError) throw deleteAttractionsError
+    }
+
+    const dayResult = await supabase.from('days').upsert({
+      id: day.id,
+      itinerary_id: itinerary.id,
+      date: day.date,
+      start_time: day.startTime,
+    })
+    if (dayResult.error) throw dayResult.error
+
+    for (const attraction of day.attractions) {
+      const attractionResult = await supabase.from('attractions').upsert({
+        id: attraction.id,
+        day_id: day.id,
+        name: attraction.name.trim(),
+        description: attraction.description.trim() || null,
+        start_time: attraction.startTime,
+        end_time: attraction.endTime,
+        cost: attraction.cost,
+        location:
+          attraction.longitude !== null && attraction.latitude !== null
+            ? `POINT(${attraction.longitude} ${attraction.latitude})`
+            : null,
+        duration: attraction.duration,
+        transport_mode: attraction.transportMode,
+        travel_time: attraction.travelTime,
+        place_id: attraction.placeId,
+        location_name: attraction.locationName,
+      })
+      if (attractionResult.error) throw attractionResult.error
+    }
+  }
+}
+
+export const saveTodo = async (todo: TodoItem): Promise<void> => {
+  const { error } = await supabase.from('todo_items').upsert({
+    id: todo.id,
+    itinerary_id: todo.itineraryId,
+    content: todo.title.trim(),
+    is_checked: todo.isCompleted,
+    category: todo.category,
+    image_path: todo.imagePath,
+    images: todo.images,
+  })
+  if (error) throw error
+}
+
+export const deleteTodo = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('todo_items').delete().eq('id', id)
+  if (error) throw error
+}
+
+export const deleteItinerary = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('itineraries').delete().eq('id', id)
+  if (error) throw error
+}
+
+export const deleteExpense = async (id: string): Promise<void> => {
+  const { error } = await supabase.from('expenses').delete().eq('id', id)
+  if (error) throw error
 }
 
 export const fetchExpenses = async (): Promise<Expense[]> => {
