@@ -48,8 +48,9 @@ import {
 import { supabase } from '../../lib/supabase'
 import { browserAssistantModel } from './assistantApi'
 import { AssistantGraphVersionError, createAssistantGraph } from './assistantGraph'
+import { enrichAppliedProposalPlaces } from './assistantPlaceEnrichment'
 import { applyAssistantOperations, changedDays } from './assistantProposal'
-import type { AssistantMessage, AssistantTurnRequest, ItineraryChangeProposal } from './types'
+import type { AssistantMessage, AssistantProgressPhase, AssistantTurnRequest, ItineraryChangeProposal } from './types'
 
 const dateLabel = (day: TripDay) => {
   // Trip dates are date-only values. Format them in UTC so the browser's
@@ -60,17 +61,40 @@ const dateLabel = (day: TripDay) => {
   }).format(new Date(`${value}T00:00:00Z`))
 }
 
+const itineraryItemLabel = (item: TripDay['attractions'][number]) => {
+  const start = item.startTime?.slice(11, 16)
+  const end = item.endTime?.slice(11, 16)
+  const time = start && end ? `${start}–${end} ` : ''
+  const travel = item.travelTime === null ? '' : `（前往約 ${item.travelTime} 分）`
+  return `${time}${item.name}${travel}`
+}
+
 const quickPrompts = [
   '推薦今天附近景點',
   '幫我檢查行程是否太趕',
   '幫我安排一天的美食行程',
 ]
 
-const thinkingSteps = {
-  reply: ['已收到訊息，正在讀取行程…', '正在分析你的需求…', '正在整理回覆…', '內容較多，仍在處理中…'],
-  summary: ['正在整理對話內容…', '正在保留重要決定與偏好…', '正在建立新的對話摘要…'],
-  proposal: ['正在處理行程提案…', '正在確認日期與景點資料…', '正在準備行程更新…'],
-} as const
+const progressLabels: Record<AssistantProgressPhase, string> = {
+  checking_context: '正在確認是否需要整理前文…',
+  summarizing_context: '正在整理先前對話…',
+  generating_response: '正在根據行程與對話產生回覆…',
+  validating_response: '正在驗證回覆與時間安排…',
+  saving_proposal: '正在儲存待確認的行程提案…',
+  applying_proposal: '正在套用行程修改…',
+  saving_checkpoint: '正在儲存對話進度…',
+  saving_response: '正在儲存助理回覆…',
+  syncing_conversation: '正在更新對話畫面…',
+}
+
+const waitForUiSync = async (promise: Promise<unknown>, timeoutMs = 8_000) => {
+  let timeoutId: number | undefined
+  const timeout = new Promise<void>((resolve) => {
+    timeoutId = window.setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([promise, timeout])
+  if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+}
 
 const friendlyError = (value: unknown, fallback: string) => {
   const errorRecord = value && typeof value === 'object' ? value as { code?: unknown; message?: unknown; details?: unknown } : null
@@ -141,11 +165,14 @@ export function AssistantSection({
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [rejectingProposalId, setRejectingProposalId] = useState<string | null>(null)
-  const [thinkingContext, setThinkingContext] = useState<keyof typeof thinkingSteps>('reply')
-  const [thinkingStep, setThinkingStep] = useState(0)
+  const [progressLabel, setProgressLabel] = useState(progressLabels.checking_context)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [retryRequest, setRetryRequest] = useState<{ thread: AssistantThread; request: AssistantTurnRequest } | null>(null)
   const activeThreadRef = useRef<string | null>(null)
+  // State updates are asynchronous; this ref closes the tiny window where
+  // two Enter/click events can start the same turn before `sending` rerenders.
+  const sendingRef = useRef(false)
   const conversationLoadRef = useRef(0)
   const conversationEndRef = useRef<HTMLDivElement>(null)
   const manualSummarizeRef = useRef<() => Promise<void>>(async () => {})
@@ -153,16 +180,7 @@ export function AssistantSection({
 
   const currentThread = threads.find((thread) => thread.id === threadId) ?? null
   const hasPendingProposal = proposals.some((proposal) => proposal.status === 'pending')
-  const thinkingLabel = thinkingSteps[thinkingContext][thinkingStep % thinkingSteps[thinkingContext].length]
-
-  useEffect(() => {
-    if (!sending) {
-      setThinkingStep(0)
-      return
-    }
-    const timer = window.setInterval(() => setThinkingStep((current) => current + 1), 1800)
-    return () => window.clearInterval(timer)
-  }, [sending, thinkingContext])
+  const onProgress = useCallback((phase: AssistantProgressPhase) => setProgressLabel(progressLabels[phase]), [])
 
   const selectThread = useCallback((nextThreadId: string) => {
     activeThreadRef.current = nextThreadId
@@ -259,7 +277,11 @@ export function AssistantSection({
   const runAssistantTurn = async (thread: AssistantThread, request: AssistantTurnRequest) => {
     let result: Awaited<ReturnType<typeof runner.sendTurn>>
     try {
-      result = await runner.sendTurn(request)
+      result = await runner.sendTurn({
+        ...request,
+        rehydratedSummary: thread.summary,
+        rehydratedMessages: messages,
+      }, onProgress)
     } catch (graphError) {
       if (!isRecoverableGraphStateError(graphError)) throw graphError
       await checkpointer.deleteThread(thread.id)
@@ -267,22 +289,41 @@ export function AssistantSection({
         ...request,
         rehydratedSummary: thread.summary,
         rehydratedMessages: messages,
-      })
+      }, onProgress)
     }
-    if (result.state.assistantMessage) await saveAssistantMessage(thread.id, result.state.assistantMessage)
+    setProgressLabel(progressLabels.saving_response)
+    if (result.state.assistantMessage) {
+      const assistantMessage = result.state.assistantMessage
+      if (activeThreadRef.current === thread.id) {
+        setMessages((current) => current.some((message) =>
+          message.turnId === assistantMessage.turnId && message.role === 'assistant')
+          ? current
+          : [...current, assistantMessage])
+      }
+      await saveAssistantMessage(thread.id, assistantMessage)
+    }
     if (result.state.summary !== thread.summary) {
       await updateAssistantThreadSummary(thread.id, result.state.summary)
     }
-    await Promise.all([refreshConversation(thread.id), refreshThreads(thread.id)])
+    setProgressLabel(progressLabels.syncing_conversation)
+    // The canonical message/proposal is already saved. Do not keep the
+    // composer locked forever if a non-essential list refresh is slow; the
+    // requests continue and update the UI when they eventually finish.
+    await waitForUiSync(Promise.all([
+      refreshConversation(thread.id),
+      refreshThreads(thread.id),
+    ]))
   }
 
   const send = async (event: FormEvent) => {
     event.preventDefault()
     const content = text.trim()
-    if (!content || sending || hasPendingProposal || !navigator.onLine) return
-    setThinkingContext('reply')
+    if (!content || sending || sendingRef.current || hasPendingProposal || !navigator.onLine) return
+    setProgressLabel(progressLabels.checking_context)
+    sendingRef.current = true
     setSending(true)
     setError(null)
+    setNotice(null)
     let attempt: { thread: AssistantThread; request: AssistantTurnRequest } | null = null
     try {
       const thread = currentThread ?? await createThread()
@@ -305,19 +346,25 @@ export function AssistantSection({
       if (thread.title === '新對話') {
         await renameAssistantThread(thread.id, content.slice(0, 36))
       }
+      // Legacy delta chains cause an N+1 read for every parent checkpoint.
+      // The current user message and canonical history are already saved, so
+      // a completed runtime can be safely rebuilt before this new turn.
+      await checkpointer.discardLegacyHistory(thread.id)
       await runAssistantTurn(thread, request)
       setRetryRequest(null)
     } catch (sendError) {
       setError(friendlyError(sendError, '助理暫時無法回覆'))
       if (attempt) setRetryRequest(attempt)
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
 
   const retryLastTurn = async () => {
-    if (!retryRequest || sending || !navigator.onLine) return
-    setThinkingContext('reply')
+    if (!retryRequest || sending || sendingRef.current || !navigator.onLine) return
+    setProgressLabel(progressLabels.checking_context)
+    sendingRef.current = true
     setSending(true)
     setError(null)
     try {
@@ -326,6 +373,7 @@ export function AssistantSection({
     } catch (retryError) {
       setError(friendlyError(retryError, '助理暫時無法回覆'))
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -353,13 +401,10 @@ export function AssistantSection({
         : item))
       try {
         await applyStoredAssistantProposal(proposal.id, false)
-        try {
-          await runner.resumeProposal(proposal.threadId, false)
-        } catch {
-          // Canonical status is already rejected. Remove a stale interrupted
-          // runtime so the next message rebuilds from canonical history.
-          await checkpointer.deleteThread(proposal.threadId)
-        }
+        // The canonical proposal is the source of truth. Removing the paused
+        // runtime avoids recursively reading a legacy checkpoint chain just
+        // to record a rejection that has already been persisted.
+        void checkpointer.deleteThread(proposal.threadId).catch(() => {})
         await refreshConversation(proposal.threadId)
       } catch (rejectionError) {
         setProposals((current) => current.map((item) => item.id === proposal.id
@@ -371,34 +416,30 @@ export function AssistantSection({
       }
       return
     }
-    setThinkingContext('proposal')
+    setProgressLabel(progressLabels.applying_proposal)
     setSending(true)
     setError(null)
     setProposals((current) => current.map((item) => item.id === proposal.id
       ? { ...item, status: 'approved' as const }
       : item))
     try {
-      let status: 'applied' | 'expired'
-      try {
-        const result = await runner.resumeProposal(proposal.threadId, true)
-        if (result.state.proposalStatus !== 'applied' && result.state.proposalStatus !== 'expired') {
-          throw new Error('行程提案沒有完成套用')
-        }
-        status = result.state.proposalStatus
-      } catch {
-        // Applying is idempotent. If graph persistence failed after (or before)
-        // the RPC, ask the canonical proposal directly and rebuild the runtime.
-        const canonicalStatus = await applyStoredAssistantProposal(proposal.id, true)
-        if (canonicalStatus !== 'applied' && canonicalStatus !== 'expired') {
-          throw new Error('這個行程提案已經未套用，請重新產生提案。')
-        }
-        status = canonicalStatus
-        await checkpointer.deleteThread(proposal.threadId)
+      const canonicalStatus = await applyStoredAssistantProposal(proposal.id, true)
+      if (canonicalStatus !== 'applied' && canonicalStatus !== 'expired') {
+        throw new Error('這個行程提案已經未套用，請重新產生提案。')
       }
+      const status = canonicalStatus
+      void checkpointer.deleteThread(proposal.threadId).catch(() => {})
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
         : item))
-      if (status === 'applied') await onItineraryApplied()
+      if (status === 'applied') {
+        setProgressLabel('正在補齊 Google 地點資料…')
+        const enrichment = await enrichAppliedProposalPlaces(proposal)
+        if (enrichment.failed > 0) {
+          setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+        }
+        await onItineraryApplied()
+      }
       await refreshConversation(proposal.threadId)
       // Keep the canonical terminal state even if an older list request was
       // already in flight when the user pressed confirm.
@@ -415,7 +456,7 @@ export function AssistantSection({
 
   const manualSummarize = async () => {
     if (!threadId || messages.length === 0) return
-    setThinkingContext('summary')
+    setProgressLabel('正在整理對話內容…')
     setSending(true)
     try {
       const state = await runner.summarizeThread(threadId)
@@ -488,8 +529,9 @@ export function AssistantSection({
                 ? proposals.filter((proposal) => proposal.turnId === message.turnId).map((proposal) => <ProposalCard key={proposal.id} proposal={proposal} busy={sending || rejectingProposalId === proposal.id} onDecision={decideProposal} />)
                 : null}
             </Stack>)}
-            {sending ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary' }}><Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}><AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} /></Avatar><Paper elevation={0} sx={{ px: 1.5, py: 1, borderRadius: '18px 18px 18px 5px' }}><Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><CircularProgress size={14} /><Typography variant="caption" aria-live="polite">{thinkingLabel}</Typography></Stack></Paper></Stack> : null}
+            {sending ? <Stack direction="row" spacing={1} sx={{ alignItems: 'center', color: 'text.secondary' }}><Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main' }}><AutoAwesomeRoundedIcon sx={{ fontSize: 15 }} /></Avatar><Paper elevation={0} sx={{ px: 1.5, py: 1, borderRadius: '18px 18px 18px 5px' }}><Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}><CircularProgress size={14} /><Typography variant="caption" aria-live="polite">{progressLabel}</Typography></Stack></Paper></Stack> : null}
             {!navigator.onLine ? <Alert severity="info" variant="outlined" sx={{ flexShrink: 0, borderRadius: 2 }}>助理與行程確認需要網路連線。</Alert> : null}
+            {notice ? <Alert severity="warning" variant="outlined" onClose={() => setNotice(null)} sx={{ flexShrink: 0, borderRadius: 2 }}>{notice}</Alert> : null}
             {error ? <Alert severity="error" variant="outlined" onClose={() => setError(null)} sx={{ flexShrink: 0, borderRadius: 2 }}>{error}</Alert> : null}
             {retryRequest?.thread.id === threadId ? <Alert severity="warning" variant="outlined" sx={{ flexShrink: 0, borderRadius: 2 }} action={<Button color="inherit" size="small" disabled={sending || !navigator.onLine} onClick={() => void retryLastTurn()}>重試</Button>}>上次回覆未完成，這個回合可以安全重試。</Alert> : null}
             <Box ref={conversationEndRef} />
@@ -579,8 +621,8 @@ function ProposalCard({ proposal, busy, onDecision }: { proposal: StoredAssistan
           const before = proposal.beforeDays.find((day) => day.id === after.id)
           return <Box key={after.id} sx={{ p: 1, bgcolor: 'action.hover', borderRadius: 2 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>{dateLabel(after)}</Typography>
-            <Typography variant="caption" color="text.secondary">原本：{before?.attractions.map((item) => item.name).join(' → ') || '沒有景點'}</Typography>
-            <Typography variant="body2">建議：{after.attractions.map((item) => item.name).join(' → ') || '沒有景點'}</Typography>
+            <Typography variant="caption" color="text.secondary">原本：{before?.attractions.map(itineraryItemLabel).join(' → ') || '沒有景點'}</Typography>
+            <Typography variant="body2">建議：{after.attractions.map(itineraryItemLabel).join(' → ') || '沒有景點'}</Typography>
           </Box>
         })}
       </Stack>

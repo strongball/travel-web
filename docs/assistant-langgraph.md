@@ -4,8 +4,10 @@
 
 旅程助理的 LangGraph 完全在瀏覽器執行。主要程式分工如下：
 
-- `src/features/assistant/assistantGraph.ts`：graph、共用模型輸出解析、operation 驗證、摘要策略。
-- `src/features/assistant/assistantApi.ts`：正式 UI 使用的 Gemini proxy adapter、依瀏覽器語言的回覆/Places 查證，以及模型估算的交通時間。
+- `src/features/assistant/assistantGraph.ts`：graph、operation 驗證、前置摘要策略與真實節點進度事件。
+- `src/features/assistant/assistantApi.ts`：Gemini proxy adapter、function calling、Zod runtime 驗證及模型估算的交通時間。
+- `src/features/assistant/assistantSchemas.ts`：一般回答、行程編輯工具、operation 與摘要的 Zod schema。
+- `src/features/assistant/assistantPlaceEnrichment.ts`：提案套用成功後才執行的 Google 地點 best-effort enrichment。
 - `src/features/assistant/AssistantSection.tsx`：canonical message/proposal persistence、版本重建與聊天室 UI。
 - `src/features/assistant/types.ts`：UI、repository 與 graph 共用的公開型別。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
@@ -32,7 +34,7 @@ const runner = createAssistantGraph(checkpointer, {
 
 | 欄位 | 用途 |
 | --- | --- |
-| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 2`。 |
+| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 3`。 |
 | `summary` | 已壓縮的舊對話脈絡。 |
 | `messages` | graph 目前保留的近期 user/assistant 訊息，不一定是完整聊天歷史。 |
 | `request` | 當次尚待 `respond` 處理的 `AssistantTurnRequest`；完成後清為 `null`。 |
@@ -44,20 +46,21 @@ const runner = createAssistantGraph(checkpointer, {
 節點與 edge：
 
 ```text
-START -> respond
-  ├─ 無 proposal -> summarize -> END
+START -> prepare_context -> respond
+  ├─ 無 proposal -> finish_turn -> END
   └─ 有 proposal -> persist_proposal -> [breakpoint before approval]
        approval
-         ├─ approved -> apply_proposal -> summarize -> END
+         ├─ approved -> apply_proposal -> END
          └─ rejected -> reject_proposal -> END
 ```
 
-- `respond` 呼叫 `AssistantModel.respond`、建立 assistant message、解析並驗證 operations。
-- `assistantApi` 會依 i18n 的目前語言（中文輸入時優先使用 `zh-TW`）傳給 Gemini、Places 與 Geocoder，並要求景點名稱不要使用英文羅馬拼音。中文介面若 Google 仍回傳羅馬拼音，會優先保留模型產生的中文名稱；Google 找不到新增景點時保留 `placeId`、座標為 `null`，不讓整個提案失敗。給模型的行程 context 只保留旅程名稱/日期範圍、每日日期/開始時間，以及供提案引用的 day/attraction ID、順序、名稱、地點、時段、停留時間與交通資訊；不包含費用、描述、revision、Place ID 或座標等內部欄位。prompt 要求推薦先合併摘要、近期對話與完整行程，尊重較新的偏好/否定、避開已排景點並配合當日區域與步調。交通時間由 Gemini 依景點脈絡與交通方式估算整數分鐘；不確定時填 `null`。此流程不呼叫 Routes/Directions，因此不會因路線 API 延遲。
+- `prepare_context` 先排除本次 user message，再判斷舊訊息是否達摘要門檻；需要時先更新摘要，之後才進入 `respond`。本次訊息不會被摘要掉。
+- `respond` 呼叫 `AssistantModel.respond`、建立 assistant message，並由 Zod schema 與 itinerary invariant 共同驗證 operations。
+- `assistantApi` 強制 Gemini 呼叫 `answer_travel_question` 或 `propose_itinerary_edit` 其中一個工具；舊模型若忽略 tool request，JSON fallback 仍必須通過同一組 Zod schema。prompt 要求依完整行程順推每日開始時間、前往時間及停留時間，並考慮合理營業/用餐/夜景時段。提案階段不查 Google，也不接受模型虛構 Place ID、座標或費用。
 - `persist_proposal` 在暫停前寫入 canonical pending proposal。這個寫入必須能以 proposal/turn ID 冪等重試。
 - `approval` 本身不做副作用；它是恢復流程的 routing marker。
 - `apply_proposal`、`reject_proposal` 位於確認決策之後，才呼叫 proposal persistence。拒絕是控制決策，不會再觸發摘要或另一個模型回合；輸入框會直接恢復，可繼續討論。
-- `summarize` 達門檻時才呼叫模型，更新 `summary` 並只在 graph state 保留近期訊息。
+- UI 傳入的 progress callback 只由實際節點觸發：檢查前文、摘要前文、模型生成、驗證、保存提案及套用提案；不可再用 timer 輪播假進度。
 
 所有 graph invoke 都使用 `durability: 'exit'`。一般 turn 在完成時保存；proposal 在 breakpoint 暫停時保存可恢復狀態，確認後再保存完成狀態。不要改回預設的逐 super-step 寫入，否則每個 turn 會產生更多 checkpoint 與 Data API 往返。
 
@@ -66,7 +69,7 @@ START -> respond
 1. UI/repository 先以 client-generated `threadId`、`turnId` 保存 user message。
 2. 呼叫 `runner.sendTurn(request)`。
 3. runner 載入最新 state、檢查 `graphVersion`，將 user message 與 request 送入 graph。
-4. `respond` 產生一般回答，`summarize` 視需要壓縮，graph 到達 `END`。
+4. `prepare_context` 視需要先壓縮舊訊息，`respond` 再處理本次訊息，最後到達 `END`。
 5. `AssistantTurnResult.interrupt` 為 `null`；呼叫端冪等保存 assistant message。
 
 同一個 thread 不可同時送兩個 turn。`assistant_put_checkpoint` 的 CAS 會拒絕落後的分支；收到「另一個裝置已變更」時應重新讀取 thread/messages/state，不能盲目重送舊 state。
@@ -79,7 +82,7 @@ START -> respond
 4. graph 在 `approval` 前暫停；`sendTurn` 回傳 `interrupt.kind === 'itinerary_proposal'`，UI 顯示 diff 與確認按鈕。
 5. UI 呼叫 `runner.resumeProposal(threadId, approved)`。
 6. runner 以 `workflow.updateState(..., 'approval')` 寫入決策，再以相同 thread 繼續 graph。
-7. 核准時由 `apply_proposal` 執行原子 RPC；revision 不符回傳 `expired`。拒絕時由 `reject_proposal` 寫入 `rejected` 後直接到 `END`，讓使用者繼續輸入，不另觸發模型。
+7. 核准時由 `apply_proposal` 執行原子 RPC；revision 不符回傳 `expired`。RPC 回傳 `applied` 後，UI 才對新增或改名且缺位置資料的景點執行 Google Geocoder enrichment。查不到或沒有權限不回滾行程，欄位維持空值並提示使用者。拒絕時直接寫入 `rejected` 後到 `END`。
 
 不要在 `persist_proposal` 或 breakpoint 前改行程。恢復可能重試，任何外部副作用都必須位於決策後，並由 proposal ID 保證冪等。
 
@@ -137,7 +140,17 @@ Saver 使用 LangGraph 提供的 `this.serde.dumpsTyped/loadsTyped`，而不是�
 
 ### CAS 與冪等性
 
-`put` 呼叫：
+正式 UI 的 `put` 會保存完整 snapshot，並呼叫：
+
+```text
+assistant_replace_checkpoint(...)
+```
+
+RPC 以 try advisory lock 與 expected latest 做 CAS，插入新 snapshot 後在同一 transaction 刪除該 thread/namespace 的舊 checkpoint 與 writes。因此每個對話 namespace 只保留最新一份可恢復狀態，不會隨 turn 累積 parent chain；完整聊天仍保存在 `assistant_messages`。proposal 暫停 checkpoint 也是完整 snapshot，重新整理後仍能恢復。
+
+舊版 delta chain 的讀取會為每個 parent 各查 checkpoint 與 writes，形成 N+1。正常新 turn 會先以 `discardLegacyHistory` 只讀最新兩筆；發現多筆或 parent chain 時直接刪除 runtime，並以 canonical messages/thread summary 重建。確認或拒絕 proposal 直接寫 canonical RPC，再 best-effort 清除 paused runtime，不為了控制狀態重讀整條 chain。所有 checkpoint Data API/RPC request 均有 12 秒 abort timeout。
+
+checkpointer conformance 測試使用 `{ compactHistory: false }`，此模式的 `put` 呼叫：
 
 ```text
 assistant_put_checkpoint(
@@ -177,7 +190,7 @@ assistant_put_checkpoint(
 新增 itinerary 修改能力時必須同步完成：
 
 1. 在 `AssistantOperation` union 加入精確型別。
-2. 在 `parseAssistantOperations` 做 runtime allowlist、型別與範圍驗證；未知欄位不可靜默接受。
+2. 在 `assistantSchemas.ts` 的 Zod discriminated union 做 runtime allowlist、型別與範圍驗證；未知欄位不可靜默接受。
 3. 在 `validateAssistantOperations` 驗證所有引用 ID 與跨欄位 invariant。
 4. 更新 Gemini prompt 的 allowed operation 清單及 structured response contract。
 5. 在 proposal materializer 將 operation 轉成 before/after snapshots；真正套用仍由 `apply_assistant_proposal` 驗證並原子執行。
@@ -219,6 +232,6 @@ checkpointer 變更還應以 Supabase local/preview 環境測試 RLS、RPC CAS�
 | 核准後變成 expired | 目標 day revision 已改變；這是預期的衝突保護，重新產生 proposal。 |
 | Checkpoint 無法反序列化 | type/payload 配對被改壞、base64 被截斷，或 graph version 未升；不可嘗試用純 JSON 強行恢復。 |
 | 摘要後舊訊息在聊天室消失 | UI 錯把 graph `messages` 當完整歷史；聊天室應查 `assistant_messages`，state 只保留模型近期上下文。 |
-| 新增景點沒有位置資料 | Google Places/Geocoder 沒有結果；proposal 仍可保存，但 `placeId`、座標與依賴它的 `travelTime` 會是 `null`，可在行程頁補資料後重試。 |
+| 新增景點沒有位置資料 | proposal 階段刻意不查 Google；套用成功後才 best-effort 補齊。查不到時 `placeId`、座標維持 `null`，但模型估算的 `travelTime` 可保留。 |
 | 排程沒有交通時間 | 模型無法從行程脈絡合理估算；`travelTime` 可保持 `null`，不會阻擋提案。 |
 | PWA 更新後舊分頁行為不同 | 舊 bundle 仍在執行；以 graph version 阻止不相容 resume，提示重新載入並重建。 |

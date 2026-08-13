@@ -177,6 +177,6 @@ validate({
   checkpointerName: 'SupabaseAssistantCheckpointer',
   createCheckpointer() {
     const client = new FakeSupabase() as unknown as SupabaseClient
-    return new SupabaseAssistantCheckpointer(client)
+    return new SupabaseAssistantCheckpointer(client, { compactHistory: false })
   },
 })

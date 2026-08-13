@@ -1,6 +1,19 @@
 import type { Itinerary } from '../../types/database'
 
-export const ASSISTANT_GRAPH_VERSION = 2
+export const ASSISTANT_GRAPH_VERSION = 3
+
+export type AssistantProgressPhase =
+  | 'checking_context'
+  | 'summarizing_context'
+  | 'generating_response'
+  | 'validating_response'
+  | 'saving_proposal'
+  | 'applying_proposal'
+  | 'saving_checkpoint'
+  | 'saving_response'
+  | 'syncing_conversation'
+
+export type AssistantProgressListener = (phase: AssistantProgressPhase) => void
 
 export type AssistantMessageRole = 'user' | 'assistant'
 
@@ -124,8 +137,8 @@ export type AssistantTurnResult = {
 }
 
 export type AssistantGraphRunner = {
-  sendTurn: (request: AssistantTurnRequest) => Promise<AssistantTurnResult>
-  resumeProposal: (threadId: string, approved: boolean) => Promise<AssistantTurnResult>
+  sendTurn: (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => Promise<AssistantTurnResult>
+  resumeProposal: (threadId: string, approved: boolean, onProgress?: AssistantProgressListener) => Promise<AssistantTurnResult>
   summarizeThread: (threadId: string) => Promise<AssistantGraphState>
   getState: (threadId: string) => Promise<AssistantGraphState | null>
 }

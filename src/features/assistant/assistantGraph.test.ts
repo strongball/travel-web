@@ -162,6 +162,55 @@ describe('createAssistantGraph', () => {
     expect(result.state.assistantMessage?.content).toBe('第一天目前從九點開始。')
   })
 
+  it('reports actual graph phases instead of rotating simulated messages', async () => {
+    const graph = createAssistantGraph(new MemorySaver(), {
+      model: {
+        respond: async () => ({ reply: '完成' }),
+        summarize: async () => 'summary',
+      },
+      proposals: persistence(),
+      summaryMessageThreshold: 100,
+    })
+    const phases: string[] = []
+    await graph.sendTurn(request(), (phase) => phases.push(phase))
+    expect(phases).toEqual([
+      'checking_context',
+      'generating_response',
+      'validating_response',
+      'saving_checkpoint',
+    ])
+  })
+
+  it('summarizes previous messages before processing the current user message', async () => {
+    const events: string[] = []
+    const graph = createAssistantGraph(new MemorySaver(), {
+      model: {
+        respond: async (modelRequest) => {
+          events.push(`respond:${modelRequest.summary}`)
+          expect(modelRequest.messages.at(-1)?.content).toBe('這次的新問題')
+          return { reply: '完成' }
+        },
+        summarize: async (_summary, messages) => {
+          events.push(`summarize:${messages.map((message) => message.content).join(',')}`)
+          expect(messages.some((message) => message.content === '這次的新問題')).toBe(false)
+          return '先前內容摘要'
+        },
+      },
+      proposals: persistence(),
+      summaryMessageThreshold: 1,
+      recentMessageCount: 1,
+    })
+    const prior: AssistantMessage = {
+      id: 'prior', turnId: 'prior-turn', role: 'user', content: '之前的偏好', createdAt: '2026-08-11T00:00:00.000Z',
+    }
+    await graph.sendTurn({
+      ...request(),
+      text: '這次的新問題',
+      rehydratedMessages: [prior],
+    })
+    expect(events).toEqual(['summarize:之前的偏好', 'respond:先前內容摘要'])
+  })
+
   it('rehydrates canonical summary and messages when rebuilding a thread', async () => {
     const model: AssistantModel = {
       respond: async (modelRequest) => ({

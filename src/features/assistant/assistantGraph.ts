@@ -19,6 +19,7 @@ import type {
   AssistantModel,
   AssistantModelResult,
   AssistantOperation,
+  AssistantProgressListener,
   AssistantTurnRequest,
   AssistantTurnResult,
   ItineraryChangeProposal,
@@ -383,11 +384,30 @@ export const createAssistantGraph = (
   const summaryMessageThreshold = dependencies.summaryMessageThreshold ?? DEFAULT_SUMMARY_MESSAGE_THRESHOLD
   const summaryCharacterThreshold = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
   const recentMessageCount = dependencies.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT
+  const progressListeners = new Map<string, AssistantProgressListener>()
+  const reportProgress = (threadId: string | undefined, phase: Parameters<AssistantProgressListener>[0]) => {
+    if (threadId) progressListeners.get(threadId)?.(phase)
+  }
 
   const workflow = new StateGraph(GraphState)
+    .addNode('prepare_context', async (state) => {
+      const request = state.request
+      if (!request) throw new Error('Assistant turn request is missing')
+      reportProgress(request.threadId, 'checking_context')
+      const currentTurn = state.messages.filter((message) => message.turnId === request.turnId)
+      const previousMessages = state.messages.filter((message) => message.turnId !== request.turnId)
+      if (!shouldSummarizeMessages(previousMessages, summaryMessageThreshold, summaryCharacterThreshold)) return {}
+      reportProgress(request.threadId, 'summarizing_context')
+      const summary = await dependencies.model.summarize(state.summary, previousMessages)
+      return {
+        summary,
+        messages: [...recentAssistantMessages(previousMessages, recentMessageCount), ...currentTurn],
+      }
+    })
     .addNode('respond', async (state) => {
       const request = state.request
       if (!request) throw new Error('Assistant turn request is missing')
+      reportProgress(request.threadId, 'generating_response')
       const result = await dependencies.model.respond({
         summary: state.summary,
         messages: state.messages,
@@ -403,6 +423,7 @@ export const createAssistantGraph = (
         createdAt: new Date().toISOString(),
       }
       let proposal: ItineraryChangeProposal | null = null
+      reportProgress(request.threadId, 'validating_response')
       if (result.proposal) {
         const operations = normalizeAssistantOperations(request.itinerary, result.proposal.operations)
         validateAssistantOperations(request.itinerary, operations)
@@ -429,8 +450,14 @@ export const createAssistantGraph = (
     })
     .addNode('persist_proposal', async (state) => {
       if (!state.pendingProposal) throw new Error('Proposal is missing')
+      reportProgress(state.pendingProposal.threadId, 'saving_proposal')
       await dependencies.proposals.savePending(state.pendingProposal)
+      reportProgress(state.pendingProposal.threadId, 'saving_checkpoint')
       return {}
+    })
+    .addNode('finish_turn', (state) => {
+      reportProgress(state.request?.threadId, 'saving_checkpoint')
+      return { request: null }
     })
     // Browser runtimes do not provide AsyncLocalStorage, so the graph uses a
     // static breakpoint before this node. resumeProposal updates state as if
@@ -438,7 +465,9 @@ export const createAssistantGraph = (
     .addNode('approval', () => ({}))
     .addNode('apply_proposal', async (state) => {
       if (!state.pendingProposal) throw new Error('Proposal is missing')
+      reportProgress(state.pendingProposal.threadId, 'applying_proposal')
       const status = await dependencies.proposals.apply({ ...state.pendingProposal, status: 'approved' })
+      reportProgress(state.pendingProposal.threadId, 'saving_checkpoint')
       return {
         proposalStatus: status,
         pendingProposal: { ...state.pendingProposal, status },
@@ -454,27 +483,23 @@ export const createAssistantGraph = (
         request: null,
       }
     })
-    .addNode('summarize', async (state) => {
-      if (!shouldSummarizeMessages(state.messages, summaryMessageThreshold, summaryCharacterThreshold)) return { request: null }
-      const summary = await dependencies.model.summarize(state.summary, state.messages)
-      return { summary, messages: recentAssistantMessages(state.messages, recentMessageCount), request: null }
-    })
-    .addEdge(START, 'respond')
+    .addEdge(START, 'prepare_context')
+    .addEdge('prepare_context', 'respond')
     .addConditionalEdges('respond', (state) => state.pendingProposal ? 'proposal' : 'answer', {
       proposal: 'persist_proposal',
-      answer: 'summarize',
+      answer: 'finish_turn',
     })
     .addEdge('persist_proposal', 'approval')
     .addConditionalEdges('approval', (state) => state.proposalStatus === 'approved' ? 'approved' : 'rejected', {
       approved: 'apply_proposal',
       rejected: 'reject_proposal',
     })
-    .addEdge('apply_proposal', 'summarize')
+    .addEdge('apply_proposal', END)
     // Rejecting a proposal is a control decision, not a new model turn.
     // Finish immediately so the composer can continue the conversation
     // without triggering another summary/model action.
     .addEdge('reject_proposal', END)
-    .addEdge('summarize', END)
+    .addEdge('finish_turn', END)
     .compile({ checkpointer, interruptBefore: ['approval'] })
 
   const config = (threadId: string) => ({ configurable: { thread_id: threadId }, durability: 'exit' as const })
@@ -484,6 +509,65 @@ export const createAssistantGraph = (
     interrupt: interruptFrom(value),
   })
 
+  // A thread has one linear checkpoint head. Coalesce duplicate sends while
+  // the first run is still writing it; otherwise every caller races the CAS
+  // and creates a burst of failed Supabase requests.
+  const inFlightTurns = new Map<string, Promise<AssistantTurnResult>>()
+
+  const sendTurn = async (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => {
+    const active = inFlightTurns.get(request.threadId)
+    if (active) return active
+    const run = (async () => {
+      if (onProgress) progressListeners.set(request.threadId, onProgress)
+      try {
+        const previous = await getState(request.threadId)
+        if (previous && previous.graphVersion !== graphVersion) {
+          throw new AssistantGraphVersionError(previous.graphVersion, graphVersion)
+        }
+        const completedTurn = previous?.messages.find((message) =>
+          message.turnId === request.turnId && message.role === 'assistant')
+        if (completedTurn && previous) {
+          return result({ ...previous, assistantMessage: completedTurn })
+        }
+        const existingUserMessage = previous?.messages.find((message) =>
+          message.turnId === request.turnId && message.role === 'user') ??
+          request.rehydratedMessages?.find((message) => message.turnId === request.turnId && message.role === 'user')
+        const userMessage: AssistantMessage = existingUserMessage ?? {
+          id: crypto.randomUUID(),
+          turnId: request.turnId,
+          role: 'user',
+          content: request.text.trim(),
+          createdAt: request.createdAt ?? new Date().toISOString(),
+        }
+        const baseMessages = previous?.messages ?? request.rehydratedMessages ?? []
+        const messages = existingUserMessage ? baseMessages : [...baseMessages, userMessage]
+        const output = await workflow.invoke({
+          ...(previous ?? {
+            ...defaultState(graphVersion),
+            summary: request.rehydratedSummary ?? '',
+            messages: baseMessages,
+          }),
+          graphVersion,
+          messages,
+          request,
+          assistantMessage: null,
+          pendingProposal: null,
+          proposalStatus: null,
+          error: null,
+        }, config(request.threadId))
+        return result(output)
+      } finally {
+        progressListeners.delete(request.threadId)
+      }
+    })()
+    inFlightTurns.set(request.threadId, run)
+    try {
+      return await run
+    } finally {
+      if (inFlightTurns.get(request.threadId) === run) inFlightTurns.delete(request.threadId)
+    }
+  }
+
   const getState = async (threadId: string) => {
     const snapshot = await workflow.getState(config(threadId))
     if (!snapshot.config.configurable?.checkpoint_id) return null
@@ -491,52 +575,22 @@ export const createAssistantGraph = (
   }
 
   return {
-    async sendTurn(request) {
-      const previous = await getState(request.threadId)
-      if (previous && previous.graphVersion !== graphVersion) {
-        throw new AssistantGraphVersionError(previous.graphVersion, graphVersion)
+    sendTurn,
+    async resumeProposal(threadId, approved, onProgress) {
+      if (onProgress) progressListeners.set(threadId, onProgress)
+      try {
+        const previous = await getState(threadId)
+        if (!previous) throw new Error('Assistant thread has no checkpoint to resume')
+        if (previous.graphVersion !== graphVersion) {
+          throw new AssistantGraphVersionError(previous.graphVersion, graphVersion)
+        }
+        await workflow.updateState(config(threadId), {
+          proposalStatus: approved ? 'approved' : 'rejected',
+        }, 'approval')
+        return result(await workflow.invoke(null, config(threadId)))
+      } finally {
+        progressListeners.delete(threadId)
       }
-      const completedTurn = previous?.messages.find((message) =>
-        message.turnId === request.turnId && message.role === 'assistant')
-      if (completedTurn && previous) return result({ ...previous, assistantMessage: completedTurn })
-      const existingUserMessage = previous?.messages.find((message) =>
-        message.turnId === request.turnId && message.role === 'user') ??
-        request.rehydratedMessages?.find((message) => message.turnId === request.turnId && message.role === 'user')
-      const userMessage: AssistantMessage = existingUserMessage ?? {
-        id: crypto.randomUUID(),
-        turnId: request.turnId,
-        role: 'user',
-        content: request.text.trim(),
-        createdAt: request.createdAt ?? new Date().toISOString(),
-      }
-      const baseMessages = previous?.messages ?? request.rehydratedMessages ?? []
-      const messages = existingUserMessage ? baseMessages : [...baseMessages, userMessage]
-      const output = await workflow.invoke({
-        ...(previous ?? {
-          ...defaultState(graphVersion),
-          summary: request.rehydratedSummary ?? '',
-          messages: baseMessages,
-        }),
-        graphVersion,
-        messages,
-        request,
-        assistantMessage: null,
-        pendingProposal: null,
-        proposalStatus: null,
-        error: null,
-      }, config(request.threadId))
-      return result(output)
-    },
-    async resumeProposal(threadId, approved) {
-      const previous = await getState(threadId)
-      if (!previous) throw new Error('Assistant thread has no checkpoint to resume')
-      if (previous.graphVersion !== graphVersion) {
-        throw new AssistantGraphVersionError(previous.graphVersion, graphVersion)
-      }
-      await workflow.updateState(config(threadId), {
-        proposalStatus: approved ? 'approved' : 'rejected',
-      }, 'approval')
-      return result(await workflow.invoke(null, config(threadId)))
     },
     async summarizeThread(threadId) {
       const previous = await getState(threadId)
@@ -548,7 +602,7 @@ export const createAssistantGraph = (
       await workflow.updateState(config(threadId), {
         summary,
         messages: recentAssistantMessages(previous.messages, recentMessageCount),
-      }, 'summarize')
+      }, 'finish_turn')
       const updated = await getState(threadId)
       if (!updated) throw new Error('Assistant summary checkpoint was not saved')
       return updated

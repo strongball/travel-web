@@ -1,19 +1,27 @@
-import { GoogleGenAI } from '@google/genai'
+import { FunctionCallingConfigMode, GoogleGenAI } from '@google/genai'
 import type { Attraction, Itinerary } from '../../types/database'
 import { supabase } from '../../lib/supabase'
 import i18n from '../../i18n'
 import { geocodeWithGoogle, loadGoogleMaps } from '../travel/googleMaps'
 import type {
-  AssistantAttractionDraft,
   AssistantMessage,
   AssistantModel,
   AssistantModelRequest,
   AssistantModelResult,
-  AssistantOperation,
 } from './types'
+import {
+  answerToolArgumentsSchema,
+  assistantFunctionCallSchema,
+  assistantModelResultSchema,
+  assistantSummarySchema,
+  formatAssistantSchemaError,
+  jsonSchemaFor,
+  proposalToolArgumentsSchema,
+} from './assistantSchemas'
 
 const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
-const transportModes = new Set(['driving', 'walking', 'transit', 'bicycling'])
+const ANSWER_TOOL_NAME = 'answer_travel_question'
+const PROPOSAL_TOOL_NAME = 'propose_itinerary_edit'
 
 async function gemini() {
   const { data } = await supabase.auth.getSession()
@@ -63,36 +71,29 @@ const userLanguage = (sample = '') => {
   return i18n.resolvedLanguage || i18n.language || 'zh-TW'
 }
 
-const responseShape = `{
-  "reply":"answer in the user's language",
-  "proposal":null OR {
-    "title":"short title",
-    "explanation":"change summary",
-    "operations":[
-      {"type":"set_day_start_time","dayId":"uuid","startTime":"HH:mm"},
-      {"type":"add_attraction","dayId":"uuid","index":0,"attraction":{"id":"uuid","name":"place","description":"","cost":0,"latitude":null,"longitude":null,"duration":60,"transportMode":"transit","travelTime":null,"placeId":null,"locationName":"place or address"}},
-      {"type":"update_attraction","attractionId":"uuid","changes":{"duration":90}},
-      {"type":"remove_attraction","attractionId":"uuid"},
-      {"type":"move_attraction","attractionId":"uuid","targetDayId":"uuid","index":0},
-      {"type":"reorder_attractions","dayId":"uuid","attractionIds":["uuid"]}
-    ]
-  }
-}`
-
 export function buildAssistantPrompt(request: AssistantModelRequest) {
-  const history = request.messages.slice(-10).map((message) => `${message.role}: ${message.content}`).join('\n')
+  const recentMessages = request.messages.slice(-10)
+  const lastMessage = recentMessages.at(-1)
+  const historyMessages = lastMessage?.role === 'user' && lastMessage.content.trim() === request.userText.trim()
+    ? recentMessages.slice(0, -1)
+    : recentMessages
+  const history = historyMessages.map((message) => `${message.role}: ${message.content}`).join('\n')
   return [
     '你是旅遊行程助理。回答使用者問題，也能在使用者明確要求時提出每日行程修改。',
     '回覆前必須先綜合先前摘要、近期對話與目前完整行程。近期對話中較新的偏好、否定或修正優先於較舊內容。',
     '推薦必須對應使用者正在討論的城市、日期、步調與偏好，避開目前行程已有的景點，並利用既有行程的空檔與鄰近區域；不可像全新對話一樣忽略前文。',
-    '若使用者指的日期、地區或修改方向不明確，先提問澄清且 proposal 必須為 null。修改時只動使用者要求的部分，保留其他日期與景點。',
+    `若使用者指的日期、地區或修改方向不明確，先用 ${ANSWER_TOOL_NAME} 提問澄清，不要建立提案。修改時只動使用者要求的部分，保留其他日期與景點。`,
     '只能修改現有日期的開始時間與景點；不可修改旅程日期、幣別、費用或待辦。',
     '一般推薦或詢問只回答，不要產生 proposal。只有「加入、刪除、移動、調整、幫我排」等明確操作要求才產生 proposal。',
-    '所有既有 dayId/attractionId 必須逐字使用提供資料。新增景點 id 必須使用 UUID。',
+    '所有既有 dayId/attractionId 必須逐字使用提供資料。新增景點不要回傳 id，系統會自動產生。',
     'reorder_attractions 可以只列出要移動的景點，未列出的景點會維持原本相對順序。',
-    `請使用使用者語言（${userLanguage(request.userText)}）回答，景點名稱與地點名稱也要使用這個語言；不要把日文或中文轉成英文羅馬拼音。新增景點的 locationName 請包含城市與國家（例如「道頓堀，大阪，日本」）；可先將座標和 placeId 設 null，系統會用 Google Places 查證，找不到時會保留空值。不要虛構地址或價格；交通時間請依景點距離、transportMode 與行程脈絡估算整數分鐘，無法合理估算時填 null。`,
+    `請使用使用者語言（${userLanguage(request.userText)}）回答，景點名稱與地點名稱也要使用這個語言；不要把日文或中文轉成英文羅馬拼音。新增景點的 attraction 只回傳 name、duration、transportMode、travelTime，以及必要時的 locationName；不要回傳 id、description、cost、Place ID、座標或地址，Google 地點資料會在使用者套用後另行補齊。`,
+    '排程必須同時考慮日期、每日開始時間、每個景點現有 startTime/endTime、停留 duration、前往該景點的 transportMode/travelTime 與相鄰地點距離，不能只調整景點順序。',
+    '系統會依「每日開始時間 + 每站前的 travelTime + 該站 duration」重算 startTime/endTime；因此提案要用 set_day_start_time、順序、duration 與 travelTime 表達可執行時間表。交通時間以合理整數分鐘估算，無法合理估算才填 null。',
+    '將一般營業時段與合理遊玩時段納入安排（例如餐廳在用餐時段、夜景在傍晚後），避免抵達時可能已關門或單日行程過晚。你沒有即時營業資料，不得宣稱已查證；若營業時間不確定且會影響可行性，先在 reply 詢問並不要建立提案。',
+    '建立提案前，逐日從 day.startTime 順推每一段 travelTime 與 duration，確認沒有時間重疊、跨日或不合理空檔；需要修正既有景點的 duration/travelTime 時使用 update_attraction。',
     'update_attraction 的 changes 只放需要變動的欄位。',
-    `只回傳合法 JSON，格式：${responseShape}`,
+    `必須只呼叫一個工具：一般回答或需要澄清時呼叫 ${ANSWER_TOOL_NAME}；使用者明確要求修改且已能形成可執行提案時呼叫 ${PROPOSAL_TOOL_NAME}。編輯工具只需提供簡短 reply 與 operations，title/explanation 可省略；不要在工具外另寫回答。`,
     request.summary ? `先前摘要：${request.summary}` : '',
     history ? `近期對話：\n${history}` : '',
     `目前完整行程（以下是最新現況，包含所有日期與景點順序；請以此為準，不要只依賴對話摘要）：${JSON.stringify(itineraryForPrompt(request.itinerary))}`,
@@ -103,84 +104,73 @@ export function buildAssistantPrompt(request: AssistantModelRequest) {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
-function parseAttraction(value: unknown): AssistantAttractionDraft {
-  if (!isRecord(value) || typeof value.name !== 'string' || !value.name.trim()) {
-    throw new Error('助理回傳的景點資料不完整')
-  }
-  return {
-    id: typeof value.id === 'string' && value.id ? value.id : crypto.randomUUID(),
-    name: value.name.trim(),
-    description: typeof value.description === 'string' ? value.description : '',
-    cost: typeof value.cost === 'number' && value.cost >= 0 ? value.cost : 0,
-    latitude: typeof value.latitude === 'number' ? value.latitude : null,
-    longitude: typeof value.longitude === 'number' ? value.longitude : null,
-    duration: typeof value.duration === 'number' && value.duration >= 0 ? Math.round(value.duration) : 60,
-    transportMode: typeof value.transportMode === 'string' && transportModes.has(value.transportMode)
-      ? value.transportMode
-      : 'transit',
-    travelTime: typeof value.travelTime === 'number' && Number.isFinite(value.travelTime) && value.travelTime >= 0
-      ? Math.round(value.travelTime)
-      : null,
-    placeId: typeof value.placeId === 'string' ? value.placeId : null,
-    locationName: typeof value.locationName === 'string' ? value.locationName : value.name.trim(),
-  }
-}
+const supportedOperations = new Set([
+  'set_day_start_time',
+  'add_attraction',
+  'update_attraction',
+  'remove_attraction',
+  'move_attraction',
+  'reorder_attractions',
+])
 
-function parseOperations(value: unknown): AssistantOperation[] {
-  if (!Array.isArray(value)) throw new Error('助理回傳的修改格式錯誤')
-  return value.map((raw): AssistantOperation => {
-    if (!isRecord(raw) || typeof raw.type !== 'string') throw new Error('助理回傳的修改格式錯誤')
-    if (raw.type === 'set_day_start_time' && typeof raw.dayId === 'string' && typeof raw.startTime === 'string') {
-      return { type: raw.type, dayId: raw.dayId, startTime: raw.startTime }
+function assertSupportedOperations(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.proposal) || !Array.isArray(value.proposal.operations)) return
+  for (const operation of value.proposal.operations) {
+    if (isRecord(operation) && typeof operation.type === 'string' && !supportedOperations.has(operation.type)) {
+      throw new Error(`不支援的行程修改：${operation.type}`)
     }
-    if (raw.type === 'add_attraction' && typeof raw.dayId === 'string') {
-      return { type: raw.type, dayId: raw.dayId, attraction: parseAttraction(raw.attraction), index: typeof raw.index === 'number' ? Math.round(raw.index) : undefined }
-    }
-    if (raw.type === 'update_attraction' && typeof raw.attractionId === 'string' && isRecord(raw.changes)) {
-      const changes = { ...raw.changes } as Partial<AssistantAttractionDraft>
-      delete changes.id
-      if ('travelTime' in changes) {
-        changes.travelTime = typeof changes.travelTime === 'number' && Number.isFinite(changes.travelTime) && changes.travelTime >= 0
-          ? Math.round(changes.travelTime)
-          : null
-      }
-      return { type: raw.type, attractionId: raw.attractionId, changes }
-    }
-    if (raw.type === 'remove_attraction' && typeof raw.attractionId === 'string') {
-      return { type: raw.type, attractionId: raw.attractionId }
-    }
-    if (raw.type === 'move_attraction' && typeof raw.attractionId === 'string' && typeof raw.targetDayId === 'string' && typeof raw.index === 'number') {
-      return { type: raw.type, attractionId: raw.attractionId, targetDayId: raw.targetDayId, index: Math.round(raw.index) }
-    }
-    if (raw.type === 'reorder_attractions' && typeof raw.dayId === 'string' && Array.isArray(raw.attractionIds) && raw.attractionIds.every((id) => typeof id === 'string')) {
-      return { type: raw.type, dayId: raw.dayId, attractionIds: raw.attractionIds }
-    }
-    throw new Error(`不支援的行程修改：${raw.type}`)
-  })
+  }
 }
 
 export function parseAssistantModelResult(value: unknown): AssistantModelResult {
-  if (!isRecord(value) || typeof value.reply !== 'string' || !value.reply.trim()) {
-    throw new Error('助理未回傳有效內容')
+  assertSupportedOperations(value)
+  const parsed = assistantModelResultSchema.safeParse(value)
+  if (!parsed.success) {
+    throw new Error(`助理回傳格式錯誤：${formatAssistantSchemaError(parsed.error)}`)
   }
-  if (value.proposal == null) return { reply: value.reply.trim() }
-  if (!isRecord(value.proposal) || typeof value.proposal.title !== 'string' || typeof value.proposal.explanation !== 'string') {
-    throw new Error('助理回傳的提案格式錯誤')
-  }
+  if (!parsed.data.proposal) return { reply: parsed.data.reply }
   return {
-    reply: value.reply.trim(),
+    reply: parsed.data.reply,
     proposal: {
-      title: value.proposal.title.trim() || '行程修改提案',
-      explanation: value.proposal.explanation.trim(),
-      operations: parseOperations(value.proposal.operations),
+      title: parsed.data.proposal.title,
+      explanation: parsed.data.proposal.explanation,
+      operations: parsed.data.proposal.operations,
     },
   }
 }
 
-const itineraryLocationContext = (itinerary: Itinerary) => [
-  itinerary.title,
-  ...(itinerary.days ?? []).flatMap((day) => day.attractions.slice(0, 2).flatMap((attraction) => [attraction.name, attraction.locationName ?? ''])),
-].filter(Boolean).join(' ').slice(0, 160)
+export function parseAssistantFunctionCalls(value: unknown): AssistantModelResult {
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new Error('Gemini 必須且只能呼叫一個旅程助理工具')
+  }
+  const call = assistantFunctionCallSchema.safeParse(value[0])
+  if (!call.success) {
+    throw new Error(`Gemini 工具呼叫格式錯誤：${formatAssistantSchemaError(call.error)}`)
+  }
+  const args = call.data.args ?? {}
+  if (call.data.name === ANSWER_TOOL_NAME) {
+    const answer = answerToolArgumentsSchema.safeParse(args)
+    if (!answer.success) {
+      throw new Error(`Gemini 回答工具格式錯誤：${formatAssistantSchemaError(answer.error)}`)
+    }
+    return { reply: answer.data.reply }
+  }
+  if (call.data.name === PROPOSAL_TOOL_NAME) {
+    const proposal = proposalToolArgumentsSchema.safeParse(args)
+    if (!proposal.success) {
+      throw new Error(`Gemini 提案工具格式錯誤：${formatAssistantSchemaError(proposal.error)}`)
+    }
+    return parseAssistantModelResult({
+      reply: proposal.data.reply,
+      proposal: {
+        title: proposal.data.title,
+        explanation: proposal.data.explanation,
+        operations: proposal.data.operations,
+      },
+    })
+  }
+  throw new Error(`不支援的 Gemini 工具：${call.data.name}`)
+}
 
 const hasHanCharacters = (value: string) => /[\u3400-\u9fff]/.test(value)
 
@@ -199,38 +189,6 @@ export const localizedPlaceText = (
     return modelValue ?? googleValue
   }
   return googleValue ?? modelValue
-}
-
-async function verifyPlaces(result: AssistantModelResult, itinerary: Itinerary, language = userLanguage()): Promise<AssistantModelResult> {
-  if (!result.proposal) return result
-  const addOperations = result.proposal.operations.filter((operation) => operation.type === 'add_attraction')
-  if (addOperations.length === 0) return result
-  const verified = new Map<string, AssistantAttractionDraft>()
-  const context = itineraryLocationContext(itinerary)
-  for (const operation of addOperations) {
-    const place = await verifyGooglePlace(operation.attraction.locationName || operation.attraction.name, loadGoogleMaps, context, language)
-    verified.set(operation.attraction.id, {
-      ...operation.attraction,
-      name: localizedPlaceText(operation.attraction.name, place?.name ?? null, language) || operation.attraction.name,
-      locationName: localizedPlaceText(
-        operation.attraction.locationName,
-        place?.address || place?.name || null,
-        language,
-      ),
-      placeId: place?.placeId ?? null,
-      latitude: place?.latitude ?? null,
-      longitude: place?.longitude ?? null,
-    })
-  }
-  return {
-    ...result,
-    proposal: {
-      ...result.proposal,
-      operations: result.proposal.operations.map((operation) => operation.type === 'add_attraction'
-        ? { ...operation, attraction: verified.get(operation.attraction.id)! }
-        : operation),
-    },
-  }
 }
 
 export type VerifiedGooglePlace = {
@@ -305,22 +263,70 @@ export async function verifyGooglePlace(
   return null
 }
 
-async function generateJson(contents: string) {
+const assistantTools = [{
+  functionDeclarations: [
+    {
+      name: ANSWER_TOOL_NAME,
+      description: '回答一般旅遊問題，或在資訊不足時提出澄清問題。不得包含行程修改操作。',
+      parametersJsonSchema: jsonSchemaFor(answerToolArgumentsSchema),
+    },
+    {
+      name: PROPOSAL_TOOL_NAME,
+      description: '在使用者明確要求修改行程且資訊足夠時，提出一組可套用、包含合理時間安排的行程操作。',
+      parametersJsonSchema: jsonSchemaFor(proposalToolArgumentsSchema),
+    },
+  ],
+}]
+
+async function generateAssistantResult(contents: string): Promise<AssistantModelResult> {
   const ai = await gemini()
   const response = await ai.models.generateContent({
     model: modelName,
     contents,
-    config: { responseMimeType: 'application/json' },
+    config: {
+      tools: assistantTools,
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.ANY,
+          allowedFunctionNames: [ANSWER_TOOL_NAME, PROPOSAL_TOOL_NAME],
+        },
+      },
+      temperature: 0.2,
+    },
+  })
+  if (response.functionCalls?.length) return parseAssistantFunctionCalls(response.functionCalls)
+
+  // A schema-validated JSON response keeps older model revisions usable if
+  // they ignore an otherwise supported function-calling request.
+  if (response.text) {
+    try {
+      return parseAssistantModelResult(JSON.parse(response.text) as unknown)
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      throw new Error('Gemini 未回傳有效的工具呼叫或 JSON')
+    }
+  }
+  throw new Error('Gemini 未回傳工具呼叫')
+}
+
+async function generateJson(contents: string, responseJsonSchema: Record<string, unknown>) {
+  const ai = await gemini()
+  const response = await ai.models.generateContent({
+    model: modelName,
+    contents,
+    config: { responseMimeType: 'application/json', responseJsonSchema },
   })
   if (!response.text) throw new Error('Gemini 未回傳內容')
-  return JSON.parse(response.text) as unknown
+  try {
+    return JSON.parse(response.text) as unknown
+  } catch {
+    throw new Error('Gemini 回傳的 JSON 格式錯誤')
+  }
 }
 
 export const browserAssistantModel: AssistantModel = {
   async respond(request) {
-    const language = userLanguage(request.userText)
-    const verified = await verifyPlaces(parseAssistantModelResult(await generateJson(buildAssistantPrompt(request))), request.itinerary, language)
-    return verified
+    return generateAssistantResult(buildAssistantPrompt(request))
   },
   async summarize(currentSummary: string, messages: AssistantMessage[]) {
     const value = await generateJson([
@@ -328,9 +334,12 @@ export const browserAssistantModel: AssistantModel = {
       '只回傳 {"summary":"..."}。',
       currentSummary ? `既有摘要：${currentSummary}` : '',
       `新增對話：${JSON.stringify(messages.map(({ role, content }) => ({ role, content })))}`,
-    ].filter(Boolean).join('\n'))
-    if (!isRecord(value) || typeof value.summary !== 'string') throw new Error('無法整理對話')
-    return value.summary.trim()
+    ].filter(Boolean).join('\n'), jsonSchemaFor(assistantSummarySchema))
+    const summary = assistantSummarySchema.safeParse(value)
+    if (!summary.success) {
+      throw new Error(`無法整理對話：${formatAssistantSchemaError(summary.error)}`)
+    }
+    return summary.data.summary
   },
 }
 
