@@ -1,6 +1,6 @@
 import type { Itinerary } from '../../types/database'
 
-export const ASSISTANT_GRAPH_VERSION = 3
+export const ASSISTANT_GRAPH_VERSION = 4
 
 export type AssistantProgressPhase =
   | 'checking_context'
@@ -83,7 +83,6 @@ export type AssistantModelRequest = {
   messages: AssistantMessage[]
   userText: string
   itinerary: Itinerary
-  dayRevisions: Record<string, number>
 }
 
 export type AssistantModelResult = {
@@ -102,8 +101,6 @@ export type AssistantModel = {
 
 export type AssistantProposalPersistence = {
   savePending: (proposal: ItineraryChangeProposal) => Promise<void>
-  reject: (proposalId: string) => Promise<void>
-  apply: (proposal: ItineraryChangeProposal) => Promise<'applied' | 'expired'>
 }
 
 export type AssistantGraphDependencies = {
@@ -122,23 +119,10 @@ export type AssistantGraphState = {
   request: AssistantTurnRequest | null
   assistantMessage: AssistantMessage | null
   pendingProposal: ItineraryChangeProposal | null
-  proposalStatus: AssistantProposalStatus | null
-  error: string | null
-}
-
-export type AssistantInterruptPayload = {
-  kind: 'itinerary_proposal'
-  proposal: ItineraryChangeProposal
-}
-
-export type AssistantTurnResult = {
-  state: AssistantGraphState
-  interrupt: AssistantInterruptPayload | null
 }
 
 export type AssistantGraphRunner = {
-  sendTurn: (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => Promise<AssistantTurnResult>
-  resumeProposal: (threadId: string, approved: boolean, onProgress?: AssistantProgressListener) => Promise<AssistantTurnResult>
+  sendTurn: (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => Promise<AssistantGraphState>
   summarizeThread: (threadId: string) => Promise<AssistantGraphState>
   getState: (threadId: string) => Promise<AssistantGraphState | null>
 }

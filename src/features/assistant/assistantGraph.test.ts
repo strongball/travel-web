@@ -14,6 +14,7 @@ import type {
   AssistantModel,
   AssistantProposalPersistence,
   AssistantTurnRequest,
+  ItineraryChangeProposal,
 } from './types'
 
 const itinerary: Itinerary = {
@@ -54,21 +55,10 @@ const request = (): AssistantTurnRequest => ({
   dayRevisions: { 'day-1': 3 },
 })
 
-const persistence = (): AssistantProposalPersistence & {
-  saved: string[]
-  rejected: string[]
-  applied: string[]
-} => {
+const persistence = (): AssistantProposalPersistence & { saved: ItineraryChangeProposal[] } => {
   const result = {
-    saved: [] as string[],
-    rejected: [] as string[],
-    applied: [] as string[],
-    async savePending(proposal: { id: string }) { result.saved.push(proposal.id) },
-    async reject(proposalId: string) { result.rejected.push(proposalId) },
-    async apply(proposal: { id: string }) {
-      result.applied.push(proposal.id)
-      return 'applied' as const
-    },
+    saved: [] as ItineraryChangeProposal[],
+    async savePending(proposal: ItineraryChangeProposal) { result.saved.push(proposal) },
   }
   return result
 }
@@ -146,7 +136,7 @@ describe('assistant graph helpers', () => {
 })
 
 describe('createAssistantGraph', () => {
-  it('completes a regular turn without an interrupt', async () => {
+  it('completes a regular turn', async () => {
     const model: AssistantModel = {
       respond: async () => ({ reply: '第一天目前從九點開始。' }),
       summarize: async () => 'summary',
@@ -157,9 +147,8 @@ describe('createAssistantGraph', () => {
       summaryMessageThreshold: 100,
     })
     const result = await graph.sendTurn({ ...request(), text: '第一天幾點開始？' })
-    expect(result.interrupt).toBeNull()
-    expect(result.state.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
-    expect(result.state.assistantMessage?.content).toBe('第一天目前從九點開始。')
+    expect(result.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
+    expect(result.assistantMessage?.content).toBe('第一天目前從九點開始。')
   })
 
   it('reports actual graph phases instead of rotating simulated messages', async () => {
@@ -232,9 +221,9 @@ describe('createAssistantGraph', () => {
       rehydratedSummary: '偏好日本料理',
       rehydratedMessages: [prior],
     })
-    expect(result.state.summary).toBe('偏好日本料理')
-    expect(result.state.messages[0]).toEqual(prior)
-    expect(result.state.assistantMessage?.content).toBe('偏好日本料理:想吃壽司')
+    expect(result.summary).toBe('偏好日本料理')
+    expect(result.messages[0]).toEqual(prior)
+    expect(result.assistantMessage?.content).toBe('偏好日本料理:想吃壽司')
   })
 
   it('returns the saved result when the same turn is retried', async () => {
@@ -252,8 +241,34 @@ describe('createAssistantGraph', () => {
     const first = await graph.sendTurn(turn)
     const retried = await graph.sendTurn(turn)
     expect(calls).toBe(1)
-    expect(retried.state.assistantMessage?.id).toBe(first.state.assistantMessage?.id)
-    expect(retried.state.messages.filter((message) => message.turnId === turn.turnId)).toHaveLength(2)
+    expect(retried.assistantMessage?.id).toBe(first.assistantMessage?.id)
+    expect(retried.messages.filter((message) => message.turnId === turn.turnId)).toHaveLength(2)
+  })
+
+  it('rejects an older checkpoint so the UI can rebuild from canonical history', async () => {
+    const checkpointer = new MemorySaver()
+    const model: AssistantModel = {
+      respond: async () => ({ reply: '完成' }),
+      summarize: async () => 'summary',
+    }
+    const oldGraph = createAssistantGraph(checkpointer, {
+      model,
+      proposals: persistence(),
+      graphVersion: 3,
+    })
+    const firstTurn = request()
+    await oldGraph.sendTurn(firstTurn)
+
+    const currentGraph = createAssistantGraph(checkpointer, {
+      model,
+      proposals: persistence(),
+      graphVersion: 4,
+    })
+    await expect(currentGraph.sendTurn({
+      ...firstTurn,
+      turnId: crypto.randomUUID(),
+      text: '下一個問題',
+    })).rejects.toThrow('version 3 cannot resume as version 4')
   })
 
   it('manually summarizes the saved thread and keeps the recent window', async () => {
@@ -275,7 +290,7 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.summary).toBe(summarized.summary)
   })
 
-  it('persists, interrupts, and applies an approved proposal exactly once', async () => {
+  it('persists a proposal and finishes the graph turn', async () => {
     const model: AssistantModel = {
       respond: async () => ({
         reply: '我準備把第一天改成十點開始。',
@@ -294,39 +309,11 @@ describe('createAssistantGraph', () => {
       summaryMessageThreshold: 100,
     })
     const turn = request()
-    const pending = await graph.sendTurn(turn)
-    expect(pending.interrupt?.kind).toBe('itinerary_proposal')
-    expect(pending.state.request?.turnId).toBe(turn.turnId)
+    const completed = await graph.sendTurn(turn)
+    expect(completed.request).toBeNull()
+    expect(completed.pendingProposal).toBeNull()
     expect(proposals.saved).toHaveLength(1)
-    expect(proposals.applied).toHaveLength(0)
-
-    const completed = await graph.resumeProposal(turn.threadId, true)
-    expect(completed.state.proposalStatus).toBe('applied')
-    expect(completed.state.request).toBeNull()
-    expect(proposals.applied).toEqual(proposals.saved)
-  })
-
-  it('rejects without applying a proposal', async () => {
-    let summarized = 0
-    const model: AssistantModel = {
-      respond: async () => ({
-        reply: '已準備變更。',
-        proposal: {
-          title: '變更',
-          explanation: '延後開始',
-          operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
-        },
-      }),
-      summarize: async () => { summarized += 1; return 'summary' },
-    }
-    const proposals = persistence()
-    const graph = createAssistantGraph(new MemorySaver(), { model, proposals })
-    const turn = request()
-    await graph.sendTurn(turn)
-    const completed = await graph.resumeProposal(turn.threadId, false)
-    expect(completed.state.proposalStatus).toBe('rejected')
-    expect(proposals.rejected).toEqual(proposals.saved)
-    expect(proposals.applied).toHaveLength(0)
-    expect(summarized).toBe(0)
+    expect(proposals.saved[0].status).toBe('pending')
+    expect(proposals.saved[0].expectedDayRevisions).toEqual(turn.dayRevisions)
   })
 })

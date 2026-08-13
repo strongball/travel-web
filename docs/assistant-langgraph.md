@@ -8,7 +8,9 @@
 - `src/features/assistant/assistantApi.ts`：Gemini proxy adapter、function calling、Zod runtime 驗證及模型估算的交通時間。
 - `src/features/assistant/assistantSchemas.ts`：一般回答、行程編輯工具、operation 與摘要的 Zod schema。
 - `src/features/assistant/assistantPlaceEnrichment.ts`：提案套用成功後才執行的 Google 地點 best-effort enrichment。
-- `src/features/assistant/AssistantSection.tsx`：canonical message/proposal persistence、版本重建與聊天室 UI。
+- `src/features/assistant/AssistantSection.tsx`：組合 conversation controller、聊天室 view 與全頁 toolbar。
+- `src/features/assistant/useAssistantConversation.ts`：thread/message/proposal 載入、canonical persistence、graph 執行與恢復、提案決策。
+- `src/features/assistant/AssistantConversationView.tsx`：對話列表、訊息、提案卡與 composer；不直接存取 repository 或 graph。
 - `src/features/assistant/types.ts`：UI、repository 與 graph 共用的公開型別。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
 - `supabase/functions/gemini-proxy`：只代理已驗證使用者對固定 Gemini model 的 `generateContent`，不執行 graph，也不讀寫資料庫。
@@ -26,7 +28,71 @@ const runner = createAssistantGraph(checkpointer, {
 })
 ```
 
-`proposals` 必須實作 `AssistantProposalPersistence`：先冪等保存 pending proposal，確認或拒絕時再呼叫後端 `apply_assistant_proposal(p_proposal_id, p_approved)`。資料庫 RPC 會檢查擁有者與 day revision，避免前端繞過驗證或跨裝置覆蓋。
+Graph 注入的 `proposals` 只負責以 `savePending` 冪等保存提案。確認或拒絕不再 resume graph，而由 `useAssistantConversation` 直接呼叫 `apply_assistant_proposal(p_proposal_id, p_approved)`；RPC 會檢查擁有者與 day revision，避免前端繞過驗證或跨裝置覆蓋。
+
+## Context 如何運作
+
+這裡的 context 指「模型在一個 turn 能看到的上下文」，不是 React Context。助理目前沒有建立 React Provider；畫面只有一個 feature 子樹，以 `useAssistantConversation` 回傳明確的 state/actions 給純 UI，比額外的全域 Provider 更直接。
+
+Context 分成三層，不可互相取代：
+
+| 層級 | 內容 | 來源與壽命 |
+| --- | --- | --- |
+| Canonical product context | 完整 messages、proposal 狀態、thread summary、最新 itinerary | Supabase tables/RPC；跨裝置的產品事實來源。 |
+| Graph runtime context | `AssistantGraphState` 的 `summary`、近期 `messages`、本次 `request` 與 pending proposal | LangGraph checkpoint；只為恢復執行，不保證含完整聊天歷史。 |
+| Model prompt context | 舊摘要、近期對話、本次 user text、完整最新 itinerary | 每次 `respond` 即時組合；呼叫 Gemini 後即結束。`dayRevisions` 留在 runtime control context，不送給模型。 |
+
+資料流如下：
+
+```mermaid
+flowchart LR
+  subgraph DB["Canonical product context · Supabase"]
+    T["assistant_threads<br/>summary"]
+    M["assistant_messages<br/>完整歷史"]
+    P["assistant_proposals<br/>提案終態"]
+    I["days + attractions<br/>最新行程"]
+  end
+
+  H["useAssistantConversation<br/>載入、保存、協調"]
+
+  subgraph G["Graph runtime context · checkpoint"]
+    GS["summary + recent messages<br/>request + pending proposal"]
+    PC["prepare_context<br/>需要時摘要舊訊息"]
+    R["respond<br/>產生並驗證結果"]
+  end
+
+  MP["Model prompt context<br/>summary + recent messages<br/>current user text + full itinerary"]
+  AI["Gemini proxy"]
+  UI["AssistantConversationView"]
+
+  T --> H
+  M --> H
+  P --> H
+  I --> H
+  UI -->|"送出 user message"| H
+  H -->|"rehydrate / sendTurn"| GS
+  GS --> PC --> R
+  PC --> MP
+  I --> MP
+  MP --> AI --> R
+  R -->|"assistant message / pending proposal"| H
+  H --> M
+  H --> P
+  H --> UI
+  UI -->|"確認或拒絕"| H
+  H -->|"apply_assistant_proposal RPC"| P
+  H --> I
+```
+
+一次一般 turn 的 context 組合規則：
+
+1. `useAssistantConversation` 先把 user message 寫入 `assistant_messages`，再呼叫 `runner.sendTurn`；因此即使模型失敗，使用者輸入仍可安全重試。
+2. 有相容 checkpoint 時，runner 使用其中的 `summary` 與近期 `messages`；沒有 checkpoint 或版本不相容時，以 thread summary 與 canonical messages 重建。
+3. `prepare_context` 只檢查「本次 turn 以前」的 messages。超過門檻才把舊內容併入 `summary`，並保留最近訊息；本次 user message 絕不被摘要掉。
+4. `respond` 把整理後的 summary/recent messages，加上 `request.text` 與完整最新 itinerary 組成模型 prompt。完整 itinerary 每次都重送，避免舊摘要覆蓋目前行程。`request.dayRevisions` 不送給模型，只在建立 proposal 時複製到 `expectedDayRevisions`，供套用 RPC 做 optimistic concurrency control。
+5. 模型結果先經 Zod 與 itinerary invariant 驗證，再保存 assistant message 或 pending proposal。Checkpoint 可以刪除重建；canonical tables 不可由 checkpoint 回寫覆蓋。
+
+偏好或限制若重複出現，以較新的訊息為準；行程資料永遠以本次 request 的完整 itinerary 為準。摘要只保留決策、偏好、限制、日期與未解問題，不保存唯一一份 proposal 結構。
 
 ## Graph state 與流程
 
@@ -34,35 +100,108 @@ const runner = createAssistantGraph(checkpointer, {
 
 | 欄位 | 用途 |
 | --- | --- |
-| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 3`。 |
+| `graphVersion` | checkpoint 相容性版本；目前為 `ASSISTANT_GRAPH_VERSION = 4`。 |
 | `summary` | 已壓縮的舊對話脈絡。 |
 | `messages` | graph 目前保留的近期 user/assistant 訊息，不一定是完整聊天歷史。 |
 | `request` | 當次尚待 `respond` 處理的 `AssistantTurnRequest`；完成後清為 `null`。 |
 | `assistantMessage` | 最近一次模型產生的訊息，方便 UI 取得當次輸出。 |
-| `pendingProposal` | 尚待確認或剛完成的 itinerary proposal。 |
-| `proposalStatus` | `pending`、`approved`、`applied`、`rejected`、`expired` 或 `null`。 |
-| `error` | 預留的可持久化錯誤欄位；目前 graph 錯誤仍向呼叫端 throw。 |
+| `pendingProposal` | `respond` 到 `persist_proposal` 之間的暫存；保存 canonical proposal 後清為 `null`。 |
 
 節點與 edge：
 
 ```text
 START -> prepare_context -> respond
   ├─ 無 proposal -> finish_turn -> END
-  └─ 有 proposal -> persist_proposal -> [breakpoint before approval]
-       approval
-         ├─ approved -> apply_proposal -> END
-         └─ rejected -> reject_proposal -> END
+  └─ 有 proposal -> persist_proposal -> finish_turn -> END
 ```
 
-- `prepare_context` 先排除本次 user message，再判斷舊訊息是否達摘要門檻；需要時先更新摘要，之後才進入 `respond`。本次訊息不會被摘要掉。
-- `respond` 呼叫 `AssistantModel.respond`、建立 assistant message，並由 Zod schema 與 itinerary invariant 共同驗證 operations。
-- `assistantApi` 強制 Gemini 呼叫 `answer_travel_question` 或 `propose_itinerary_edit` 其中一個工具；舊模型若忽略 tool request，JSON fallback 仍必須通過同一組 Zod schema。prompt 要求依完整行程順推每日開始時間、前往時間及停留時間，並考慮合理營業/用餐/夜景時段。提案階段不查 Google，也不接受模型虛構 Place ID、座標或費用。
-- `persist_proposal` 在暫停前寫入 canonical pending proposal。這個寫入必須能以 proposal/turn ID 冪等重試。
-- `approval` 本身不做副作用；它是恢復流程的 routing marker。
-- `apply_proposal`、`reject_proposal` 位於確認決策之後，才呼叫 proposal persistence。拒絕是控制決策，不會再觸發摘要或另一個模型回合；輸入框會直接恢復，可繼續討論。
-- UI 傳入的 progress callback 只由實際節點觸發：檢查前文、摘要前文、模型生成、驗證、保存提案及套用提案；不可再用 timer 輪播假進度。
+### Node、context 與 state 對照
 
-所有 graph invoke 都使用 `durability: 'exit'`。一般 turn 在完成時保存；proposal 在 breakpoint 暫停時保存可恢復狀態，確認後再保存完成狀態。不要改回預設的逐 super-step 寫入，否則每個 turn 會產生更多 checkpoint 與 Data API 往返。
+正式 UI 注入的是 `assistantApi.ts` 的 `browserAssistantModel`。`START`、`END` 是 LangGraph sentinel，不是自訂 node，因此沒有 prompt 或 state update。
+
+| Node | 讀取的 context | Prompt template | 產出與影響的 state | 外部副作用／下一步 |
+| --- | --- | --- | --- | --- |
+| `prepare_context` | `request.threadId`、`request.turnId`、`summary`、`messages` | 未達摘要門檻時沒有 prompt；達門檻時使用下方「摘要 prompt」 | 未達門檻回傳 `{}`；達門檻更新 `summary`，並把 `messages` 壓成「最近 `recentMessageCount` 則舊訊息 + 本次 turn 訊息」 | 呼叫 `model.summarize`；固定前往 `respond` |
+| `respond` | `summary`、`messages`、`request.text`、`request.itinerary`、`request.dayRevisions`、turn/thread/itinerary ID | 使用下方「回覆 prompt」，強制呼叫一個 tool | 建立 `assistantMessage` 並 append 到 `messages`；有提案時建立 `pendingProposal`，否則為 `null` | 解析 tool output，normalize 並驗證 operations；有提案前往 `persist_proposal`，否則前往 `finish_turn` |
+| `persist_proposal` | `pendingProposal` | 無 prompt | 保存後把 `pendingProposal` 清為 `null` | `proposals.savePending` 冪等寫入 canonical proposal；前往 `finish_turn` |
+| `finish_turn` | `request.threadId`，僅用來回報進度 | 無 prompt | `request = null` | 保存完成 checkpoint，前往 `END` |
+
+`respond` 的 context 有兩種用途：
+
+- 模型可見：`summary`、最多最後 10 則 `messages`、`request.text`、序列化後的完整 itinerary。
+- 僅 graph 可見：`request.dayRevisions` 與各種 ID。模型產出 proposal 後，graph 才把這些可信值寫入 `threadId`、`turnId`、`itineraryId`、`expectedDayRevisions`；模型不能自行指定。
+
+#### 摘要 prompt template（`prepare_context`）
+
+只有先前訊息達到 30 則或 24,000 字元時才呼叫；本次 turn 會先被排除。`runner.summarizeThread` 不是 graph node，但會以目前 checkpoint 的 `summary` 和 `messages` 使用同一份 template。
+
+```text
+請以使用者語言（{{ui_language}}）整理旅遊規劃對話，保留使用者偏好、已決定事項、未解問題；不要包含待確認的行程修改。
+只回傳 {"summary":"..."}。
+
+{{#if current_summary}}
+既有摘要：{{current_summary}}
+{{/if}}
+
+新增對話：{{JSON.stringify(messages.map(({ role, content }) => ({ role, content })))}}
+```
+
+輸出必須通過 `assistantSummarySchema`：
+
+```json
+{ "summary": "整理後的文字" }
+```
+
+成功後只影響 `summary` 與近期 `messages`；不修改 canonical `assistant_messages`、`pendingProposal` 或 itinerary。
+
+#### 回覆 prompt template（`respond`）
+
+`buildAssistantPrompt` 以空行連接下列區塊；空的摘要或近期對話區塊會省略。以下保留正式 template 的規則與動態插槽：
+
+```text
+你是旅遊行程助理。依序以目前完整行程、較新的對話、摘要為準；回答須延續城市、日期、步調與偏好，推薦要避開重複景點並利用順路空檔。
+
+預設使用者需要你協助釐清需求與做決定。只要目標和限制足夠，就主動給出一個具體安排與簡短理由；非關鍵細節採合理預設，不要反覆把規劃工作丟回使用者。
+
+依語意與上下文判斷意圖，不依賴特定關鍵字。純詢問只回答；若使用者接受、選擇或要求執行前文建議（包括「好」、「就這樣」、「都要」、「幫我決定」等省略語），資訊足夠就呼叫 propose_itinerary_edit，不要要求重述。只有多種合理解讀會明顯改變結果時，才用 answer_travel_question 問一個必要問題。
+
+修改只限現有日期的開始時間與景點，且只動要求的部分；不可改旅程日期、幣別、費用或待辦。既有 dayId/attractionId 必須原樣使用；新增景點不給 id；reorder_attractions 可只列移動項目；update_attraction.changes 只放變動欄位。
+
+使用使用者語言（{{language_from_current_turn}}），景點也不轉成英文羅馬拼音。新增景點只給 name、duration、transportMode、travelTime 與必要的 locationName；不要給 description、cost、Place ID、座標或地址。
+
+新增或重排景點時，主動為每一段安排 transportMode 與 travelTime；預設採一般觀光客容易使用的步行或公共運輸，僅在明顯不適合時選計程車或其他方式。提案須依 day.startTime、每段交通時間與 duration 順推可執行時間，並考慮相鄰距離與一般營業／遊玩時段；不得重疊、跨日或過晚。沒有即時路線資料時做保守的整數分鐘估算，不必為此追問；無法合理估算才填 null，且不得宣稱已查證。
+
+只呼叫一個工具且不要在工具外回答：一般回答／必要澄清用 answer_travel_question；可執行修改用 propose_itinerary_edit，提供簡短 reply 與 operations，title/explanation 可省略。
+
+{{#if summary}}
+先前摘要：{{summary}}
+{{/if}}
+
+{{#if recent_history}}
+近期對話：
+{{role}}: {{content}}
+...
+{{/if}}
+
+目前完整行程（最新現況，包含所有日期與景點順序）：{{itinerary_json}}
+
+使用者：{{current_user_text}}
+```
+
+近期對話先取 `state.messages` 最後 10 則；若最後一則正好是本次 user message，template 會移除它，避免和最後的 `使用者：{{current_user_text}}` 重複。`itinerary_json` 只包含模型排程需要的欄位：trip title/date range，以及每一天的 ID、日期、開始時間和各景點的順序、ID、名稱、地點、時間、duration、transport mode、travel time。
+
+模型被設定為 `temperature: 0.2` 並強制只能呼叫一個工具：
+
+| Tool output | Schema | Graph 轉換 |
+| --- | --- | --- |
+| `answer_travel_question` | `{ "reply": string }` | 建立 assistant message；`pendingProposal = null` |
+| `propose_itinerary_edit` | `{ "reply": string, "title"?: string, "explanation"?: string, "operations": AssistantOperation[] }` | schema 補預設 title/explanation；graph normalize/validate operations，補可信 ID、revision、status 與 timestamps，再建立 pending proposal |
+
+若模型版本忽略 function calling 而回傳文字，系統只接受能通過相同 Zod schema 的 JSON fallback；未驗證的文字或未知 operation 不會進入 state。
+
+Graph progress callback 只回報實際節點：檢查前文、摘要前文、模型生成、驗證、保存提案與 checkpoint；proposal 套用進度由 UI controller 在呼叫 RPC 時另外更新，不用 timer 模擬。
+
+所有 graph invoke 都使用 `durability: 'exit'`，每個 turn 完成時只保存一次 runtime snapshot。不要改回預設的逐 super-step 寫入，否則會增加 checkpoint 與 Data API 往返。
 
 ### 一般 turn
 
@@ -70,21 +209,20 @@ START -> prepare_context -> respond
 2. 呼叫 `runner.sendTurn(request)`。
 3. runner 載入最新 state、檢查 `graphVersion`，將 user message 與 request 送入 graph。
 4. `prepare_context` 視需要先壓縮舊訊息，`respond` 再處理本次訊息，最後到達 `END`。
-5. `AssistantTurnResult.interrupt` 為 `null`；呼叫端冪等保存 assistant message。
+5. `sendTurn` 回傳完成的 `AssistantGraphState`；呼叫端冪等保存 assistant message。
 
 同一個 thread 不可同時送兩個 turn。`assistant_put_checkpoint` 的 CAS 會拒絕落後的分支；收到「另一個裝置已變更」時應重新讀取 thread/messages/state，不能盲目重送舊 state。
 
-### Proposal 暫停與恢復
+### Proposal 保存與決策
 
-1. `respond` 只有在使用者明確要求修改時才建立 proposal。
+1. `respond` 依本次語意與近期對話判斷修改意圖；不要求特定關鍵字，承接前文的簡短確認也可建立 proposal。
 2. `normalizeAssistantOperations` 先把模型只列出部分景點的 reorder 補成完整順序（未提及的景點維持原順序），再由 `validateAssistantOperations` 驗證 day/attraction ID 與重複/未知 ID；新增景點可以沒有 Google 位置資料，禁止虛構座標即可。
 3. `persist_proposal` 保存 canonical proposal。
-4. graph 在 `approval` 前暫停；`sendTurn` 回傳 `interrupt.kind === 'itinerary_proposal'`，UI 顯示 diff 與確認按鈕。
-5. UI 呼叫 `runner.resumeProposal(threadId, approved)`。
-6. runner 以 `workflow.updateState(..., 'approval')` 寫入決策，再以相同 thread 繼續 graph。
-7. 核准時由 `apply_proposal` 執行原子 RPC；revision 不符回傳 `expired`。RPC 回傳 `applied` 後，UI 才對新增或改名且缺位置資料的景點執行 Google Geocoder enrichment。查不到或沒有權限不回滾行程，欄位維持空值並提示使用者。拒絕時直接寫入 `rejected` 後到 `END`。
+4. graph 正常結束；UI 從 canonical proposal 顯示 diff 與確認按鈕。
+5. UI 以 proposal ID 呼叫冪等 `apply_assistant_proposal` RPC。核准時 RPC 驗證 owner 與 day revision，衝突回傳 `expired`；拒絕直接寫入 `rejected`，兩者都不觸發模型。
+6. RPC 回傳 `applied` 後，UI 才 best-effort 補齊 Google 地點資料；失敗不回滾行程。
 
-不要在 `persist_proposal` 或 breakpoint 前改行程。恢復可能重試，任何外部副作用都必須位於決策後，並由 proposal ID 保證冪等。
+Graph 永遠不直接修改 itinerary。提案生成、canonical 保存、使用者決策是三個清楚且可獨立重試的步驟。
 
 ### 手動整理
 
@@ -95,24 +233,6 @@ START -> prepare_context -> respond
 3. 透過 `workflow.updateState` 建立新 checkpoint，保存新摘要與最後 `recentMessageCount` 則訊息。
 
 預設自動摘要門檻是 30 則 state 訊息或 24,000 字元，整理後保留最近 10 則。可用 `AssistantGraphDependencies` 覆寫門檻。摘要不刪除 `assistant_messages` 原文，也不可把 pending proposal 的結構化內容只存在摘要中。
-
-## Browser interrupt 決策
-
-必須從 `@langchain/langgraph/web` 匯入 browser-safe graph API。不要在此前端 graph 使用官方 PostgresSaver、Node database driver 或 service-role key。
-
-LangGraph JS 的動態 `interrupt()` 目前透過 `AsyncLocalStorage` 取得執行 config；一般瀏覽器沒有這個 Node runtime 能力，實測會拋出：
-
-```text
-Called interrupt() outside the context of a graph.
-```
-
-因此目前採用：
-
-```ts
-.compile({ checkpointer, interruptBefore: ['approval'] })
-```
-
-搭配 `resumeProposal` 的 `updateState(..., 'approval')` 與 `invoke(null)`。不要把它改成節點內的 `interrupt()`，也不要為此加入 Node polyfill。若未來 LangGraph 提供不依賴 AsyncLocalStorage 的 browser interrupt API，必須先用真實 Vite/browser 測試驗證，並保留相同的 typed `AssistantInterruptPayload` 對外 contract。
 
 ## Supabase checkpointer
 
@@ -146,9 +266,9 @@ Saver 使用 LangGraph 提供的 `this.serde.dumpsTyped/loadsTyped`，而不是�
 assistant_replace_checkpoint(...)
 ```
 
-RPC 以 try advisory lock 與 expected latest 做 CAS，插入新 snapshot 後在同一 transaction 刪除該 thread/namespace 的舊 checkpoint 與 writes。因此每個對話 namespace 只保留最新一份可恢復狀態，不會隨 turn 累積 parent chain；完整聊天仍保存在 `assistant_messages`。proposal 暫停 checkpoint 也是完整 snapshot，重新整理後仍能恢復。
+RPC 以 try advisory lock 與 expected latest 做 CAS，插入新 snapshot 後在同一 transaction 刪除該 thread/namespace 的舊 checkpoint 與 writes。因此每個對話 namespace 只保留最新一份可恢復狀態，不會隨 turn 累積 parent chain；完整聊天仍保存在 `assistant_messages`。
 
-舊版 delta chain 的讀取會為每個 parent 各查 checkpoint 與 writes，形成 N+1。正常新 turn 會先以 `discardLegacyHistory` 只讀最新兩筆；發現多筆或 parent chain 時直接刪除 runtime，並以 canonical messages/thread summary 重建。確認或拒絕 proposal 直接寫 canonical RPC，再 best-effort 清除 paused runtime，不為了控制狀態重讀整條 chain。所有 checkpoint Data API/RPC request 均有 12 秒 abort timeout。
+舊版 delta chain 的讀取會為每個 parent 各查 checkpoint 與 writes，形成 N+1。正常新 turn 會先以 `discardLegacyHistory` 只讀最新兩筆；發現多筆或 parent chain 時直接刪除 runtime，並以 canonical messages/thread summary 重建。所有 checkpoint Data API/RPC request 均有 12 秒 abort timeout。
 
 checkpointer conformance 測試使用 `{ compactHistory: false }`，此模式的 `put` 呼叫：
 
@@ -173,13 +293,13 @@ assistant_put_checkpoint(
 
 ## Graph version 與重建
 
-每次改變 state shape、node/edge 的恢復語意、checkpoint serializer contract，或讓舊 breakpoint 無法安全續接時：
+每次改變 state shape、node/edge 的恢復語意或 checkpoint serializer contract 時：
 
 1. 增加 `ASSISTANT_GRAPH_VERSION`。
 2. 新建 thread 時同步寫入 `assistant_threads.graph_version`。
 3. 保留完整 canonical messages/proposals，讓 UI/repository 可從它們重建 state。
 4. 捕捉 `AssistantGraphVersionError`；不要用新 graph 直接 resume 舊 checkpoint。
-5. 新 turn 以 `assistant_threads.summary` 與 canonical `assistant_messages` 重建新 checkpoint；若舊 checkpoint 正停在 proposal，UI 直接以 canonical proposal ID 呼叫冪等 RPC 完成確認或拒絕，不重跑模型或舊 node。
+5. 新 turn 以 `assistant_threads.summary` 與 canonical `assistant_messages` 重建新 checkpoint；既有 proposal 仍以 canonical table 為準，不重跑模型。
 
 只改 prompt 文案或 UI 通常不必升版。若無法判斷舊 checkpoint 的 `next` 是否仍能正確落到同一 node，就應升版。
 
@@ -201,7 +321,7 @@ assistant_put_checkpoint(
 ### 新增 node
 
 - 先判斷它是否真的需要獨立恢復邊界；每個 node 都可能影響 checkpoint 與 replay。
-- 外部 API/DB 副作用必須冪等，並放在 approval 後或獨立 node。
+- 外部 API/DB 副作用必須冪等，並放在獨立 node；行程套用仍由 UI controller 呼叫 canonical RPC。
 - 更新所有 conditional edge 的完整 routing map，避免未宣告分支。
 - 若 node 改變舊 checkpoint 的 `next` 語意，增加 graph version。
 - 保持 `durability: 'exit'`，除非需求明確需要更細的恢復點並已有容量評估。
@@ -216,18 +336,17 @@ npx tsc -p tsconfig.app.json --noEmit
 npm run build
 ```
 
-checkpointer 變更還應以 Supabase local/preview 環境測試 RLS、RPC CAS、pending writes round-trip、刪除 cascade，並跑 LangGraph checkpointer conformance tests。涉及 breakpoint 時一定要測真實瀏覽器重新整理及另一個裝置恢復，單靠 Node 測試不足。
+checkpointer 變更還應以 Supabase local/preview 環境測試 RLS、RPC CAS、pending writes round-trip、刪除 cascade，並跑 LangGraph checkpointer conformance tests。涉及恢復語意時一定要測真實瀏覽器重新整理及另一個裝置恢復，單靠 Node 測試不足。
 
 常見問題：
 
 | 症狀 | 原因與處理 |
 | --- | --- |
-| `Called interrupt() outside the context of a graph` | 使用了動態 `interrupt()`；恢復 `interruptBefore: ['approval']` 的 browser-safe 設計。 |
 | `AssistantGraphVersionError` | 本地程式與 checkpoint 版本不同；從 canonical messages/proposal 重建，不要直接 resume。 |
 | `Assistant turn request is missing` | 舊 checkpoint 的 request 狀態不完整；UI 會刪除該 runtime checkpoint，依 canonical messages 與本次 request 重建後重試。 |
 | `Assistant thread changed on another device` / `40001` | CAS 偵測到同 thread 已前進；重新載入 thread/state，禁止覆蓋或無限自動重試。 |
-| Proposal 一直停在 pending | 確認 canonical proposal 已由 `savePending` 寫入，再檢查 `resumeProposal` 是否使用同一 `threadId`。 |
-| 核准後重複套用 | `AssistantProposalPersistence.apply` 未以 proposal ID 使用原子、冪等 RPC；應呼叫 `apply_assistant_proposal`。 |
+| Proposal 沒有出現在 UI | 確認 `persist_proposal` 已用正確的 thread/turn ID 寫入 canonical proposal，並重新載入 proposal list。 |
+| 核准後重複套用 | UI 未以 proposal ID 使用原子、冪等 RPC；應呼叫 `apply_assistant_proposal`。 |
 | 套用後確認按鈕再次出現 | canonical proposal 被 replay 的 `savePending` 重設為 pending，或舊的列表請求覆蓋新狀態。保存 proposal 必須使用 `ignoreDuplicates`，UI 以 load sequence 排除過期回應，並在確認後固定顯示 RPC 的 `applied`/`expired` 終態。 |
 | 核准後變成 expired | 目標 day revision 已改變；這是預期的衝突保護，重新產生 proposal。 |
 | Checkpoint 無法反序列化 | type/payload 配對被改壞、base64 被截斷，或 graph version 未升；不可嘗試用純 JSON 強行恢復。 |

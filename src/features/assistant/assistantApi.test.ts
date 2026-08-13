@@ -35,16 +35,18 @@ describe('parseAssistantModelResult', () => {
       messages: [{ id: '1', turnId: '1', role: 'user', content: '不想走太多路', createdAt: '2026-08-12T00:00:00Z' }],
       userText: '推薦附近景點',
       itinerary,
-      dayRevisions: { 'day-1': 0 },
     })
     expect(value).toContain('不想走太多路')
     expect(value).toContain('淺草寺')
-    expect(value).toContain('避開目前行程已有的景點')
-    expect(value).toContain('每日開始時間')
-    expect(value).toContain('startTime/endTime')
-    expect(value).toContain('travelTime + 該站 duration')
-    expect(value).toContain('營業時段')
-    expect(value).toContain('不能只調整景點順序')
+    expect(value).toContain('推薦要避開重複景點')
+    expect(value).toContain('主動給出一個具體安排與簡短理由')
+    expect(value).toContain('非關鍵細節採合理預設')
+    expect(value).toContain('day.startTime')
+    expect(value).toContain('主動為每一段安排 transportMode 與 travelTime')
+    expect(value).toContain('一般觀光客容易使用的步行或公共運輸')
+    expect(value).toContain('沒有即時路線資料時做保守的整數分鐘估算')
+    expect(value).toContain('一般營業／遊玩時段')
+    expect(value).toContain('reorder_attractions')
   })
 
   it('does not duplicate the current user message in recent history', () => {
@@ -57,10 +59,30 @@ describe('parseAssistantModelResult', () => {
       ],
       userText: '幫我排第一天',
       itinerary,
-      dayRevisions: {},
     })
     expect(value.match(/幫我排第一天/g)).toHaveLength(1)
     expect(value).toContain('前一則回答')
+  })
+
+  it('treats contextual shorthand as edit intent without requiring keywords', () => {
+    const itinerary = { title: '京都', startDate: '2026-09-01', endDate: '2026-09-02', days: [] } as unknown as Itinerary
+    const value = buildAssistantPrompt({
+      summary: '',
+      messages: [
+        { id: '1', turnId: '1', role: 'user', content: '京都還可以去哪裡？', createdAt: '2026-08-12T00:00:00Z' },
+        { id: '2', turnId: '1', role: 'assistant', content: '第二天可順路安排祇園與八坂神社。', createdAt: '2026-08-12T00:00:01Z' },
+        { id: '3', turnId: '2', role: 'user', content: '都要', createdAt: '2026-08-12T00:01:00Z' },
+      ],
+      userText: '都要',
+      itinerary,
+    })
+
+    expect(value).toContain('不依賴特定關鍵字')
+    expect(value).toContain('等省略語')
+    expect(value).toContain('第二天可順路安排祇園與八坂神社')
+    expect(value).toContain('資訊足夠就呼叫 propose_itinerary_edit')
+    expect(value).toContain('不要要求重述')
+    expect(value.match(/都要/g)).toHaveLength(2)
   })
 
   it('rejects unknown itinerary operations', () => {

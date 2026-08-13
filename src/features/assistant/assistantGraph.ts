@@ -1,4 +1,3 @@
-import { GoogleGenAI } from '@google/genai'
 import {
   Annotation,
   END,
@@ -6,22 +5,16 @@ import {
   StateGraph,
   type BaseCheckpointSaver,
 } from '@langchain/langgraph/web'
-import { supabase } from '../../lib/supabase'
-import i18n from '../../i18n'
-import type { Attraction, Itinerary } from '../../types/database'
+import type { Itinerary } from '../../types/database'
 import type {
   AssistantAttractionDraft,
   AssistantGraphDependencies,
   AssistantGraphRunner,
   AssistantGraphState,
-  AssistantInterruptPayload,
   AssistantMessage,
-  AssistantModel,
-  AssistantModelResult,
   AssistantOperation,
   AssistantProgressListener,
   AssistantTurnRequest,
-  AssistantTurnResult,
   ItineraryChangeProposal,
 } from './types'
 import { ASSISTANT_GRAPH_VERSION } from './types'
@@ -211,113 +204,6 @@ export const validateAssistantOperations = (
   }
 }
 
-const parseModelResult = (value: unknown): AssistantModelResult => {
-  if (!isRecord(value)) throw new Error('Invalid assistant response')
-  const reply = text(value.reply, 'reply')
-  if (value.proposal === undefined || value.proposal === null) return { reply }
-  if (!isRecord(value.proposal)) throw new Error('Invalid proposal')
-  return {
-    reply,
-    proposal: {
-      title: text(value.proposal.title, 'proposal.title'),
-      explanation: text(value.proposal.explanation, 'proposal.explanation'),
-      operations: parseAssistantOperations(value.proposal.operations),
-    },
-  }
-}
-
-const itineraryForPrompt = (itinerary: Itinerary) => ({
-  title: itinerary.title,
-  startDate: itinerary.startDate,
-  endDate: itinerary.endDate,
-  days: (itinerary.days ?? []).map((day, dayIndex) => ({
-    id: day.id,
-    dayNumber: dayIndex + 1,
-    date: day.date,
-    startTime: day.startTime,
-    attractions: day.attractions.map((item: Attraction, attractionIndex) => ({
-      order: attractionIndex + 1,
-      id: item.id,
-      name: item.name,
-      duration: item.duration,
-      startTime: item.startTime,
-      endTime: item.endTime,
-      transportMode: item.transportMode,
-      travelTime: item.travelTime,
-      locationName: item.locationName,
-    })),
-  })),
-})
-
-const proxyClient = async () => {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  if (!token) throw new Error('請先登入')
-  return new GoogleGenAI({
-    apiKey: 'proxied-by-edge-function',
-    apiVersion: 'v1beta',
-    httpOptions: {
-      baseUrl: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gemini-proxy`,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-      },
-      timeout: 45_000,
-    },
-  })
-}
-
-export const createGeminiAssistantModel = (): AssistantModel => ({
-  async respond(request) {
-    const ai = await proxyClient()
-    const transcript = request.messages.map((message) => `${message.role}: ${message.content}`).join('\n')
-    const locale = i18n.resolvedLanguage || i18n.language || 'zh-TW'
-    const prompt = [
-      `You are a travel itinerary assistant. Answer in the user's language (${locale}).`,
-      'Before answering, combine the earlier summary, recent conversation, and complete current itinerary. Newer preferences, corrections, and rejections override older context.',
-      'Recommendations must fit the city, date, pace, preferences, nearby scheduled places, and open time discussed by the user. Do not recommend an attraction already in the itinerary.',
-      'If the intended day, location, or change is ambiguous, ask a clarifying question and return no proposal. Preserve unrelated days and attractions.',
-      'Only create a proposal when the user explicitly asks to change the itinerary.',
-      'Allowed operation types: set_day_start_time, add_attraction, update_attraction, remove_attraction, move_attraction, reorder_attractions.',
-      'Never invent IDs. Existing IDs must come from the supplied itinerary.',
-      'A reorder operation may list only the attractions being moved; omitted attractions keep their relative order.',
-      'A newly added attraction may have null Google Place ID/coordinates when it cannot be found; never invent location data.',
-      'Estimate travelTime as non-negative integer minutes from the itinerary context and transport mode; use null when uncertain.',
-      'Return JSON only: {"reply":"...","proposal":null} or {"reply":"...","proposal":{"title":"...","explanation":"...","operations":[...]}}.',
-      request.summary ? `Earlier conversation summary:\n${request.summary}` : '',
-      `Recent conversation:\n${transcript}`,
-      `Current complete itinerary (all days and ordered attractions; use this current state rather than only the summary):\n${JSON.stringify(itineraryForPrompt(request.itinerary))}`,
-      `Current day revisions:\n${JSON.stringify(request.dayRevisions)}`,
-    ].filter(Boolean).join('\n\n')
-    const response = await ai.models.generateContent({
-      model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      config: { responseMimeType: 'application/json' },
-    })
-    if (!response.text) throw new Error('Gemini did not return a response')
-    return parseModelResult(JSON.parse(response.text))
-  },
-  async summarize(currentSummary, messages) {
-    const ai = await proxyClient()
-    const response = await ai.models.generateContent({
-      model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
-      contents: [{
-        role: 'user',
-        parts: [{
-          text: [
-            `Summarize this travel-planning conversation in the user's language (${i18n.resolvedLanguage || i18n.language || 'zh-TW'}).`,
-            'Preserve decisions, preferences, constraints, dates, and unresolved questions. Do not include proposal JSON.',
-            currentSummary ? `Existing summary:\n${currentSummary}` : '',
-            messages.map((message) => `${message.role}: ${message.content}`).join('\n'),
-          ].filter(Boolean).join('\n\n'),
-        }],
-      }],
-    })
-    if (!response.text) throw new Error('Gemini did not return a summary')
-    return response.text.trim()
-  },
-})
-
 export const shouldSummarizeMessages = (
   messages: AssistantMessage[],
   messageThreshold = DEFAULT_SUMMARY_MESSAGE_THRESHOLD,
@@ -337,8 +223,6 @@ const GraphState = Annotation.Root({
   request: Annotation<AssistantTurnRequest | null>({ default: () => null, reducer: (_, update) => update }),
   assistantMessage: Annotation<AssistantMessage | null>({ default: () => null, reducer: (_, update) => update }),
   pendingProposal: Annotation<ItineraryChangeProposal | null>({ default: () => null, reducer: (_, update) => update }),
-  proposalStatus: Annotation<AssistantGraphState['proposalStatus']>({ default: () => null, reducer: (_, update) => update }),
-  error: Annotation<string | null>({ default: () => null, reducer: (_, update) => update }),
 })
 
 const defaultState = (version: number): AssistantGraphState => ({
@@ -348,22 +232,12 @@ const defaultState = (version: number): AssistantGraphState => ({
   request: null,
   assistantMessage: null,
   pendingProposal: null,
-  proposalStatus: null,
-  error: null,
 })
 
 const asGraphState = (value: unknown, version: number): AssistantGraphState => ({
   ...defaultState(version),
   ...(isRecord(value) ? value : {}),
 }) as AssistantGraphState
-
-const interruptFrom = (value: unknown): AssistantInterruptPayload | null => {
-  const state = asGraphState(value, ASSISTANT_GRAPH_VERSION)
-  if (state.pendingProposal?.status === 'pending' && state.proposalStatus === 'pending') {
-    return { kind: 'itinerary_proposal', proposal: state.pendingProposal }
-  }
-  return null
-}
 
 export class AssistantGraphVersionError extends Error {
   readonly storedVersion: number
@@ -413,7 +287,6 @@ export const createAssistantGraph = (
         messages: state.messages,
         userText: request.text,
         itinerary: request.itinerary,
-        dayRevisions: request.dayRevisions,
       })
       const assistantMessage: AssistantMessage = {
         id: crypto.randomUUID(),
@@ -444,8 +317,6 @@ export const createAssistantGraph = (
         assistantMessage,
         messages: [...state.messages, assistantMessage],
         pendingProposal: proposal,
-        proposalStatus: proposal?.status ?? null,
-        error: null,
       }
     })
     .addNode('persist_proposal', async (state) => {
@@ -453,35 +324,11 @@ export const createAssistantGraph = (
       reportProgress(state.pendingProposal.threadId, 'saving_proposal')
       await dependencies.proposals.savePending(state.pendingProposal)
       reportProgress(state.pendingProposal.threadId, 'saving_checkpoint')
-      return {}
+      return { pendingProposal: null }
     })
     .addNode('finish_turn', (state) => {
       reportProgress(state.request?.threadId, 'saving_checkpoint')
       return { request: null }
-    })
-    // Browser runtimes do not provide AsyncLocalStorage, so the graph uses a
-    // static breakpoint before this node. resumeProposal updates state as if
-    // this node completed, then continues along the matching edge.
-    .addNode('approval', () => ({}))
-    .addNode('apply_proposal', async (state) => {
-      if (!state.pendingProposal) throw new Error('Proposal is missing')
-      reportProgress(state.pendingProposal.threadId, 'applying_proposal')
-      const status = await dependencies.proposals.apply({ ...state.pendingProposal, status: 'approved' })
-      reportProgress(state.pendingProposal.threadId, 'saving_checkpoint')
-      return {
-        proposalStatus: status,
-        pendingProposal: { ...state.pendingProposal, status },
-        request: null,
-      }
-    })
-    .addNode('reject_proposal', async (state) => {
-      if (!state.pendingProposal) throw new Error('Proposal is missing')
-      await dependencies.proposals.reject(state.pendingProposal.id)
-      return {
-        proposalStatus: 'rejected' as const,
-        pendingProposal: { ...state.pendingProposal, status: 'rejected' as const },
-        request: null,
-      }
     })
     .addEdge(START, 'prepare_context')
     .addEdge('prepare_context', 'respond')
@@ -489,30 +336,16 @@ export const createAssistantGraph = (
       proposal: 'persist_proposal',
       answer: 'finish_turn',
     })
-    .addEdge('persist_proposal', 'approval')
-    .addConditionalEdges('approval', (state) => state.proposalStatus === 'approved' ? 'approved' : 'rejected', {
-      approved: 'apply_proposal',
-      rejected: 'reject_proposal',
-    })
-    .addEdge('apply_proposal', END)
-    // Rejecting a proposal is a control decision, not a new model turn.
-    // Finish immediately so the composer can continue the conversation
-    // without triggering another summary/model action.
-    .addEdge('reject_proposal', END)
+    .addEdge('persist_proposal', 'finish_turn')
     .addEdge('finish_turn', END)
-    .compile({ checkpointer, interruptBefore: ['approval'] })
+    .compile({ checkpointer })
 
   const config = (threadId: string) => ({ configurable: { thread_id: threadId }, durability: 'exit' as const })
-
-  const result = (value: unknown): AssistantTurnResult => ({
-    state: asGraphState(value, graphVersion),
-    interrupt: interruptFrom(value),
-  })
 
   // A thread has one linear checkpoint head. Coalesce duplicate sends while
   // the first run is still writing it; otherwise every caller races the CAS
   // and creates a burst of failed Supabase requests.
-  const inFlightTurns = new Map<string, Promise<AssistantTurnResult>>()
+  const inFlightTurns = new Map<string, Promise<AssistantGraphState>>()
 
   const sendTurn = async (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => {
     const active = inFlightTurns.get(request.threadId)
@@ -527,7 +360,7 @@ export const createAssistantGraph = (
         const completedTurn = previous?.messages.find((message) =>
           message.turnId === request.turnId && message.role === 'assistant')
         if (completedTurn && previous) {
-          return result({ ...previous, assistantMessage: completedTurn })
+          return { ...previous, assistantMessage: completedTurn }
         }
         const existingUserMessage = previous?.messages.find((message) =>
           message.turnId === request.turnId && message.role === 'user') ??
@@ -552,10 +385,8 @@ export const createAssistantGraph = (
           request,
           assistantMessage: null,
           pendingProposal: null,
-          proposalStatus: null,
-          error: null,
         }, config(request.threadId))
-        return result(output)
+        return asGraphState(output, graphVersion)
       } finally {
         progressListeners.delete(request.threadId)
       }
@@ -576,22 +407,6 @@ export const createAssistantGraph = (
 
   return {
     sendTurn,
-    async resumeProposal(threadId, approved, onProgress) {
-      if (onProgress) progressListeners.set(threadId, onProgress)
-      try {
-        const previous = await getState(threadId)
-        if (!previous) throw new Error('Assistant thread has no checkpoint to resume')
-        if (previous.graphVersion !== graphVersion) {
-          throw new AssistantGraphVersionError(previous.graphVersion, graphVersion)
-        }
-        await workflow.updateState(config(threadId), {
-          proposalStatus: approved ? 'approved' : 'rejected',
-        }, 'approval')
-        return result(await workflow.invoke(null, config(threadId)))
-      } finally {
-        progressListeners.delete(threadId)
-      }
-    },
     async summarizeThread(threadId) {
       const previous = await getState(threadId)
       if (!previous) throw new Error('Assistant thread has no checkpoint to summarize')
