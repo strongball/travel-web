@@ -76,13 +76,72 @@ export function ExpenseSection({
 
   return (
     <Stack spacing={2}>
-      <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 3, p: { xs: 1.75, sm: 2 } }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}>
-          <Box><Typography variant="body2" color="text.secondary">旅程總花費</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>{formatAmount(total, currency)}</Typography></Box>
-          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={onAdd}>新增費用</Button>
+      <Paper
+        elevation={0}
+        sx={{
+          border: '1px solid rgba(13, 118, 110, 0.12)',
+          borderRadius: 3.5,
+          p: { xs: 2, sm: 2.5 },
+          bgcolor: '#ffffff',
+          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}
+            >
+              旅程總花費
+            </Typography>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 900,
+                color: '#0d766e',
+                fontSize: { xs: '1.75rem', sm: '2.1rem' },
+                letterSpacing: '-0.03em',
+                mt: 0.2,
+              }}
+            >
+              {formatAmount(total, currency)}
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddRoundedIcon />}
+            onClick={onAdd}
+            sx={{
+              borderRadius: 2.5,
+              px: 3,
+              py: 1.1,
+              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+              boxShadow: '0 4px 14px rgba(13, 118, 110, 0.25)',
+              alignSelf: { xs: 'stretch', sm: 'auto' },
+            }}
+          >
+            新增費用
+          </Button>
         </Stack>
       </Paper>
-      <TextField placeholder="搜尋費用或收據品項" value={query} onChange={(event) => setQuery(event.target.value)} />
+
+      <TextField
+        placeholder="搜尋費用或收據品項…"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        sx={{
+          '& .MuiOutlinedInput-root': {
+            borderRadius: 3,
+            bgcolor: '#ffffff',
+          },
+        }}
+      />
+
       {groupedExpenses.map((group) => {
         const groupKey = group.id ?? '__general__'
         const isCollapsed = collapsedGroups.has(groupKey)
@@ -91,45 +150,87 @@ export function ExpenseSection({
           0,
         )
         return (
-          <Paper key={groupKey} elevation={0} variant="outlined" sx={{ overflow: 'hidden', borderRadius: 3 }}>
+          <Paper
+            key={groupKey}
+            elevation={0}
+            sx={{
+              overflow: 'hidden',
+              borderRadius: 3.5,
+              border: '1px solid rgba(13, 118, 110, 0.12)',
+              bgcolor: '#ffffff',
+              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.03)',
+            }}
+          >
             <ButtonBase
               onClick={() => toggleGroup(group.id)}
-              sx={{ display: 'block', width: '100%', textAlign: 'left' }}
+              sx={{
+                display: 'block',
+                width: '100%',
+                textAlign: 'left',
+                bgcolor: 'rgba(13, 118, 110, 0.03)',
+                transition: 'background-color 150ms ease',
+                '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.06)' },
+              }}
             >
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', px: { xs: 1.5, sm: 2 }, py: 1.25 }}>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ alignItems: 'center', px: { xs: 1.75, sm: 2.25 }, py: 1.5 }}
+              >
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography noWrap sx={{ fontWeight: 800 }}>{group.title}</Typography>
-                  <Typography variant="caption" color="text.secondary">{group.expenses.length} 筆</Typography>
+                  <Typography noWrap sx={{ fontWeight: 850, fontSize: '0.96rem' }}>
+                    {group.title}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {group.expenses.length} 筆費用
+                  </Typography>
                 </Box>
-                <Typography color="primary.main" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                <Typography
+                  color="primary.main"
+                  sx={{ fontWeight: 900, fontSize: '1rem', whiteSpace: 'nowrap', mr: 0.5 }}
+                >
                   {formatAmount(groupTotal, currency)}
                 </Typography>
                 <ExpandMoreRoundedIcon
                   color="action"
                   sx={{
                     transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
-                    transition: 'transform 160ms ease',
+                    transition: 'transform 180ms ease',
                   }}
                 />
               </Stack>
             </ButtonBase>
             <Collapse in={!isCollapsed} timeout="auto" unmountOnExit>
-              <Stack divider={<Divider />}>
+              <Stack divider={<Divider sx={{ borderColor: 'rgba(13, 118, 110, 0.06)' }} />}>
                 {group.expenses.map((expense) => (
                   <Card key={expense.id} elevation={0} sx={{ borderRadius: 0 }}>
                     <CardActionArea onClick={() => onEdit(expense)}>
-                      <CardContent sx={{ p: { xs: 1.5, sm: 2 }, '&:last-child': { pb: { xs: 1.5, sm: 2 } } }}>
+                      <CardContent sx={{ p: { xs: 1.75, sm: 2 }, '&:last-child': { pb: { xs: 1.75, sm: 2 } } }}>
                         <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography noWrap sx={{ fontWeight: 750 }}>{expense.title}</Typography>
-                            <Typography variant="caption" color="text.secondary">{formatDate(expense.date)}</Typography>
+                            <Typography noWrap sx={{ fontWeight: 750, fontSize: '0.94rem' }}>
+                              {expense.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {formatDate(expense.date)}
+                            </Typography>
                           </Box>
                           <Box sx={{ textAlign: 'right' }}>
-                            <Typography color="primary.main" sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}>
-                              {formatAmount(convertExpenseAmount(expense, currency, exchangeRates), currency)}
+                            <Typography
+                              color="primary.main"
+                              sx={{ fontWeight: 850, fontSize: '0.95rem', whiteSpace: 'nowrap' }}
+                            >
+                              {formatAmount(
+                                convertExpenseAmount(expense, currency, exchangeRates),
+                                currency,
+                              )}
                             </Typography>
                             {expense.currency !== currency ? (
-                              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ whiteSpace: 'nowrap', display: 'block' }}
+                              >
                                 {formatAmount(expense.amount, expense.currency)}
                               </Typography>
                             ) : null}
@@ -142,20 +243,38 @@ export function ExpenseSection({
                               event.stopPropagation()
                               void onDelete(expense)
                             }}
+                            sx={{ width: 34, height: 34 }}
                           >
                             <DeleteOutlineRoundedIcon fontSize="small" />
                           </IconButton>
                         </Stack>
                         {expense.items.length ? (
-                          <Stack direction="row" spacing={0.75} sx={{ mt: 0.5, alignItems: 'center', minWidth: 0 }}>
-                            <Typography variant="caption" color="text.secondary" noWrap sx={{ minWidth: 0, flex: 1 }}>
-                              {expense.items.slice(0, 1).map((item) => item.localizedName || item.sourceName).join(' · ')}
+                          <Stack
+                            direction="row"
+                            spacing={0.75}
+                            sx={{ mt: 0.75, alignItems: 'center', minWidth: 0 }}
+                          >
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              noWrap
+                              sx={{
+                                minWidth: 0,
+                                flex: 1,
+                                bgcolor: 'rgba(0, 0, 0, 0.04)',
+                                px: 1,
+                                py: 0.25,
+                                borderRadius: 1.5,
+                              }}
+                            >
+                              {expense.items
+                                .slice(0, 2)
+                                .map((item) => item.localizedName || item.sourceName)
+                                .join(' · ')}
+                              {expense.items.length > 2
+                                ? ` 等共 ${expense.items.length} 項`
+                                : ''}
                             </Typography>
-                            {expense.items.length > 1 ? (
-                              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                                +{expense.items.length - 1} 項
-                              </Typography>
-                            ) : null}
                           </Stack>
                         ) : null}
                       </CardContent>
@@ -167,8 +286,49 @@ export function ExpenseSection({
           </Paper>
         )
       })}
-      {expenses.length === 0 ? <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 3, p: 4, textAlign: 'center' }}><PaidRoundedIcon color="disabled" sx={{ fontSize: 44 }} /><Typography color="text.secondary" sx={{ mt: 1 }}>這趟旅程還沒有費用</Typography><Button sx={{ mt: 2 }} onClick={onAdd}>新增第一筆費用</Button></Paper> : null}
-      {expenses.length > 0 && groupedExpenses.length === 0 ? <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 3, p: 3, textAlign: 'center' }}><Typography color="text.secondary">找不到符合的費用</Typography></Paper> : null}
+
+      {expenses.length === 0 ? (
+        <Paper
+          elevation={0}
+          sx={{
+            border: '1px solid rgba(13, 118, 110, 0.12)',
+            borderRadius: 3.5,
+            p: 4,
+            textAlign: 'center',
+            bgcolor: '#ffffff',
+          }}
+        >
+          <PaidRoundedIcon color="disabled" sx={{ fontSize: 44, opacity: 0.7 }} />
+          <Typography color="text.secondary" sx={{ mt: 1, fontWeight: 650 }}>
+            這趟旅程還沒有紀錄任何費用
+          </Typography>
+          <Button
+            variant="contained"
+            sx={{
+              mt: 2,
+              borderRadius: 2.5,
+              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+            }}
+            onClick={onAdd}
+          >
+            新增第一筆費用
+          </Button>
+        </Paper>
+      ) : null}
+      {expenses.length > 0 && groupedExpenses.length === 0 ? (
+        <Paper
+          elevation={0}
+          sx={{
+            border: '1px solid rgba(13, 118, 110, 0.12)',
+            borderRadius: 3.5,
+            p: 3,
+            textAlign: 'center',
+            bgcolor: '#ffffff',
+          }}
+        >
+          <Typography color="text.secondary">找不到符合的費用</Typography>
+        </Paper>
+      ) : null}
     </Stack>
   )
 }
