@@ -39,16 +39,30 @@ export {
 }
 
 /** LangChain tools used by ChatGoogleGenerativeAI.bindTools. */
-export const langchainAssistantTools = [proposeItineraryEditTool, proposeTodoListTool]
+export const assistantToolDefinitions = [
+  {
+    tool: proposeItineraryEditTool,
+    continueAfterTool: false,
+  },
+  {
+    tool: proposeTodoListTool,
+    continueAfterTool: false,
+  },
+] as const
 
-export async function executeAssistantToolCall(name: string, args: Record<string, unknown>): Promise<AssistantModelResult> {
-  if (name === PROPOSAL_TOOL_NAME) {
-    return await proposeItineraryEditTool.invoke(args as never)
-  }
-  if (name === TODO_PROPOSAL_TOOL_NAME) {
-    return await proposeTodoListTool.invoke(args as never)
-  }
-  throw new Error(`不支援的工具：${name}`)
+export const langchainAssistantTools = assistantToolDefinitions.map(({ tool }) => tool)
+
+const assistantToolsByName = new Map<string, (typeof assistantToolDefinitions)[number]>(
+  assistantToolDefinitions.map((definition) => [definition.tool.name, definition]),
+)
+
+/** Proposal tools stop the model turn; read/external tools continue it. */
+export function shouldContinueAfterAssistantTool(name: string) {
+  return assistantToolsByName.get(name)?.continueAfterTool ?? true
+}
+
+export function isAssistantToolName(name: string) {
+  return assistantToolsByName.has(name)
 }
 
 export function parseAssistantModelResult(value: unknown): AssistantModelResult {

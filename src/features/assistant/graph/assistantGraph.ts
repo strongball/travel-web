@@ -1,5 +1,4 @@
 import {
-  Annotation,
   END,
   START,
   StateGraph,
@@ -13,14 +12,21 @@ import type {
   AssistantProgressListener,
   AssistantProgressPhase,
   AssistantTurnRequest,
-  ItineraryChangeProposal,
 } from '../types'
 import { ASSISTANT_GRAPH_VERSION } from '../types'
 import {
   normalizeAssistantOperations,
-  validateAssistantOperations,
   parseAssistantOperations,
+  summarizeWithGemini,
+  validateAssistantOperations,
 } from '../api'
+import { assistantGraphState } from './graphState'
+import { routeAfterRespond, routeAfterTools } from './routing'
+import { createExecuteToolsNode } from './nodes/executeToolsNode'
+import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
+import { createPrepareContextNode } from './nodes/prepareContextNode'
+import { createRespondNode } from './nodes/respondNode'
+import { createToolLimitNode } from './nodes/toolLimitNode'
 
 export {
   ASSISTANT_GRAPH_VERSION,
@@ -42,17 +48,6 @@ export const shouldSummarizeMessages = (
 export const recentAssistantMessages = (messages: AssistantMessage[], count = DEFAULT_RECENT_MESSAGE_COUNT) =>
   messages.slice(-Math.max(count, 0))
 
-/**
- * GraphState is purely focused on conversation messages and context
- */
-const GraphState = Annotation.Root({
-  graphVersion: Annotation<number>({ default: () => ASSISTANT_GRAPH_VERSION, reducer: (_, u) => u }),
-  summary: Annotation<string>({ default: () => '', reducer: (_, u) => u }),
-  messages: Annotation<AssistantMessage[]>({ default: () => [], reducer: (_, u) => u }),
-  request: Annotation<AssistantTurnRequest | null>({ default: () => null, reducer: (_, u) => u }),
-  assistantMessage: Annotation<AssistantMessage | null>({ default: () => null, reducer: (_, u) => u }),
-})
-
 export class AssistantGraphVersionError extends Error {
   readonly storedVersion: number
   readonly expectedVersion: number
@@ -72,81 +67,41 @@ export const createAssistantGraph = (
   const msgLimit = dependencies.summaryMessageThreshold ?? DEFAULT_SUMMARY_MESSAGE_THRESHOLD
   const charLimit = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
   const recentLimit = dependencies.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT
+  const maxToolRounds = dependencies.maxToolRounds ?? 4
   const progressListeners = new Map<string, AssistantProgressListener>()
   const emitProgress = (threadId?: string, phase?: AssistantProgressPhase) => {
     if (threadId && phase) progressListeners.get(threadId)?.(phase)
   }
 
-  const workflow = new StateGraph(GraphState)
-    // 1. Prepare context & summarize if threshold reached
-    .addNode('prepare_context', async (state) => {
-      const req = state.request!
-      emitProgress(req.threadId, 'checking_context')
-      const prevMsgs = state.messages.filter((m) => m.turnId !== req.turnId)
-      if (!shouldSummarizeMessages(prevMsgs, msgLimit, charLimit)) return {}
-
-      emitProgress(req.threadId, 'summarizing_context')
-      const currentTurn = state.messages.filter((m) => m.turnId === req.turnId)
-      const summary = await dependencies.model.summarize(state.summary, prevMsgs)
-      return {
-        summary,
-        messages: [...recentAssistantMessages(prevMsgs, recentLimit), ...currentTurn],
-      }
-    })
-    // 2. Chat with model & execute tool / proposal if present
-    .addNode('respond', async (state) => {
-      const req = state.request!
-      emitProgress(req.threadId, 'generating_response')
-      const result = await dependencies.model.respond({
-        summary: state.summary,
-        messages: state.messages,
-        userText: req.text,
-        itinerary: req.itinerary,
-        todos: req.todos,
-        todoCategories: req.todoCategories,
-      })
-
-      let proposal: ItineraryChangeProposal | null = null
-      emitProgress(req.threadId, 'validating_response')
-      if (result.proposal) {
-        const operations = normalizeAssistantOperations(result.proposal.operations)
-        validateAssistantOperations(req.itinerary, operations)
-        proposal = {
-          id: crypto.randomUUID(),
-          threadId: req.threadId,
-          turnId: req.turnId,
-          itineraryId: req.itinerary.id,
-          title: result.proposal.title,
-          explanation: result.proposal.explanation,
-          expectedDayRevisions: req.dayRevisions,
-          operations,
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-        }
-
-        emitProgress(req.threadId, 'saving_proposal')
-        await dependencies.proposals.savePending(proposal)
-      }
-
-      const assistantMessage: AssistantMessage = {
-        id: crypto.randomUUID(),
-        turnId: req.turnId,
-        role: 'assistant',
-        content: result.reply,
-        createdAt: new Date().toISOString(),
-        proposal,
-      }
-
-      emitProgress(req.threadId, 'saving_checkpoint')
-      return {
-        assistantMessage,
-        messages: [...state.messages, assistantMessage],
-        request: null,
-      }
-    })
+  const workflow = new StateGraph(assistantGraphState)
+    .addNode('prepare_context', createPrepareContextNode({
+      messageThreshold: msgLimit,
+      characterThreshold: charLimit,
+      recentMessageCount: recentLimit,
+      emitProgress,
+      shouldSummarizeMessages,
+      recentAssistantMessages,
+    }))
+    .addNode('respond', createRespondNode({ emitProgress }))
+    .addNode('execute_tools', createExecuteToolsNode())
+    .addNode('finalize_response', createFinalizeResponseNode({
+      savePending: dependencies.proposals.savePending,
+      emitProgress,
+    }))
+    .addNode('tool_limit', createToolLimitNode(maxToolRounds))
     .addEdge(START, 'prepare_context')
     .addEdge('prepare_context', 'respond')
-    .addEdge('respond', END)
+    .addConditionalEdges('respond', (state) => routeAfterRespond(state, maxToolRounds), {
+      execute_tools: 'execute_tools',
+      finalize_response: 'finalize_response',
+      tool_limit: 'tool_limit',
+    })
+    .addConditionalEdges('execute_tools', (state) => routeAfterTools(state, maxToolRounds), {
+      respond: 'respond',
+      finalize_response: 'finalize_response',
+      tool_limit: 'tool_limit',
+    })
+    .addEdge('finalize_response', END)
     .compile({ checkpointer })
 
   const config = (threadId: string) => ({ configurable: { thread_id: threadId }, durability: 'exit' as const })
@@ -198,6 +153,9 @@ export const createAssistantGraph = (
           messages,
           request,
           assistantMessage: null,
+          modelMessages: [],
+          toolRound: 0,
+          toolCallKind: null,
         }, config(request.threadId))
 
         const stateOutput = output as AssistantGraphState
@@ -225,7 +183,7 @@ export const createAssistantGraph = (
       if (!prev) throw new Error('Assistant thread has no checkpoint to summarize')
       if (prev.graphVersion !== version) throw new AssistantGraphVersionError(prev.graphVersion, version)
 
-      const summary = await dependencies.model.summarize(prev.summary, prev.messages)
+      const summary = await summarizeWithGemini(prev.summary, prev.messages)
       await workflow.updateState(config(threadId), {
         summary,
         messages: recentAssistantMessages(prev.messages, recentLimit),

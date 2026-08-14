@@ -1,6 +1,7 @@
 import type { Itinerary, TodoItem } from '../../types/database'
+import type { BaseMessage } from '@langchain/core/messages'
 
-export const ASSISTANT_GRAPH_VERSION = 4
+export const ASSISTANT_GRAPH_VERSION = 5
 
 export type AssistantProgressPhase =
   | 'checking_context'
@@ -88,15 +89,6 @@ export type AssistantTurnRequest = {
   rehydratedMessages?: AssistantMessage[]
 }
 
-export type AssistantModelRequest = {
-  summary: string
-  messages: AssistantMessage[]
-  userText: string
-  itinerary: Itinerary
-  todos?: TodoItem[]
-  todoCategories?: string[]
-}
-
 export type AssistantModelResult = {
   reply: string
   proposal?: {
@@ -106,22 +98,17 @@ export type AssistantModelResult = {
   }
 }
 
-export type AssistantModel = {
-  respond: (request: AssistantModelRequest) => Promise<AssistantModelResult>
-  summarize: (currentSummary: string, messages: AssistantMessage[]) => Promise<string>
-}
-
 export type AssistantProposalPersistence = {
   savePending: (proposal: ItineraryChangeProposal) => Promise<void>
 }
 
 export type AssistantGraphDependencies = {
-  model: AssistantModel
   proposals: AssistantProposalPersistence
   graphVersion?: number
   summaryMessageThreshold?: number
   summaryCharacterThreshold?: number
   recentMessageCount?: number
+  maxToolRounds?: number
 }
 
 export type AssistantGraphState = {
@@ -131,6 +118,9 @@ export type AssistantGraphState = {
   request: AssistantTurnRequest | null
   assistantMessage: AssistantMessage | null
   pendingProposal: ItineraryChangeProposal | null
+  modelMessages: BaseMessage[]
+  toolRound: number
+  toolCallKind: 'continuing' | 'terminal' | null
 }
 
 export type AssistantGraphRunner = {

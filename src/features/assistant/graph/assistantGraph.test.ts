@@ -1,18 +1,32 @@
 import { MemorySaver } from '@langchain/langgraph/web'
-import { describe, expect, it } from 'vitest'
+import { AIMessage, type BaseMessage } from '@langchain/core/messages'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Itinerary } from '../../../types/database'
+
+const assistantGraphMocks = vi.hoisted(() => ({
+  invokeAssistantModel: vi.fn(),
+  summarizeWithGemini: vi.fn(),
+}))
+
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  invokeAssistantModel: assistantGraphMocks.invokeAssistantModel,
+  summarizeWithGemini: assistantGraphMocks.summarizeWithGemini,
+}))
+
 import {
   createAssistantGraph,
   recentAssistantMessages,
   shouldSummarizeMessages,
 } from './assistantGraph'
+import type { AssistantGraphNodeState } from './graphState'
+import { routeAfterRespond, routeAfterTools } from './routing'
 import {
   parseAssistantOperations,
   validateAssistantOperations,
 } from '../api'
 import type {
   AssistantMessage,
-  AssistantModel,
   AssistantProposalPersistence,
   AssistantTurnRequest,
   ItineraryChangeProposal,
@@ -23,6 +37,7 @@ const itinerary: Itinerary = {
   title: 'Tokyo',
   ownerId: 'user-1',
   currency: 'JPY',
+  startDate: '2026-09-01',
   days: [{
     id: 'day-1',
     itineraryId: 'trip-1',
@@ -63,6 +78,13 @@ const persistence = (): AssistantProposalPersistence & { saved: ItineraryChangeP
   }
   return result
 }
+
+beforeEach(() => {
+  assistantGraphMocks.invokeAssistantModel.mockReset()
+  assistantGraphMocks.summarizeWithGemini.mockReset()
+  assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '完成' }))
+  assistantGraphMocks.summarizeWithGemini.mockResolvedValue('summary')
+})
 
 describe('assistant graph helpers', () => {
   it('parses only supported operations and validates itinerary references', () => {
@@ -118,30 +140,40 @@ describe('assistant graph helpers', () => {
   })
 })
 
+describe('assistant graph routing', () => {
+  const state = (toolCallKind: AssistantGraphNodeState['toolCallKind'], toolRound: number) => ({
+    toolCallKind,
+    toolRound,
+  } as AssistantGraphNodeState)
+
+  it('returns to respond after a continuing tool and stops at the round limit', () => {
+    expect(routeAfterRespond(state('continuing', 0), 4)).toBe('execute_tools')
+    expect(routeAfterTools(state('continuing', 1), 4)).toBe('respond')
+    expect(routeAfterTools(state('continuing', 4), 4)).toBe('tool_limit')
+  })
+
+  it('finalizes direct text and terminal proposal tool calls', () => {
+    expect(routeAfterRespond(state(null, 0), 4)).toBe('finalize_response')
+    expect(routeAfterTools(state('terminal', 1), 4)).toBe('finalize_response')
+  })
+})
+
 describe('createAssistantGraph', () => {
   it('completes a regular turn', async () => {
-    const model: AssistantModel = {
-      respond: async () => ({ reply: '第一天目前從九點開始。' }),
-      summarize: async () => 'summary',
-    }
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '第一天目前從九點開始。' }))
     const graph = createAssistantGraph(new MemorySaver(), {
-      model,
       proposals: persistence(),
-      summaryMessageThreshold: 100,
     })
     const result = await graph.sendTurn({ ...request(), text: '第一天幾點開始？' })
     expect(result.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
     expect(result.assistantMessage?.content).toBe('第一天目前從九點開始。')
+    expect(result.modelMessages).toEqual([])
+    expect(result.toolRound).toBe(0)
   })
 
   it('reports actual graph phases instead of rotating simulated messages', async () => {
     const graph = createAssistantGraph(new MemorySaver(), {
-      model: {
-        respond: async () => ({ reply: '完成' }),
-        summarize: async () => 'summary',
-      },
       proposals: persistence(),
-      summaryMessageThreshold: 100,
     })
     const phases: string[] = []
     await graph.sendTurn(request(), (phase) => phases.push(phase))
@@ -155,19 +187,17 @@ describe('createAssistantGraph', () => {
 
   it('summarizes previous messages before processing the current user message', async () => {
     const events: string[] = []
+    assistantGraphMocks.summarizeWithGemini.mockImplementation(async (_summary: string, messages: AssistantMessage[]) => {
+      events.push(`summarize:${messages.map((message) => message.content).join(',')}`)
+      expect(messages.some((message) => message.content === '這次的新問題')).toBe(false)
+      return '先前內容摘要'
+    })
+    assistantGraphMocks.invokeAssistantModel.mockImplementation(async (messages: BaseMessage[]) => {
+      events.push(`respond:${String(messages[0]?.content).includes('先前內容摘要')}`)
+      expect(String(messages[0]?.content)).toContain('這次的新問題')
+      return new AIMessage({ content: '完成' })
+    })
     const graph = createAssistantGraph(new MemorySaver(), {
-      model: {
-        respond: async (modelRequest) => {
-          events.push(`respond:${modelRequest.summary}`)
-          expect(modelRequest.messages.at(-1)?.content).toBe('這次的新問題')
-          return { reply: '完成' }
-        },
-        summarize: async (_summary, messages) => {
-          events.push(`summarize:${messages.map((message) => message.content).join(',')}`)
-          expect(messages.some((message) => message.content === '這次的新問題')).toBe(false)
-          return '先前內容摘要'
-        },
-      },
       proposals: persistence(),
       summaryMessageThreshold: 1,
       recentMessageCount: 1,
@@ -180,20 +210,13 @@ describe('createAssistantGraph', () => {
       text: '這次的新問題',
       rehydratedMessages: [prior],
     })
-    expect(events).toEqual(['summarize:之前的偏好', 'respond:先前內容摘要'])
+    expect(events).toEqual(['summarize:之前的偏好', 'respond:true'])
   })
 
   it('rehydrates canonical summary and messages when rebuilding a thread', async () => {
-    const model: AssistantModel = {
-      respond: async (modelRequest) => ({
-        reply: `${modelRequest.summary}:${modelRequest.messages[0]?.content}`,
-      }),
-      summarize: async () => 'summary',
-    }
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '偏好日本料理:想吃壽司' }))
     const graph = createAssistantGraph(new MemorySaver(), {
-      model,
       proposals: persistence(),
-      summaryMessageThreshold: 100,
     })
     const turn = request()
     const prior: AssistantMessage = {
@@ -211,14 +234,12 @@ describe('createAssistantGraph', () => {
 
   it('returns the saved result when the same turn is retried', async () => {
     let calls = 0
-    const model: AssistantModel = {
-      respond: async () => { calls += 1; return { reply: '只回覆一次' } },
-      summarize: async () => 'summary',
-    }
+    assistantGraphMocks.invokeAssistantModel.mockImplementation(async () => {
+      calls += 1
+      return new AIMessage({ content: '只回覆一次' })
+    })
     const graph = createAssistantGraph(new MemorySaver(), {
-      model,
       proposals: persistence(),
-      summaryMessageThreshold: 100,
     })
     const turn = request()
     const first = await graph.sendTurn(turn)
@@ -230,12 +251,7 @@ describe('createAssistantGraph', () => {
 
   it('rejects an older checkpoint so the UI can rebuild from canonical history', async () => {
     const checkpointer = new MemorySaver()
-    const model: AssistantModel = {
-      respond: async () => ({ reply: '完成' }),
-      summarize: async () => 'summary',
-    }
     const oldGraph = createAssistantGraph(checkpointer, {
-      model,
       proposals: persistence(),
       graphVersion: 3,
     })
@@ -243,27 +259,21 @@ describe('createAssistantGraph', () => {
     await oldGraph.sendTurn(firstTurn)
 
     const currentGraph = createAssistantGraph(checkpointer, {
-      model,
       proposals: persistence(),
-      graphVersion: 4,
+      graphVersion: 5,
     })
     await expect(currentGraph.sendTurn({
       ...firstTurn,
       turnId: crypto.randomUUID(),
       text: '下一個問題',
-    })).rejects.toThrow('version 3 cannot resume as version 4')
+    })).rejects.toThrow('version 3 cannot resume as version 5')
   })
 
   it('manually summarizes the saved thread and keeps the recent window', async () => {
-    const model: AssistantModel = {
-      respond: async () => ({ reply: '收到。' }),
-      summarize: async () => '使用者正在安排東京行程。',
-    }
+    assistantGraphMocks.summarizeWithGemini.mockResolvedValue('使用者正在安排東京行程。')
     const graph = createAssistantGraph(new MemorySaver(), {
-      model,
       proposals: persistence(),
       recentMessageCount: 1,
-      summaryMessageThreshold: 100,
     })
     const turn = request()
     await graph.sendTurn({ ...turn, text: '我要安排東京。' })
@@ -273,30 +283,29 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.summary).toBe(summarized.summary)
   })
 
-  it('persists a proposal and finishes the graph turn', async () => {
-    const model: AssistantModel = {
-      respond: async () => ({
-        reply: '我準備把第一天改成十點開始。',
-        proposal: {
+  it('runs a terminal proposal tool, finalizes it, and does not call the model again', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({
+      tool_calls: [{
+        id: 'proposal-call',
+        name: 'propose_itinerary_edit',
+        args: {
+          reply: '我準備把第一天改成十點開始。',
           title: '延後第一天開始時間',
           explanation: '09:00 改成 10:00',
           operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
         },
-      }),
-      summarize: async () => 'summary',
-    }
+        type: 'tool_call',
+      }],
+    }))
     const proposals = persistence()
     const graph = createAssistantGraph(new MemorySaver(), {
-      model,
       proposals,
-      summaryMessageThreshold: 100,
     })
-    const turn = request()
-    const completed = await graph.sendTurn(turn)
+    const completed = await graph.sendTurn(request())
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(1)
     expect(completed.request).toBeNull()
     expect(completed.assistantMessage?.proposal?.status).toBe('pending')
     expect(proposals.saved).toHaveLength(1)
-    expect(proposals.saved[0].status).toBe('pending')
-    expect(proposals.saved[0].expectedDayRevisions).toEqual(turn.dayRevisions)
+    expect(proposals.saved[0].expectedDayRevisions).toEqual({ 'day-1': 3 })
   })
 })

@@ -17,7 +17,6 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import type { Itinerary, TodoItem } from '../../types/database'
-import { browserAssistantModel } from './api'
 import {
   AssistantGraphVersionError,
   createAssistantGraph,
@@ -339,7 +338,6 @@ export function useAssistantConversation(
 
   const checkpointer = useMemo(() => new SupabaseAssistantCheckpointer(supabase), [])
   const runner = useMemo(() => createAssistantGraph(checkpointer, {
-    model: browserAssistantModel,
     proposals: proposalPersistence,
   }), [checkpointer, proposalPersistence])
 

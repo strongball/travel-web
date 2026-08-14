@@ -2,11 +2,12 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { describe, expect, it, vi } from 'vitest'
 import {
   bindAssistantTools,
-  executeAssistantToolCalls,
+  mergeAssistantToolResults,
 } from '../api/assistantApi'
 import {
   langchainAssistantTools,
   proposeTodoListTool,
+  shouldContinueAfterAssistantTool,
 } from './index'
 
 const unsupportedSchemaKeys = new Set([
@@ -70,6 +71,11 @@ describe('active Gemini tool declarations', () => {
     expect(bound).toEqual({ invoke: expect.any(Function) })
     expect(bindTools).toHaveBeenCalledWith(langchainAssistantTools, { tool_choice: 'auto' })
   })
+
+  it('marks proposal tools as terminal and unknown tools as continuing by default', () => {
+    expect(shouldContinueAfterAssistantTool('propose_todo_list')).toBe(false)
+    expect(shouldContinueAfterAssistantTool('lookup_weather')).toBe(true)
+  })
 })
 
 describe('LangChain runtime tool validation', () => {
@@ -87,30 +93,31 @@ describe('LangChain runtime tool validation', () => {
 
 describe('tool call contract', () => {
   it('merges Gemini parallel calls into one validated proposal', async () => {
-    const result = await executeAssistantToolCalls([
+    const result = mergeAssistantToolResults([
       {
-        name: 'propose_itinerary_edit',
-        args: {
-          reply: '已準備新增景點。',
+        reply: '已準備新增景點。',
+        proposal: {
+          title: '新增景點',
+          explanation: '行程安排',
           operations: [{
-            type: 'add_attraction',
-            dayId: 'day-1',
-            attraction: { name: '黑門市場', duration: 60 },
+            type: 'add_todo',
+            title: '購買交通卡',
           }],
         },
       },
       {
-        name: 'propose_todo_list',
-        args: {
-          reply: '已準備待辦。',
-          todos: [{ title: '購買交通卡' }],
+        reply: '已準備待辦。',
+        proposal: {
+          title: '待辦',
+          explanation: '提醒事項',
+          operations: [{ type: 'add_todo', title: '預約餐廳' }],
         },
       },
     ])
 
     expect(result.proposal?.operations).toEqual([
-      expect.objectContaining({ type: 'add_attraction' }),
       { type: 'add_todo', title: '購買交通卡' },
+      { type: 'add_todo', title: '預約餐廳' },
     ])
   })
 })

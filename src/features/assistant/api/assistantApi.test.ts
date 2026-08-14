@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 import {
   buildAssistantPrompt,
-  executeAssistantToolCall,
   parseAssistantModelResult,
 } from './assistantApi'
 
@@ -191,46 +190,5 @@ describe('buildAssistantPrompt', () => {
     expect(prompt).toContain('使用者：第一天早上想去淺草寺。')
     expect(prompt).toContain('下午想去晴空塔，怎麼排比較順？')
     expect(prompt).toContain('propose_itinerary_edit')
-  })
-})
-
-describe('executeAssistantToolCall', () => {
-  it('executes LangChain propose_itinerary_edit tool', async () => {
-    const result = await executeAssistantToolCall('propose_itinerary_edit', {
-      reply: '已準備加入黑門市場。',
-      operations: [{
-        type: 'add_attraction',
-        dayId: 'day-1',
-        attraction: {
-          name: '黑門市場',
-          duration: 60,
-          transportMode: 'walking',
-          travelTime: 10,
-        },
-      }],
-    })
-
-    expect(result.reply).toBe('已準備加入黑門市場。')
-    expect(result.proposal?.operations[0]).toMatchObject({
-      type: 'add_attraction',
-      dayId: 'day-1',
-      attraction: expect.objectContaining({ name: '黑門市場' }),
-    })
-  })
-
-  it('executes LangChain propose_todo_list tool', async () => {
-    const result = await executeAssistantToolCall('propose_todo_list', {
-      reply: '已為您規劃待辦清單。',
-      todos: [
-        { title: '購買交通卡', category: '行前準備' },
-      ],
-      newCategories: ['交通票券'],
-    })
-
-    expect(result.reply).toBe('已為您規劃待辦清單。')
-    expect(result.proposal?.operations).toEqual([
-      { type: 'add_todo_category', name: '交通票券' },
-      { type: 'add_todo', title: '購買交通卡', category: '行前準備' },
-    ])
   })
 })

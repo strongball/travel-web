@@ -1,18 +1,15 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
-import { HumanMessage, SystemMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages'
 import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
   AssistantMessage,
-  AssistantModel,
-  AssistantModelRequest,
   AssistantModelResult,
 } from '../types'
 import {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  executeAssistantToolCall,
   parseAssistantModelResult,
 } from '../tools'
 
@@ -20,7 +17,6 @@ export {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  executeAssistantToolCall,
   parseAssistantModelResult,
 }
 
@@ -53,13 +49,15 @@ export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI
   })
 }
 
-/**
- * Bind the proposal tool contract using the provider-supported option.
- * Gemini may still return parallel calls, so the response path applies one
- * deterministic merge before invoking the graph proposal persistence.
- */
+/** Bind the assistant tool registry using LangChain's provider adapter. */
 export function bindAssistantTools(model: ChatGoogleGenerativeAI) {
   return model.bindTools(langchainAssistantTools, { tool_choice: 'auto' })
+}
+
+export async function invokeAssistantModel(messages: BaseMessage[]): Promise<AIMessage> {
+  const model = await createLangChainChatModel()
+  const response = await bindAssistantTools(model).invoke(messages)
+  return response as AIMessage
 }
 
 export function buildAssistantPrompt(
@@ -124,78 +122,24 @@ export function buildAssistantPrompt(
   return promptParts.join('\n')
 }
 
-export const browserAssistantModel: AssistantModel = {
-  summarize: async (currentSummary: string, messages: AssistantMessage[]) => {
-    const model = await createLangChainChatModel()
-    const response = await model.invoke([
-      new SystemMessage('請將以下旅遊規劃對話整理成精簡摘要。重點保留：使用者偏好、已討論的景點與尚未決定的事項。請使用對話中最主要的語言進行摘要。'),
-      new HumanMessage(
-        [
-          currentSummary ? `目前的摘要：${currentSummary}` : '',
-          '對話紀錄：',
-          ...messages.map((m) => `${m.role === 'user' ? '使用者' : '助理'}：${m.content}`),
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
-      ),
-    ])
-    return typeof response.content === 'string' ? response.content.trim() : ''
-  },
-  respond: async (modelRequest: AssistantModelRequest): Promise<AssistantModelResult> => {
-    const model = await createLangChainChatModel()
-    const modelWithTools = bindAssistantTools(model)
-
-    const prompt = buildAssistantPrompt(
-      modelRequest.itinerary,
-      modelRequest.summary || null,
-      modelRequest.messages,
-      modelRequest.userText,
-      modelRequest.todos ?? [],
-      modelRequest.todoCategories ?? [],
-    )
-
-    const response = await modelWithTools.invoke([new HumanMessage(prompt)])
-
-    // 1. Tool Call invocation via LangChain
-    if (response.tool_calls && response.tool_calls.length > 0) {
-      return await executeAssistantToolCalls(response.tool_calls)
-    }
-
-    // 2. Direct plain text response (No tool called)
-    const reply = typeof response.content === 'string' ? response.content.trim() : ''
-    if (!reply) {
-      throw new Error('模型回傳了空的文字內容')
-    }
-
-    return { reply }
-  },
+export async function summarizeWithGemini(currentSummary: string, messages: AssistantMessage[]) {
+  const model = await createLangChainChatModel()
+  const response = await model.invoke([
+    new SystemMessage('請將以下旅遊規劃對話整理成精簡摘要。重點保留：使用者偏好、已討論的景點與尚未決定的事項。請使用對話中最主要的語言進行摘要。'),
+    new HumanMessage(
+      [
+        currentSummary ? `目前的摘要：${currentSummary}` : '',
+        '對話紀錄：',
+        ...messages.map((m) => `${m.role === 'user' ? '使用者' : '助理'}：${m.content}`),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    ),
+  ])
+  return typeof response.content === 'string' ? response.content.trim() : ''
 }
 
-type AssistantToolCallLike = {
-  name?: unknown
-  args?: unknown
-}
-
-/**
- * Gemini supports parallel function calling. Merge all validated tool results
- * into one proposal so a parallel response cannot leave a half-applied turn.
- */
-export async function executeAssistantToolCalls(
-  toolCalls: readonly AssistantToolCallLike[],
-): Promise<AssistantModelResult> {
-  if (toolCalls.length === 0) throw new Error('模型沒有回傳工具呼叫')
-
-  const calls = toolCalls.map((call) => {
-    if (!call || typeof call.name !== 'string' || !call.name) {
-      throw new Error('工具名稱遺失')
-    }
-    const args = call.args && typeof call.args === 'object' && !Array.isArray(call.args)
-      ? call.args as Record<string, unknown>
-      : {}
-    return { name: call.name, args }
-  })
-
-  const results = await Promise.all(calls.map((call) => executeAssistantToolCall(call.name, call.args)))
+export function mergeAssistantToolResults(results: AssistantModelResult[]): AssistantModelResult {
   if (results.length === 1) return results[0]
 
   const proposals = results.flatMap((result) => result.proposal ? [result.proposal] : [])
