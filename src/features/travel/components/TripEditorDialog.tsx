@@ -1,17 +1,23 @@
+import { useState } from 'react'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   FormControl,
+  IconButton,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
   Stack,
   TextField,
+  Typography,
 } from '@mui/material'
 import { PageHeader } from '../../../components/PageHeader'
 import { supportedCurrencies } from '../../../lib/currencies'
@@ -38,6 +44,32 @@ export function TripEditorDialog({
   onDelete,
   onSave,
 }: TripEditorDialogProps) {
+  const [newTag, setNewTag] = useState('')
+
+  const categories = itinerary?.todoCategories && itinerary.todoCategories.length > 0
+    ? itinerary.todoCategories
+    : ['行前準備', '旅途中', '其他']
+
+  const handleAddCategory = () => {
+    if (!itinerary) return
+    const trimmed = newTag.trim()
+    if (!trimmed || categories.includes(trimmed)) return
+    onChange({
+      ...itinerary,
+      todoCategories: [...categories, trimmed],
+    })
+    setNewTag('')
+  }
+
+  const handleDeleteCategory = (catToDelete: string) => {
+    if (!itinerary) return
+    const next = categories.filter((c) => c !== catToDelete)
+    onChange({
+      ...itinerary,
+      todoCategories: next.length > 0 ? next : ['其他'],
+    })
+  }
+
   return (
     <Dialog open={Boolean(itinerary)} onClose={onClose} fullScreen>
       <PageHeader
@@ -46,26 +78,135 @@ export function TripEditorDialog({
       />
       <DialogContent sx={{ p: 0, bgcolor: 'background.default' }}>
         {itinerary ? (
-          <Stack spacing={2} sx={{ width: '100%', maxWidth: 640, mx: 'auto', p: 2 }}>
-            <TextField autoFocus label="行程名稱" value={itinerary.title} onChange={(event) => onChange({ ...itinerary, title: event.target.value })} />
+          <Stack spacing={2.5} sx={{ width: '100%', maxWidth: 640, mx: 'auto', p: 2 }}>
+            <TextField
+              autoFocus
+              label="行程名稱"
+              value={itinerary.title}
+              onChange={(event) =>
+                onChange({ ...itinerary, title: event.target.value })
+              }
+            />
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField type="date" label="開始日期" value={itinerary.startDate?.slice(0, 10) ?? ''} slotProps={{ inputLabel: { shrink: true } }} onChange={(event) => onDateChange('startDate', event.target.value)} />
-              <TextField type="date" label="結束日期" value={itinerary.endDate?.slice(0, 10) ?? ''} slotProps={{ inputLabel: { shrink: true } }} onChange={(event) => onDateChange('endDate', event.target.value)} />
+              <TextField
+                type="date"
+                label="開始日期"
+                value={itinerary.startDate?.slice(0, 10) ?? ''}
+                slotProps={{ inputLabel: { shrink: true } }}
+                onChange={(event) => onDateChange('startDate', event.target.value)}
+              />
+              <TextField
+                type="date"
+                label="結束日期"
+                value={itinerary.endDate?.slice(0, 10) ?? ''}
+                slotProps={{ inputLabel: { shrink: true } }}
+                onChange={(event) => onDateChange('endDate', event.target.value)}
+              />
             </Stack>
             <FormControl fullWidth>
               <InputLabel id="trip-currency-label">主要幣別</InputLabel>
-              <Select labelId="trip-currency-label" label="主要幣別" value={itinerary.currency} onChange={(event) => onChange({ ...itinerary, currency: event.target.value })}>
-                {supportedCurrencies.map((currency) => <MenuItem key={currency} value={currency}>{currency}</MenuItem>)}
+              <Select
+                labelId="trip-currency-label"
+                label="主要幣別"
+                value={itinerary.currency}
+                onChange={(event) =>
+                  onChange({ ...itinerary, currency: event.target.value })
+                }
+              >
+                {supportedCurrencies.map((currency) => (
+                  <MenuItem key={currency} value={currency}>
+                    {currency}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
+
+            {/* Todo Categories Section */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                borderRadius: 3,
+                border: '1px solid rgba(13, 118, 110, 0.12)',
+                bgcolor: '#ffffff',
+              }}
+            >
+              <Typography
+                variant="subtitle2"
+                sx={{ fontWeight: 800, color: 'text.secondary', mb: 1 }}
+              >
+                待辦事項預設分類
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+                {categories.map((cat) => (
+                  <Chip
+                    key={cat}
+                    label={cat}
+                    onDelete={categories.length > 1 ? () => handleDeleteCategory(cat) : undefined}
+                    sx={{
+                      fontWeight: 700,
+                      bgcolor: 'rgba(13, 118, 110, 0.08)',
+                      color: '#0d766e',
+                      borderColor: 'rgba(13, 118, 110, 0.2)',
+                    }}
+                  />
+                ))}
+              </Stack>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  placeholder="新增分類標籤…"
+                  value={newTag}
+                  onChange={(e) => setNewTag(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleAddCategory()
+                    }
+                  }}
+                  sx={{ flex: 1 }}
+                />
+                <IconButton
+                  color="primary"
+                  disabled={!newTag.trim()}
+                  onClick={handleAddCategory}
+                  sx={{
+                    bgcolor: 'rgba(13, 118, 110, 0.08)',
+                    borderRadius: 2,
+                    '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.16)' },
+                  }}
+                  aria-label="新增分類"
+                >
+                  <AddRoundedIcon />
+                </IconButton>
+              </Stack>
+            </Paper>
           </Stack>
         ) : null}
       </DialogContent>
       <DialogActions sx={{ position: 'sticky', bottom: 0, zIndex: 2 }}>
-        {itinerary && canDelete ? <Button color="error" size="small" startIcon={<DeleteOutlineRoundedIcon />} onClick={onDelete}>刪除</Button> : null}
+        {itinerary && canDelete ? (
+          <Button
+            color="error"
+            size="small"
+            startIcon={<DeleteOutlineRoundedIcon />}
+            onClick={onDelete}
+          >
+            刪除
+          </Button>
+        ) : null}
         <Box sx={{ flex: 1 }} />
         <Button onClick={onClose}>取消</Button>
-        <Button variant="contained" disabled={saving || !itinerary?.title.trim()} onClick={onSave} startIcon={saving ? <CircularProgress size={18} color="inherit" /> : undefined}>{saving ? '儲存中…' : '儲存行程'}</Button>
+        <Button
+          variant="contained"
+          disabled={saving || !itinerary?.title.trim()}
+          onClick={onSave}
+          startIcon={
+            saving ? <CircularProgress size={18} color="inherit" /> : undefined
+          }
+        >
+          {saving ? '儲存中…' : '儲存行程'}
+        </Button>
       </DialogActions>
     </Dialog>
   )

@@ -180,8 +180,76 @@ export function TravelWorkspacePage({
   const completedTodos = selectedTodos.filter((todo) => todo.isCompleted).length
   const categories = useMemo(() => {
     const fromTrip = selectedItinerary?.todoCategories ?? []
-    return Array.from(new Set([...fromTrip, '行前準備', '旅途中', '其他']))
+    if (fromTrip.length > 0) return fromTrip
+    return ['行前準備', '旅途中', '其他']
   }, [selectedItinerary?.todoCategories])
+
+  useEffect(() => {
+    if (!categories.includes(todoCategory)) {
+      setTodoCategory(categories[0] ?? '其他')
+    }
+  }, [categories, todoCategory])
+
+  const handleSaveCategories = useCallback(
+    async (nextCategories: string[]) => {
+      if (!selectedItinerary) return
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: nextCategories,
+      })
+    },
+    [onSaveItinerary, selectedItinerary],
+  )
+
+  const handleRenameCategory = useCallback(
+    async (oldName: string, newName: string) => {
+      if (!selectedItinerary || !oldName || !newName || oldName === newName) return
+      const currentCats =
+        selectedItinerary.todoCategories && selectedItinerary.todoCategories.length > 0
+          ? selectedItinerary.todoCategories
+          : ['行前準備', '旅途中', '其他']
+      const nextCats = currentCats.map((cat) => (cat === oldName ? newName : cat))
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: nextCats,
+      })
+
+      const todosToUpdate = selectedTodos.filter((todo) => todo.category === oldName)
+      for (const todo of todosToUpdate) {
+        await onSaveTodo({ ...todo, category: newName })
+      }
+      if (todoCategory === oldName) {
+        setTodoCategory(newName)
+      }
+    },
+    [onSaveItinerary, onSaveTodo, selectedItinerary, selectedTodos, todoCategory],
+  )
+
+  const handleDeleteCategory = useCallback(
+    async (categoryName: string) => {
+      if (!selectedItinerary || !categoryName) return
+      const currentCats =
+        selectedItinerary.todoCategories && selectedItinerary.todoCategories.length > 0
+          ? selectedItinerary.todoCategories
+          : ['行前準備', '旅途中', '其他']
+      const nextCats = currentCats.filter((cat) => cat !== categoryName)
+      const validNextCats = nextCats.length > 0 ? nextCats : ['其他']
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: validNextCats,
+      })
+
+      const fallback = validNextCats[0] || '其他'
+      const todosToUpdate = selectedTodos.filter((todo) => todo.category === categoryName)
+      for (const todo of todosToUpdate) {
+        await onSaveTodo({ ...todo, category: fallback })
+      }
+      if (todoCategory === categoryName) {
+        setTodoCategory(fallback)
+      }
+    },
+    [onSaveItinerary, onSaveTodo, selectedItinerary, selectedTodos, todoCategory],
+  )
   const openNewTrip = () => {
     const start = new Date().toISOString().slice(0, 10)
     const id = crypto.randomUUID()
@@ -447,6 +515,10 @@ export function TravelWorkspacePage({
                   saving={todoSaving}
                   onToggle={(todo) => void onSaveTodo({ ...todo, isCompleted: !todo.isCompleted })}
                   onDelete={(todo) => void onDeleteTodo(todo.id)}
+                  onSaveTodo={(todo) => void onSaveTodo(todo)}
+                  onSaveCategories={(cats) => void handleSaveCategories(cats)}
+                  onRenameCategory={(oldName, newName) => void handleRenameCategory(oldName, newName)}
+                  onDeleteCategory={(cat) => void handleDeleteCategory(cat)}
                 />
               ) : null}
               {section === 'expenses' ? (
