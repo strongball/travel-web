@@ -133,9 +133,22 @@ export function AssistantConversationView({
       nearBottomRef.current = true
     } else {
       const messageAdded = messages.length > previousMessageCountRef.current
-      const userJustSent = messageAdded && messages.at(-1)?.role === 'user'
+      const lastMessage = messages.at(-1)
+      const userJustSent = messageAdded && lastMessage?.role === 'user'
+      const assistantJustReplied = messageAdded && lastMessage?.role === 'assistant'
       const progressStarted = sending && !previousSendingRef.current
-      if (userJustSent || (nearBottomRef.current && (messageAdded || progressStarted))) {
+      if (assistantJustReplied && lastMessage) {
+        const messageElement = container.querySelector<HTMLElement>(
+          `[data-message-id="${lastMessage.id}"]`,
+        )
+        if (messageElement) {
+          const top = messageElement.getBoundingClientRect().top
+            - container.getBoundingClientRect().top
+            + container.scrollTop
+            - 8
+          container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+        }
+      } else if (userJustSent || progressStarted || (nearBottomRef.current && messageAdded)) {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       }
     }
@@ -235,7 +248,7 @@ export function AssistantConversationView({
                 </Stack>
               </Paper>
             ) : messages.map((message) => (
-              <Stack key={message.id} spacing={1}>
+              <Stack key={message.id} data-message-id={message.id} spacing={1}>
                 <MessageBubble message={message} />
                 {message.role === 'assistant'
                   ? proposals

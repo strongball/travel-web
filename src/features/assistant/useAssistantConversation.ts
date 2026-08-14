@@ -240,10 +240,10 @@ export function useAssistantConversation(
     return () => { active = false }
   }, [refreshThreads])
 
-  const refreshConversation = useCallback(async (id: string) => {
+  const refreshConversation = useCallback(async (id: string, showLoading = true) => {
     if (activeThreadRef.current !== id) return
     const loadId = ++conversationLoadRef.current
-    setConversationLoading(true)
+    if (showLoading) setConversationLoading(true)
     try {
       const [nextMessages, nextProposals] = await Promise.all([
         listAssistantMessages(id),
@@ -279,7 +279,7 @@ export function useAssistantConversation(
         throw loadError
       }
     } finally {
-      if (activeThreadRef.current === id && loadId === conversationLoadRef.current) {
+      if (showLoading && activeThreadRef.current === id && loadId === conversationLoadRef.current) {
         setConversationLoading(false)
       }
     }
@@ -399,7 +399,7 @@ export function useAssistantConversation(
     }
     setProgressLabel(null)
     await waitForUiSync(Promise.all([
-      refreshConversation(thread.id),
+      refreshConversation(thread.id, false),
       refreshThreads(thread.id),
     ]))
   }, [checkpointer, messages, onProgress, refreshConversation, refreshThreads, runner])
@@ -473,7 +473,7 @@ export function useAssistantConversation(
       try {
         await applyStoredAssistantProposal(proposal.id, false)
         void checkpointer.deleteThread(proposal.threadId).catch(() => {})
-        await refreshConversation(proposal.threadId)
+        await refreshConversation(proposal.threadId, false)
       } catch (rejectionError) {
         setProposals((current) => current.map((item) => item.id === proposal.id
           ? { ...item, status: 'pending' as const }
@@ -508,13 +508,13 @@ export function useAssistantConversation(
         }
         await onItineraryApplied()
       }
-      await refreshConversation(proposal.threadId)
+      await refreshConversation(proposal.threadId, false)
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
         : item))
     } catch (decisionError) {
       setError(friendlyError(decisionError, '無法處理行程提案'))
-      await refreshConversation(proposal.threadId).catch(() => {})
+      await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
       setSending(false)
     }
