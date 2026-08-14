@@ -21,6 +21,8 @@ export type AssistantThread = {
 export type StoredAssistantProposal = ItineraryChangeProposal & {
   beforeDays: TripDay[]
   afterDays: TripDay[]
+  proposedTodos?: Array<{ title: string; category: string }>
+  proposedCategories?: string[]
 }
 
 type Row = Record<string, unknown>
@@ -100,7 +102,14 @@ export async function saveAssistantProposal(
   proposal: ItineraryChangeProposal,
   beforeDays: TripDay[],
   afterDays: TripDay[],
+  proposedTodos?: Array<{ title: string; category: string }>,
+  proposedCategories?: string[],
 ) {
+  const expectedRevisionsWithMeta = {
+    ...proposal.expectedDayRevisions,
+    ...(proposedTodos?.length ? { __proposedTodos: proposedTodos } : {}),
+    ...(proposedCategories?.length ? { __proposedCategories: proposedCategories } : {}),
+  }
   const { error } = await supabase.from('assistant_proposals').upsert({
     id: proposal.id,
     thread_id: proposal.threadId,
@@ -109,7 +118,7 @@ export async function saveAssistantProposal(
     status: 'pending',
     before_snapshot: beforeDays,
     after_snapshot: afterDays,
-    expected_revisions: proposal.expectedDayRevisions,
+    expected_revisions: expectedRevisionsWithMeta,
     change_summary: proposal.explanation || proposal.title,
   }, {
     onConflict: 'thread_id,turn_id',
@@ -124,20 +133,34 @@ export async function listAssistantProposals(threadId: string): Promise<StoredAs
   const { data, error } = await supabase.from('assistant_proposals').select('*')
     .eq('thread_id', threadId).order('created_at', { ascending: true })
   if (error) throw error
-  return (data as Row[]).map((row) => ({
-    id: text(row.id),
-    threadId: text(row.thread_id),
-    turnId: text(row.turn_id),
-    itineraryId: text(row.itinerary_id),
-    title: '行程修改提案',
-    explanation: text(row.change_summary),
-    expectedDayRevisions: (row.expected_revisions ?? {}) as Record<string, number>,
-    operations: [],
-    status: text(row.status) as StoredAssistantProposal['status'],
-    createdAt: text(row.created_at),
-    beforeDays: (row.before_snapshot ?? []) as TripDay[],
-    afterDays: (row.after_snapshot ?? []) as TripDay[],
-  }))
+  return (data as Row[]).map((row) => {
+    const revisions = (row.expected_revisions ?? {}) as Record<string, unknown>
+    const proposedTodos = Array.isArray(revisions.__proposedTodos)
+      ? (revisions.__proposedTodos as Array<{ title: string; category: string }>)
+      : undefined
+    const proposedCategories = Array.isArray(revisions.__proposedCategories)
+      ? (revisions.__proposedCategories as string[])
+      : undefined
+
+    return {
+      id: text(row.id),
+      threadId: text(row.thread_id),
+      turnId: text(row.turn_id),
+      itineraryId: text(row.itinerary_id),
+      title: '行程修改提案',
+      explanation: text(row.change_summary),
+      expectedDayRevisions: Object.fromEntries(
+        Object.entries(revisions).filter(([key]) => !key.startsWith('__')) as [string, number][],
+      ),
+      operations: [],
+      status: text(row.status) as StoredAssistantProposal['status'],
+      createdAt: text(row.created_at),
+      beforeDays: (row.before_snapshot ?? []) as TripDay[],
+      afterDays: (row.after_snapshot ?? []) as TripDay[],
+      proposedTodos,
+      proposedCategories,
+    }
+  })
 }
 
 export async function applyStoredAssistantProposal(id: string, approved: boolean) {

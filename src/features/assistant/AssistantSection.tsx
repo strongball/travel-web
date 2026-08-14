@@ -1,20 +1,24 @@
 import { useEffect, type ReactNode } from 'react'
-import type { Itinerary } from '../../types/database'
-import { AssistantAppBarActions, AssistantConversationView } from './AssistantConversationView'
+import type { Itinerary, TodoItem } from '../../types/database'
+import { AssistantAppBarActions, AssistantConversationView } from './components'
 import { useAssistantConversation } from './useAssistantConversation'
 
 export function AssistantSection({
   itinerary,
+  todos,
+  todoCategories,
   onItineraryApplied,
   fullPage = false,
   onAssistantToolbarChange,
 }: {
   itinerary: Itinerary
+  todos: TodoItem[]
+  todoCategories: string[]
   onItineraryApplied: () => void | Promise<void>
   fullPage?: boolean
   onAssistantToolbarChange?: (toolbar: ReactNode) => void
 }) {
-  const conversation = useAssistantConversation(itinerary, onItineraryApplied)
+  const conversation = useAssistantConversation(itinerary, onItineraryApplied, todos, todoCategories)
   const {
     currentThread,
     deleteThread,

@@ -1,11 +1,13 @@
-import type { Attraction, Itinerary, TripDay } from '../../types/database'
-import { recalculateDayTimes } from '../travel/travelWorkspaceUtils'
-import type { AssistantOperation } from './types'
+import type { Attraction, Itinerary, TripDay } from '../../../../types/database'
+import { recalculateDayTimes } from '../../../travel/travelWorkspaceUtils'
+import { supabase } from '../../../../lib/supabase'
+import { geocodeWithGoogle, loadGoogleMapsLibrary } from '../../../travel/googleMaps'
+import type { AssistantOperation } from '../../types'
 
 const normalizeTime = (day: TripDay, value: string) =>
   value.includes('T') ? value : `${day.date.slice(0, 10)}T${value}:00`
 
-export function applyAssistantOperations(
+export function applyItineraryOperations(
   itinerary: Itinerary,
   operations: AssistantOperation[],
 ): TripDay[] {
@@ -16,6 +18,7 @@ export function applyAssistantOperations(
   const originalDayByAttraction = new Map(
     days.flatMap((day) => day.attractions.map((attraction) => [attraction.id, day.id] as const)),
   )
+  const originalAttractionIds = new Set(originalDayByAttraction.keys())
 
   const findAttraction = (id: string) => {
     for (const day of days) {
@@ -36,6 +39,10 @@ export function applyAssistantOperations(
       const day = days.find((item) => item.id === operation.dayId)
       if (!day) throw new Error('找不到指定日期')
       if (!operation.attraction.name.trim()) throw new Error('景點名稱不可空白')
+      if (originalAttractionIds.has(operation.attraction.id) || days.some((item) =>
+        item.attractions.some((attraction) => attraction.id === operation.attraction.id))) {
+        throw new Error(`景點 ID 已存在 ${operation.attraction.id}`)
+      }
       const attraction: Attraction = {
         ...operation.attraction,
         dayId: day.id,
@@ -71,14 +78,16 @@ export function applyAssistantOperations(
       destination.attractions.splice(index, 0, { ...target.attraction, dayId: destination.id, travelTime: null })
       continue
     }
-    const day = days.find((item) => item.id === operation.dayId)
-    if (!day) throw new Error('找不到指定日期')
-    if (new Set(operation.attractionIds).size !== day.attractions.length ||
-      operation.attractionIds.some((id) => !day.attractions.some((item) => item.id === id))) {
-      throw new Error('景點排序資料不完整')
+    if (operation.type === 'reorder_attractions') {
+      const day = days.find((item) => item.id === operation.dayId)
+      if (!day) throw new Error('找不到指定日期')
+      if (new Set(operation.attractionIds).size !== day.attractions.length ||
+        operation.attractionIds.some((id) => !day.attractions.some((item) => item.id === id))) {
+        throw new Error('景點排序資料不完整')
+      }
+      const byId = new Map(day.attractions.map((item) => [item.id, item]))
+      day.attractions = operation.attractionIds.map((id) => byId.get(id)!)
     }
-    const byId = new Map(day.attractions.map((item) => [item.id, item]))
-    day.attractions = operation.attractionIds.map((id) => byId.get(id)!)
   }
 
   const affected = new Set<string>()
@@ -97,4 +106,58 @@ export function applyAssistantOperations(
 export function changedDays(before: TripDay[], after: TripDay[]) {
   const beforeById = new Map(before.map((day) => [day.id, day]))
   return after.filter((day) => JSON.stringify(beforeById.get(day.id)) !== JSON.stringify(day))
+}
+
+type ProposalSnapshots = {
+  beforeDays: TripDay[]
+  afterDays: TripDay[]
+}
+
+const locationChanged = (before: Attraction | undefined, after: Attraction) =>
+  !before || before.name !== after.name || before.locationName !== after.locationName
+
+export const placeEnrichmentCandidates = ({ beforeDays, afterDays }: ProposalSnapshots) => {
+  const beforeById = new Map(beforeDays.flatMap((day) => day.attractions).map((item) => [item.id, item]))
+  return afterDays.flatMap((day) => day.attractions).filter((attraction) =>
+    locationChanged(beforeById.get(attraction.id), attraction) &&
+    (!attraction.placeId || attraction.latitude === null || attraction.longitude === null))
+}
+
+export async function enrichAppliedProposalPlaces(snapshots: ProposalSnapshots) {
+  const candidates = placeEnrichmentCandidates(snapshots)
+  if (candidates.length === 0) return { enriched: 0, failed: 0 }
+
+  let enriched = 0
+  let failed = 0
+  try {
+    const { Geocoder } = await loadGoogleMapsLibrary('geocoding')
+    for (const attraction of candidates) {
+      try {
+        const request: google.maps.GeocoderRequest = attraction.placeId
+          ? { placeId: attraction.placeId }
+          : { address: [attraction.name, attraction.locationName].filter(Boolean).join(', ') }
+        const response = await geocodeWithGoogle(Geocoder, request)
+        const match = response.results[0]
+        const point = match?.geometry.location
+        if (!match || !point) {
+          failed += 1
+          continue
+        }
+        const latitude = point.lat()
+        const longitude = point.lng()
+        const { error } = await supabase.from('attractions').update({
+          location: `POINT(${longitude} ${latitude})`,
+          place_id: match.place_id || attraction.placeId,
+          location_name: attraction.locationName || match.formatted_address || attraction.name,
+        }).eq('id', attraction.id)
+        if (error) throw error
+        enriched += 1
+      } catch {
+        failed += 1
+      }
+    }
+  } catch {
+    failed = candidates.length
+  }
+  return { enriched, failed }
 }

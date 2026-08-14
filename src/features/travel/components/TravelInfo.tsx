@@ -170,32 +170,60 @@ export function TravelInfoCard({
   const canNavigate = Boolean(destinationPoint)
   return (
     <Paper
-      variant="outlined"
+      elevation={0}
       sx={{
         display: 'block',
-        width: { xs: 'calc(100% - 50px)', sm: 'calc(100% - 64px)' },
-        ml: { xs: '50px', sm: '64px' },
-        mb: 0.75,
-        p: 0.75,
+        width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
+        ml: { xs: '46px', sm: '60px' },
+        mb: 1.25,
+        p: 0.85,
+        px: 1.25,
         textAlign: 'left',
-        alignItems: 'center',
-        gap: 1,
-        borderRadius: 1.5,
-        borderStyle: 'dashed',
-        bgcolor: 'action.hover',
+        borderRadius: 2.5,
+        border: '1px dashed rgba(13, 118, 110, 0.22)',
+        bgcolor: 'rgba(13, 118, 110, 0.03)',
         color: 'inherit',
+        transition: 'all 160ms ease',
+        '&:hover': {
+          bgcolor: 'rgba(13, 118, 110, 0.06)',
+          borderColor: 'rgba(13, 118, 110, 0.35)',
+        },
       }}
     >
-      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
-        <Box sx={{ color: 'text.secondary', display: 'grid', placeItems: 'center' }}>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+        <Box
+          sx={{
+            color: '#0d766e',
+            display: 'grid',
+            placeItems: 'center',
+            width: 28,
+            height: 28,
+            borderRadius: '50%',
+            bgcolor: 'rgba(13, 118, 110, 0.08)',
+            flexShrink: 0,
+            '& svg': { fontSize: 16 },
+          }}
+        >
           {transportIcon(attraction.transportMode)}
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', fontSize: '0.72rem', fontWeight: 700 }}
+          >
             {transportLabel(attraction.transportMode)}
           </Typography>
-          <Typography variant="body2" sx={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
-            {attraction.travelTime !== null ? `${attraction.travelTime} 分鐘` : '尚未估算移動時間'}
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 750,
+              fontSize: '0.84rem',
+              color: attraction.travelTime !== null ? '#0d766e' : 'text.secondary',
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {attraction.travelTime !== null ? `車程約 ${attraction.travelTime} 分鐘` : '尚未估算移動時間'}
           </Typography>
         </Box>
         {canNavigate && destinationPoint ? (
@@ -213,13 +241,20 @@ export function TravelInfoCard({
               rel="noreferrer"
               color="primary"
               aria-label="在 Google 地圖開啟導航"
-              sx={{ width: 40, height: 40 }}
+              sx={{ width: 34, height: 34, bgcolor: 'rgba(13, 118, 110, 0.06)' }}
             >
-              <NavigationRoundedIcon fontSize="small" />
+              <NavigationRoundedIcon sx={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
         ) : null}
-        <IconButton size="small" aria-label="編輯交通方式" onClick={onEdit}><EditRoundedIcon fontSize="small" /></IconButton>
+        <IconButton
+          size="small"
+          aria-label="編輯交通方式"
+          onClick={onEdit}
+          sx={{ width: 34, height: 34 }}
+        >
+          <EditRoundedIcon sx={{ fontSize: 16 }} />
+        </IconButton>
       </Stack>
     </Paper>
   )

@@ -16,12 +16,20 @@ import {
 } from '../../lib/repositories/assistantRepository'
 import { supabase } from '../../lib/supabase'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import type { Itinerary } from '../../types/database'
-import { browserAssistantModel } from './assistantApi'
-import { findIncompleteUserMessage } from './assistantConversationRecovery'
-import { AssistantGraphVersionError, createAssistantGraph } from './assistantGraph'
-import { enrichAppliedProposalPlaces } from './assistantPlaceEnrichment'
-import { applyAssistantOperations, changedDays } from './assistantProposal'
+import type { Itinerary, TodoItem } from '../../types/database'
+import {
+  AssistantGraphVersionError,
+  createAssistantGraph,
+  findIncompleteUserMessage,
+} from './graph'
+import {
+  applyItineraryOperations as applyAssistantOperations,
+  applyTodoProposal,
+  changedDays,
+  enrichAppliedProposalPlaces,
+  extractProposedCategories,
+  extractProposedTodos,
+} from './tools'
 import type {
   AssistantMessage,
   AssistantProgressPhase,
@@ -147,6 +155,8 @@ export type AssistantConversationController = {
 export function useAssistantConversation(
   itinerary: Itinerary,
   onItineraryApplied: () => void | Promise<void>,
+  todos: TodoItem[] = [],
+  todoCategories: string[] = [],
 ): AssistantConversationController {
   const [threads, setThreads] = useState<AssistantThread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -167,6 +177,10 @@ export function useAssistantConversation(
   const threadsRef = useRef<AssistantThread[]>([])
   const itineraryRef = useRef(itinerary)
   itineraryRef.current = itinerary
+  const todosRef = useRef(todos)
+  todosRef.current = todos
+  const todoCategoriesRef = useRef(todoCategories)
+  todoCategoriesRef.current = todoCategories
   // Close the small window where two events can start before React rerenders.
   const sendingRef = useRef(false)
   const creatingThreadRef = useRef(false)
@@ -240,10 +254,10 @@ export function useAssistantConversation(
     return () => { active = false }
   }, [refreshThreads])
 
-  const refreshConversation = useCallback(async (id: string) => {
+  const refreshConversation = useCallback(async (id: string, showLoading = true) => {
     if (activeThreadRef.current !== id) return
     const loadId = ++conversationLoadRef.current
-    setConversationLoading(true)
+    if (showLoading) setConversationLoading(true)
     try {
       const [nextMessages, nextProposals] = await Promise.all([
         listAssistantMessages(id),
@@ -268,6 +282,8 @@ export function useAssistantConversation(
           turnId: incompleteMessage.turnId,
           text: incompleteMessage.content,
           itinerary: currentItinerary,
+          todos: todosRef.current,
+          todoCategories: todoCategoriesRef.current,
           dayRevisions: Object.fromEntries(
             (currentItinerary.days ?? []).map((day) => [day.id, day.revision]),
           ),
@@ -279,7 +295,7 @@ export function useAssistantConversation(
         throw loadError
       }
     } finally {
-      if (activeThreadRef.current === id && loadId === conversationLoadRef.current) {
+      if (showLoading && activeThreadRef.current === id && loadId === conversationLoadRef.current) {
         setConversationLoading(false)
       }
     }
@@ -308,13 +324,20 @@ export function useAssistantConversation(
       const allAfter = applyAssistantOperations(itinerary, proposal.operations)
       const after = changedDays(before, allAfter)
       const affectedIds = new Set(after.map((day) => day.id))
-      await saveAssistantProposal(proposal, before.filter((day) => affectedIds.has(day.id)), after)
+      const proposedTodos = extractProposedTodos(proposal.operations)
+      const proposedCategories = extractProposedCategories(proposal.operations)
+      await saveAssistantProposal(
+        proposal,
+        before.filter((day) => affectedIds.has(day.id)),
+        after,
+        proposedTodos.length ? proposedTodos : undefined,
+        proposedCategories.length ? proposedCategories : undefined,
+      )
     },
   }), [itinerary])
 
   const checkpointer = useMemo(() => new SupabaseAssistantCheckpointer(supabase), [])
   const runner = useMemo(() => createAssistantGraph(checkpointer, {
-    model: browserAssistantModel,
     proposals: proposalPersistence,
   }), [checkpointer, proposalPersistence])
 
@@ -399,7 +422,7 @@ export function useAssistantConversation(
     }
     setProgressLabel(null)
     await waitForUiSync(Promise.all([
-      refreshConversation(thread.id),
+      refreshConversation(thread.id, false),
       refreshThreads(thread.id),
     ]))
   }, [checkpointer, messages, onProgress, refreshConversation, refreshThreads, runner])
@@ -428,6 +451,8 @@ export function useAssistantConversation(
         turnId,
         text: content,
         itinerary,
+        todos,
+        todoCategories,
         dayRevisions: Object.fromEntries((itinerary.days ?? []).map((day) => [day.id, day.revision])),
         createdAt: userMessage.createdAt,
       }
@@ -470,13 +495,19 @@ export function useAssistantConversation(
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status: 'rejected' as const }
         : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status: 'rejected' as const } }
+        : item))
       try {
         await applyStoredAssistantProposal(proposal.id, false)
         void checkpointer.deleteThread(proposal.threadId).catch(() => {})
-        await refreshConversation(proposal.threadId)
+        await refreshConversation(proposal.threadId, false)
       } catch (rejectionError) {
         setProposals((current) => current.map((item) => item.id === proposal.id
           ? { ...item, status: 'pending' as const }
+          : item))
+        setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+          ? { ...item, proposal: { ...item.proposal, status: 'pending' as const } }
           : item))
         setError(friendlyError(rejectionError, '無法拒絕行程提案'))
       } finally {
@@ -491,6 +522,9 @@ export function useAssistantConversation(
     setProposals((current) => current.map((item) => item.id === proposal.id
       ? { ...item, status: 'approved' as const }
       : item))
+    setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+      ? { ...item, proposal: { ...item.proposal, status: 'approved' as const } }
+      : item))
     try {
       const status = await applyStoredAssistantProposal(proposal.id, true)
       if (status !== 'applied' && status !== 'expired') {
@@ -500,25 +534,40 @@ export function useAssistantConversation(
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
         : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status } }
+        : item))
       if (status === 'applied') {
-        setProgressLabel('正在補齊 Google 地點資料…')
-        const enrichment = await enrichAppliedProposalPlaces(proposal)
-        if (enrichment.failed > 0) {
-          setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+        if (proposal.afterDays.length > 0) {
+          setProgressLabel('正在補齊 Google 地點資料…')
+          const enrichment = await enrichAppliedProposalPlaces(proposal)
+          if (enrichment.failed > 0) {
+            setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+          }
         }
+
+        await applyTodoProposal(
+          itinerary,
+          proposal.proposedTodos ?? [],
+          proposal.proposedCategories ?? [],
+        )
+
         await onItineraryApplied()
       }
-      await refreshConversation(proposal.threadId)
+      await refreshConversation(proposal.threadId, false)
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
         : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status } }
+        : item))
     } catch (decisionError) {
       setError(friendlyError(decisionError, '無法處理行程提案'))
-      await refreshConversation(proposal.threadId).catch(() => {})
+      await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
       setSending(false)
     }
-  }, [checkpointer, onItineraryApplied, online, refreshConversation])
+  }, [checkpointer, itinerary, onItineraryApplied, online, refreshConversation])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || messages.length === 0 || sending || sendingRef.current || !online) return

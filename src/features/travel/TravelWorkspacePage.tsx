@@ -180,8 +180,75 @@ export function TravelWorkspacePage({
   const completedTodos = selectedTodos.filter((todo) => todo.isCompleted).length
   const categories = useMemo(() => {
     const fromTrip = selectedItinerary?.todoCategories ?? []
-    return Array.from(new Set([...fromTrip, '行前準備', '旅途中', '其他']))
-  }, [selectedItinerary?.todoCategories])
+    const fromTodos = selectedTodos.map((todo) => todo.category).filter(Boolean)
+    const merged = Array.from(new Set([...fromTrip, ...fromTodos]))
+    return merged.length > 0 ? merged : ['行前準備', '旅途中', '其他']
+  }, [selectedItinerary?.todoCategories, selectedTodos])
+
+  useEffect(() => {
+    if (!categories.includes(todoCategory)) {
+      setTodoCategory(categories[0] ?? '其他')
+    }
+  }, [categories, todoCategory])
+
+  const handleSaveCategories = useCallback(
+    async (nextCategories: string[]) => {
+      if (!selectedItinerary) return
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: nextCategories,
+      })
+    },
+    [onSaveItinerary, selectedItinerary],
+  )
+
+  const handleRenameCategory = useCallback(
+    async (oldName: string, newName: string) => {
+      if (!selectedItinerary || !oldName || !newName || oldName === newName) return
+      const currentCats =
+        selectedItinerary.todoCategories && selectedItinerary.todoCategories.length > 0
+          ? selectedItinerary.todoCategories
+          : ['行前準備', '旅途中', '其他']
+      const nextCats = currentCats.map((cat) => (cat === oldName ? newName : cat))
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: nextCats,
+      })
+
+      const todosToUpdate = selectedTodos.filter((todo) => todo.category === oldName)
+      for (const todo of todosToUpdate) {
+        await onSaveTodo({ ...todo, category: newName })
+      }
+      if (todoCategory === oldName) {
+        setTodoCategory(newName)
+      }
+    },
+    [onSaveItinerary, onSaveTodo, selectedItinerary, selectedTodos, todoCategory],
+  )
+
+  const handleDeleteCategory = useCallback(
+    async (categoryName: string) => {
+      if (!selectedItinerary || !categoryName) return
+      const currentCats =
+        selectedItinerary.todoCategories && selectedItinerary.todoCategories.length > 0
+          ? selectedItinerary.todoCategories
+          : ['行前準備', '旅途中', '其他']
+      const nextCats = currentCats.filter((cat) => cat !== categoryName)
+      const validNextCats = nextCats.length > 0 ? nextCats : ['其他']
+      await onSaveItinerary({
+        ...selectedItinerary,
+        todoCategories: validNextCats,
+      })
+
+      const fallback = validNextCats[0] || '其他'
+      const todosToUpdate = selectedTodos.filter((todo) => todo.category === categoryName)
+      await Promise.all(todosToUpdate.map((todo) => onSaveTodo({ ...todo, category: fallback })))
+      if (todoCategory === categoryName) {
+        setTodoCategory(fallback)
+      }
+    },
+    [onSaveItinerary, onSaveTodo, selectedItinerary, selectedTodos, todoCategory],
+  )
   const openNewTrip = () => {
     const start = new Date().toISOString().slice(0, 10)
     const id = crypto.randomUUID()
@@ -386,16 +453,38 @@ export function TravelWorkspacePage({
           />
         ) : selectedItinerary ? (
           <Box component="main" sx={{ minWidth: 0 }}>
-            {section !== 'assistant' ? <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-              <Tabs value={section} onChange={(_, value: WorkspaceSection) => updateWorkspaceRoute({ section: value })} variant="scrollable" scrollButtons="auto" sx={{ display: { xs: 'none', md: 'flex' }, px: 1 }}>
-                <Tab value="schedule" label="日程" icon={<EventNoteRoundedIcon />} iconPosition="start" />
-                <Tab value="todos" label={`待辦 ${selectedTodos.length ? `(${completedTodos}/${selectedTodos.length})` : ''}`} icon={<TaskAltRoundedIcon />} iconPosition="start" />
-                <Tab value="expenses" label="費用" icon={<PaidRoundedIcon />} iconPosition="start" />
-                <Tab value="overview" label="總覽" icon={<PlaceRoundedIcon />} iconPosition="start" />
-              </Tabs>
-            </Paper> : null}
+            {section !== 'assistant' ? (
+              <Paper
+                elevation={0}
+                sx={{
+                  display: { xs: 'none', md: 'block' },
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  overflow: 'hidden',
+                }}
+              >
+                <Tabs
+                  value={section}
+                  onChange={(_, value: WorkspaceSection) => updateWorkspaceRoute({ section: value })}
+                  variant="scrollable"
+                  scrollButtons="auto"
+                  sx={{ px: 1 }}
+                >
+                  <Tab value="schedule" label="日程" icon={<EventNoteRoundedIcon />} iconPosition="start" />
+                  <Tab
+                    value="todos"
+                    label={`待辦 ${selectedTodos.length ? `(${completedTodos}/${selectedTodos.length})` : ''}`}
+                    icon={<TaskAltRoundedIcon />}
+                    iconPosition="start"
+                  />
+                  <Tab value="expenses" label="費用" icon={<PaidRoundedIcon />} iconPosition="start" />
+                  <Tab value="overview" label="總覽" icon={<PlaceRoundedIcon />} iconPosition="start" />
+                </Tabs>
+              </Paper>
+            ) : null}
 
-            <Box sx={{ mt: section === 'assistant' ? 0 : 2 }}>
+            <Box sx={{ mt: section === 'assistant' ? 0 : { xs: 0, md: 2 } }}>
               {section === 'schedule' ? (
                 <ScheduleSection
                   days={days}
@@ -410,7 +499,14 @@ export function TravelWorkspacePage({
               ) : null}
               {section === 'assistant' ? (
                 <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: 300 }}>載入旅程助理…</Box>}>
-                  <AssistantSection itinerary={selectedItinerary} onItineraryApplied={onRefresh} fullPage onAssistantToolbarChange={handleAssistantToolbarChange} />
+                  <AssistantSection
+                    itinerary={selectedItinerary}
+                    todos={selectedTodos}
+                    todoCategories={categories}
+                    onItineraryApplied={onRefresh}
+                    fullPage
+                    onAssistantToolbarChange={handleAssistantToolbarChange}
+                  />
                 </Suspense>
               ) : null}
               {section === 'todos' ? (
@@ -425,6 +521,10 @@ export function TravelWorkspacePage({
                   saving={todoSaving}
                   onToggle={(todo) => void onSaveTodo({ ...todo, isCompleted: !todo.isCompleted })}
                   onDelete={(todo) => void onDeleteTodo(todo.id)}
+                  onSaveTodo={(todo) => void onSaveTodo(todo)}
+                  onSaveCategories={(cats) => void handleSaveCategories(cats)}
+                  onRenameCategory={(oldName, newName) => void handleRenameCategory(oldName, newName)}
+                  onDeleteCategory={(cat) => void handleDeleteCategory(cat)}
                 />
               ) : null}
               {section === 'expenses' ? (
@@ -447,7 +547,7 @@ export function TravelWorkspacePage({
       </Container>
 
       <Paper
-        elevation={8}
+        elevation={0}
         sx={{
           display: { xs: workspaceView === 'detail' && section !== 'assistant' ? 'block' : 'none', md: 'none' },
           position: 'fixed',
@@ -456,10 +556,37 @@ export function TravelWorkspacePage({
           bottom: 0,
           zIndex: 30,
           borderRadius: 0,
-          pb: 'env(safe-area-inset-bottom)',
+          bgcolor: 'rgba(255, 255, 255, 0.88)',
+          backdropFilter: 'blur(20px)',
+          borderTop: '1px solid rgba(13, 118, 110, 0.1)',
+          boxShadow: '0 -4px 20px rgba(15, 23, 42, 0.06)',
+          pb: 'max(8px, env(safe-area-inset-bottom))',
+          pt: 0.5,
         }}
       >
-        <BottomNavigation value={section} onChange={(_, value: WorkspaceSection) => updateWorkspaceRoute({ section: value })} showLabels>
+        <BottomNavigation
+          value={section}
+          onChange={(_, value: WorkspaceSection) => updateWorkspaceRoute({ section: value })}
+          showLabels
+          sx={{
+            bgcolor: 'transparent',
+            height: 58,
+            '& .MuiBottomNavigationAction-root': {
+              minWidth: 0,
+              py: 0.5,
+              color: '#64748b',
+              transition: 'all 180ms ease',
+              '&.Mui-selected': {
+                color: '#0d766e',
+                fontWeight: 800,
+                '& .MuiSvgIcon-root': {
+                  transform: 'translateY(-2px) scale(1.12)',
+                  transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                },
+              },
+            },
+          }}
+        >
           <BottomNavigationAction value="schedule" label="行程" icon={<EventNoteRoundedIcon />} />
           <BottomNavigationAction value="todos" label="待辦" icon={<TaskAltRoundedIcon />} />
           <BottomNavigationAction value="expenses" label="費用" icon={<PaidRoundedIcon />} />
