@@ -1,17 +1,15 @@
-import { useAtom, useSetAtom } from 'jotai'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useRiverMutation, useRiverRef, useRiverWatch } from '@stball/react-river'
+import { useCallback, useRef, useState } from 'react'
 
-import {
-  downloadReceiptFiles,
-  signedReceiptUrl,
-} from '../../lib/expensesApi'
+import { downloadReceiptFiles } from '../../lib/expensesApi'
 import type { OfflineMutation } from '../../lib/offlineStore'
 import {
-  appErrorAtom,
-  expenseDraftAtom,
-  expensesAtom,
-  receiptResultAtom,
-} from '../../state/appAtoms'
+  appErrorProvider,
+  expenseDraftProvider,
+  expensesProvider,
+  receiptResultProvider,
+  signedReceiptUrlsFamily,
+} from '../../providers'
 import {
   emptyExpenseDraft,
   type Expense,
@@ -35,6 +33,9 @@ type UseExpenseWorkflowOptions = {
   savedMessage: string
 }
 
+const EMPTY_IMAGE_PATHS: string[] = []
+const EMPTY_IMAGE_URLS: string[] = []
+
 export function useExpenseWorkflow({
   itineraries,
   selectedItineraryId,
@@ -46,27 +47,63 @@ export function useExpenseWorkflow({
   unexpectedErrorMessage,
   savedMessage,
 }: UseExpenseWorkflowOptions) {
-  const [draft, setDraft] = useAtom(expenseDraftAtom)
-  const [receiptResult, setReceiptResult] = useAtom(receiptResultAtom)
-  const setExpenses = useSetAtom(expensesAtom)
-  const setError = useSetAtom(appErrorAtom)
-  const [isScanning, setIsScanning] = useState(false)
+  const ref = useRiverRef()
+  const draft = useRiverWatch(expenseDraftProvider)
+  const receiptResult = useRiverWatch(receiptResultProvider)
+  const imagePaths = draft?.receiptImagePaths ?? EMPTY_IMAGE_PATHS
+  const storedImageUrlsAsync = useRiverWatch(signedReceiptUrlsFamily(imagePaths))
+  const storedImageUrls = storedImageUrlsAsync.data ?? EMPTY_IMAGE_URLS
+
+  const setDraft = useCallback(
+    (value: ExpenseDraft | null | ((current: ExpenseDraft | null) => ExpenseDraft | null)) => {
+      ref.set(expenseDraftProvider, value)
+    },
+    [ref],
+  )
+  const setReceiptResult = useCallback(
+    (value: ReceiptScanResult | null | ((current: ReceiptScanResult | null) => ReceiptScanResult | null)) => {
+      ref.set(receiptResultProvider, value)
+    },
+    [ref],
+  )
+  const setError = useCallback(
+    (value: string | null | ((current: string | null) => string | null)) => {
+      ref.set(appErrorProvider, value)
+    },
+    [ref],
+  )
+
   const [isSaving, setIsSaving] = useState(false)
-  const [storedImageUrls, setStoredImageUrls] = useState<string[]>([])
   const originalImagePaths = useRef<string[]>([])
 
-  useEffect(() => {
-    let active = true
-    const references = draft?.receiptImagePaths ?? []
-    void Promise.all(
-      references.map((reference) => signedReceiptUrl(reference).catch(() => '')),
-    ).then((urls) => {
-      if (active) setStoredImageUrls(urls)
-    })
-    return () => {
-      active = false
-    }
-  }, [draft?.receiptImagePaths])
+  const { mutate: mutateScan, state: scanState } = useRiverMutation(
+    async (_mutationRef, currentDraft: ExpenseDraft) => {
+      const storedFiles = await downloadReceiptFiles(currentDraft.receiptImagePaths)
+      const { compressReceiptImages } = await import('../../lib/receiptImages')
+      const images = await compressReceiptImages([
+        ...storedFiles,
+        ...currentDraft.imageFiles,
+      ])
+      const { scanReceipt } = await import('../../lib/receiptApi')
+      return scanReceipt({
+        targetLocale: navigator.language || 'zh-TW',
+        currencyHint: currentDraft.currency,
+        images,
+      })
+    },
+    {
+      onSuccess: (result, _variables, _context, mutationRef) => {
+        mutationRef.set(receiptResultProvider, result)
+        navigateView('review')
+      },
+      onError: (scanError, _variables, _context, mutationRef) => {
+        mutationRef.set(
+          appErrorProvider,
+          scanError instanceof Error ? scanError.message : unexpectedErrorMessage,
+        )
+      },
+    },
+  )
 
   const openDraft = useCallback((nextDraft: ExpenseDraft) => {
     setError(null)
@@ -96,29 +133,13 @@ export function useExpenseWorkflow({
 
   const handleScan = useCallback(async () => {
     if (!draft) return
-    setIsScanning(true)
     setError(null)
     try {
-      const storedFiles = await downloadReceiptFiles(draft.receiptImagePaths)
-      const { compressReceiptImages } = await import('../../lib/receiptImages')
-      const images = await compressReceiptImages([
-        ...storedFiles,
-        ...draft.imageFiles,
-      ])
-      const { scanReceipt } = await import('../../lib/receiptApi')
-      const result = await scanReceipt({
-        targetLocale: navigator.language || 'zh-TW',
-        currencyHint: draft.currency,
-        images,
-      })
-      setReceiptResult(result)
-      navigateView('review')
-    } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : unexpectedErrorMessage)
-    } finally {
-      setIsScanning(false)
+      await mutateScan(draft)
+    } catch {
+      // Error handled by mutation onError callback
     }
-  }, [draft, navigateView, setError, setReceiptResult, unexpectedErrorMessage])
+  }, [draft, mutateScan, setError])
 
   const applyReceipt = useCallback((result: ReceiptScanResult) => {
     setDraft((current) =>
@@ -148,26 +169,17 @@ export function useExpenseWorkflow({
         ...draft,
         id: draft.id ?? crypto.randomUUID(),
       }
-      await enqueueOfflineMutation({
-        operation: 'saveExpense',
-        entityId: nextDraft.id,
-        payload: {
-          draft: nextDraft,
-          originalImagePaths: originalImagePaths.current,
-        },
-      })
       const savedExpense: Expense = {
         ...nextDraft,
         id: nextDraft.id,
         imageUrl: nextDraft.receiptImagePaths[0] ?? null,
         items: nextDraft.items,
       }
-      setExpenses((current) => {
-        const exists = current.some((expense) => expense.id === savedExpense.id)
-        return exists
-          ? current.map((expense) => (expense.id === savedExpense.id ? savedExpense : expense))
-          : [savedExpense, ...current]
-      })
+      await ref.read(expensesProvider.notifier).save(
+        savedExpense,
+        originalImagePaths.current,
+        enqueueOfflineMutation,
+      )
       setDraft(null)
       navigateView('workspace', 'replace')
       showNotice(queuedMessage || savedMessage)
@@ -176,7 +188,7 @@ export function useExpenseWorkflow({
     } finally {
       setIsSaving(false)
     }
-  }, [draft, enqueueOfflineMutation, markDataMutation, navigateView, queuedMessage, savedMessage, setDraft, setError, setExpenses, showNotice, unexpectedErrorMessage])
+  }, [draft, enqueueOfflineMutation, markDataMutation, navigateView, queuedMessage, ref, savedMessage, setDraft, setError, showNotice, unexpectedErrorMessage])
 
   const cancelEditor = useCallback(() => {
     setDraft(null)
@@ -199,7 +211,7 @@ export function useExpenseWorkflow({
     handleSave,
     handleScan,
     isSaving,
-    isScanning,
+    isScanning: scanState.isLoading,
     receiptResult,
     setDraft,
     storedImageUrls,

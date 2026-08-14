@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { CssBaseline, ThemeProvider } from '@mui/material'
-import { Provider } from 'jotai'
+import { RiverScope } from '@stball/react-river'
 import './index.css'
 import './i18n.ts'
 import App from './App.tsx'
@@ -10,12 +10,12 @@ import { theme } from './theme.ts'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Provider>
+    <RiverScope>
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <App />
       </ThemeProvider>
-    </Provider>
+    </RiverScope>
   </StrictMode>,
 )
 

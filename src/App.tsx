@@ -1,5 +1,5 @@
 import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import {
   lazy,
   Suspense,
@@ -18,31 +18,23 @@ import {
 import { useExpenseWorkflow } from './features/expenses/useExpenseWorkflow'
 import { useBrowserNavigation } from './hooks/useBrowserNavigation'
 import { useOfflineSync } from './hooks/useOfflineSync'
-import {
-  fetchExpenses,
-  fetchItineraries,
-  fetchTodos,
-} from './lib/expensesApi'
-import {
-  applyPendingMutations,
-  listMutations,
-  loadSnapshot,
-  saveSnapshot,
-} from './lib/offlineStore'
+import { saveSnapshot } from './lib/offlineStore'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import {
-  appErrorAtom,
-  appLoadingAtom,
-  authReadyAtom,
-  expensesAtom,
-  itinerariesAtom,
-  sessionAtom,
-} from './state/appAtoms'
+  appErrorProvider,
+  authReadyProvider,
+  expensesProvider,
+  itinerariesProvider,
+  selectedItineraryIdProvider,
+  sessionProvider,
+  todosProvider,
+} from './providers'
 import {
   type Expense,
   type Itinerary,
   type TodoItem,
 } from './types/database'
+
 const ExpenseEditorPage = lazy(() =>
   import('./features/expenses/ExpenseEditorPage').then((module) => ({
     default: module.ExpenseEditorPage,
@@ -55,21 +47,37 @@ const ReceiptReviewPage = lazy(() =>
 )
 const GoogleMapsApiTestPage = lazy(() => import('./features/google/GoogleMapsApiTestPage'))
 
+const EMPTY_ITINERARIES: Itinerary[] = []
+const EMPTY_EXPENSES: Expense[] = []
+const EMPTY_TODOS: TodoItem[] = []
+
 function App() {
   const { t } = useTranslation()
-  const [session, setSession] = useAtom(sessionAtom)
-  const [authReady, setAuthReady] = useAtom(authReadyAtom)
-  const [expenses, setExpenses] = useAtom(expensesAtom)
-  const [itineraries, setItineraries] = useAtom(itinerariesAtom)
-  const [todos, setTodos] = useState<TodoItem[]>([])
-  const loading = useAtomValue(appLoadingAtom)
-  const setLoading = useSetAtom(appLoadingAtom)
-  const [error, setError] = useAtom(appErrorAtom)
-  const [selectedItineraryId, setSelectedItineraryId] = useState<string | null>(null)
+  const ref = useRiverRef()
+
+  const session = useRiverWatch(sessionProvider)
+  const authReady = useRiverWatch(authReadyProvider)
+  const itinerariesAsync = useRiverWatch(itinerariesProvider)
+  const expensesAsync = useRiverWatch(expensesProvider)
+  const todosAsync = useRiverWatch(todosProvider)
+  const selectedItineraryId = useRiverWatch(selectedItineraryIdProvider)
+  const error = useRiverWatch(appErrorProvider)
+
+  const itineraries = itinerariesAsync.data ?? EMPTY_ITINERARIES
+  const expenses = expensesAsync.data ?? EMPTY_EXPENSES
+  const todos = todosAsync.data ?? EMPTY_TODOS
+  const isRefreshing =
+    itinerariesAsync.isLoading ||
+    expensesAsync.isLoading ||
+    todosAsync.isLoading
+  const loading =
+    (itinerariesAsync.isLoading && itineraries.length === 0) ||
+    (expensesAsync.isLoading && expenses.length === 0)
+
   const [authLoading, setAuthLoading] = useState(false)
-  const [dataReady, setDataReady] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const dataMutationVersion = useRef(0)
+
   const {
     getWorkspaceRoute,
     navigateView,
@@ -78,115 +86,72 @@ function App() {
     view,
     workspaceRoute,
   } = useBrowserNavigation(Boolean(session))
+
   const userId = session?.user.id ?? null
 
-  const loadData = useCallback(async (options?: { showLoading?: boolean }) => {
-    const requestVersion = dataMutationVersion.current
-    const showLoading = options?.showLoading ?? true
-    if (showLoading) setLoading(true)
-    setError(null)
-    try {
-      const [nextItineraries, nextExpenses, nextTodos] = await Promise.all([
-        fetchItineraries(),
-        fetchExpenses(),
-        fetchTodos(),
-      ])
-      if (dataMutationVersion.current === requestVersion) {
-        const currentRoute = getWorkspaceRoute()
-        const pending = userId ? await listMutations(userId) : []
-        const nextData = applyPendingMutations({
-          itineraries: nextItineraries,
-          expenses: nextExpenses,
-          todos: nextTodos,
-        }, pending)
-        setItineraries(nextData.itineraries)
-        setExpenses(nextData.expenses)
-        setTodos(nextData.todos)
-        setSelectedItineraryId((current) =>
-          currentRoute.itineraryId &&
-          nextData.itineraries.some((itinerary) => itinerary.id === currentRoute.itineraryId)
-            ? currentRoute.itineraryId
-            : current && nextData.itineraries.some((itinerary) => itinerary.id === current)
-              ? current
-            : nextData.itineraries[0]?.id ?? null,
-        )
-        if (userId) {
-          await saveSnapshot({
-            userId,
-            ...nextData,
-          })
-        }
-      }
-    } catch (loadError) {
-      const snapshot = userId ? await loadSnapshot(userId).catch(() => null) : null
-      if (snapshot) {
-        setItineraries(snapshot.itineraries)
-        setExpenses(snapshot.expenses)
-        setTodos(snapshot.todos)
-        setSelectedItineraryId((current) =>
-          current && snapshot.itineraries.some((item) => item.id === current)
-            ? current
-            : snapshot.itineraries[0]?.id ?? null,
-        )
-        setNotice(t('app.offlineLoaded'))
-      } else {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : t('app.unexpectedError'),
-        )
-      }
-    } finally {
-      setDataReady(true)
-      if (showLoading) setLoading(false)
-    }
-  }, [getWorkspaceRoute, setError, setExpenses, setItineraries, setLoading, t, userId])
+  const setSelectedItineraryId = useCallback(
+    (value: string | null | ((current: string | null) => string | null)) => {
+      ref.set(selectedItineraryIdProvider, value)
+    },
+    [ref],
+  )
 
   useEffect(() => {
     let active = true
     void supabase.auth.getSession().then(({ data }) => {
       if (!active) return
-      setSession(data.session)
-      setAuthReady(true)
+      ref.set(sessionProvider, data.session)
+      ref.set(authReadyProvider, true)
     })
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      setAuthReady(true)
+      ref.set(sessionProvider, nextSession)
+      ref.set(authReadyProvider, true)
     })
     return () => {
       active = false
       data.subscription.unsubscribe()
     }
-  }, [setAuthReady, setSession])
+  }, [ref])
 
+  // Select initial or active itinerary once itineraries load
   useEffect(() => {
-    setDataReady(false)
-  }, [userId])
+    if (itineraries.length === 0) return
+    const currentRoute = getWorkspaceRoute()
+    ref.set(selectedItineraryIdProvider, (current) =>
+      currentRoute.itineraryId &&
+      itineraries.some((itinerary) => itinerary.id === currentRoute.itineraryId)
+        ? currentRoute.itineraryId
+        : current && itineraries.some((itinerary) => itinerary.id === current)
+          ? current
+          : itineraries[0]?.id ?? null,
+    )
+  }, [getWorkspaceRoute, itineraries, ref])
 
+  // Persist snapshot to offline store when settled
   useEffect(() => {
-    if (session) void loadData()
-  }, [session, loadData])
-
-  useEffect(() => {
-    if (!dataReady || !userId) return
+    if (!userId || itinerariesAsync.status !== 'data') return
     void saveSnapshot({ userId, itineraries, expenses, todos })
-  }, [dataReady, expenses, itineraries, todos, userId])
+  }, [expenses, itineraries, itinerariesAsync.status, todos, userId])
 
-  const refreshDataAfterSync = useCallback(
-    () => loadData({ showLoading: false }),
-    [loadData],
-  )
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      ref.read(itinerariesProvider.notifier).refresh(),
+      ref.read(expensesProvider.notifier).refresh(),
+      ref.read(todosProvider.notifier).refresh(),
+    ])
+  }, [ref])
+
   const {
     enqueue: enqueueOfflineMutation,
     flush: flushOfflineMutations,
     pendingCount,
     syncError,
     syncState,
-  } = useOfflineSync(userId, refreshDataAfterSync)
+  } = useOfflineSync(userId, handleRefresh)
 
   const handleAuth = async (email: string, password: string, mode: AuthMode) => {
     setAuthLoading(true)
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
       if (mode === 'signUp') {
         const { data, error: signUpError } = await supabase.auth.signUp({
@@ -204,7 +169,8 @@ function App() {
         if (signInError) throw signInError
       }
     } catch (authError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         authError instanceof Error
           ? authError.message
           : t('app.unexpectedError'),
@@ -216,14 +182,14 @@ function App() {
 
   const handleGoogleSignIn = async () => {
     setAuthLoading(true)
-    setError(null)
+    ref.set(appErrorProvider, null)
     const redirectTo = `${window.location.origin}${window.location.pathname}`
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo },
     })
     if (oauthError) {
-      setError(oauthError.message)
+      ref.set(appErrorProvider, oauthError.message)
       setAuthLoading(false)
     }
   }
@@ -260,32 +226,20 @@ function App() {
 
   const signOut = async () => {
     await supabase.auth.signOut()
-    setExpenses([])
-    setItineraries([])
-    setTodos([])
-    setSelectedItineraryId(null)
+    ref.set(selectedItineraryIdProvider, null)
     navigateView('workspace', 'replace')
   }
 
   const handleSaveItinerary = async (itinerary: Itinerary) => {
     dataMutationVersion.current += 1
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
-      await enqueueOfflineMutation({
-        operation: 'saveItinerary',
-        entityId: itinerary.id,
-        payload: itinerary,
-      })
-      setItineraries((current) => {
-        const exists = current.some((item) => item.id === itinerary.id)
-        return exists
-          ? current.map((item) => (item.id === itinerary.id ? itinerary : item))
-          : [itinerary, ...current]
-      })
-      setSelectedItineraryId(itinerary.id)
+      await ref.read(itinerariesProvider.notifier).save(itinerary, enqueueOfflineMutation)
+      ref.set(selectedItineraryIdProvider, itinerary.id)
       setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (saveError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         saveError instanceof Error ? saveError.message : t('app.unexpectedError'),
       )
       throw saveError
@@ -294,33 +248,24 @@ function App() {
 
   const handleSaveTodo = async (todo: TodoItem) => {
     dataMutationVersion.current += 1
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
-      await enqueueOfflineMutation({
-        operation: 'saveTodo',
-        entityId: todo.id,
-        payload: todo,
-      })
-      setTodos((current) => {
-        const exists = current.some((item) => item.id === todo.id)
-        return exists
-          ? current.map((item) => (item.id === todo.id ? todo : item))
-          : [todo, ...current]
-      })
+      await ref.read(todosProvider.notifier).save(todo, enqueueOfflineMutation)
     } catch (saveError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         saveError instanceof Error ? saveError.message : t('app.unexpectedError'),
       )
     }
   }
 
   const handleDeleteTodo = async (id: string) => {
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
-      await enqueueOfflineMutation({ operation: 'deleteTodo', entityId: id, payload: { id } })
-      setTodos((current) => current.filter((todo) => todo.id !== id))
+      await ref.read(todosProvider.notifier).delete(id, enqueueOfflineMutation)
     } catch (deleteError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         deleteError instanceof Error
           ? deleteError.message
           : t('app.unexpectedError'),
@@ -330,17 +275,17 @@ function App() {
 
   const handleDeleteExpense = async (expense: Expense) => {
     if (!window.confirm(`確定要刪除「${expense.title}」嗎？`)) return
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
-      await enqueueOfflineMutation({
-        operation: 'deleteExpense',
-        entityId: expense.id,
-        payload: { id: expense.id, receiptImagePaths: expense.receiptImagePaths },
-      })
-      setExpenses((current) => current.filter((item) => item.id !== expense.id))
+      await ref.read(expensesProvider.notifier).delete(
+        expense.id,
+        expense.receiptImagePaths,
+        enqueueOfflineMutation,
+      )
       setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (deleteError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         deleteError instanceof Error
           ? deleteError.message
           : t('app.unexpectedError'),
@@ -351,16 +296,14 @@ function App() {
   const handleDeleteItinerary = async (id: string) => {
     const itinerary = itineraries.find((item) => item.id === id)
     if (!itinerary || !window.confirm(`確定要刪除「${itinerary.title}」嗎？`)) return
-    setError(null)
+    ref.set(appErrorProvider, null)
     try {
-      await enqueueOfflineMutation({ operation: 'deleteItinerary', entityId: id, payload: { id } })
-      setItineraries((current) => current.filter((item) => item.id !== id))
-      setExpenses((current) => current.filter((expense) => expense.itineraryId !== id))
-      setTodos((current) => current.filter((todo) => todo.itineraryId !== id))
-      setSelectedItineraryId((current) => current === id ? null : current)
+      await ref.read(itinerariesProvider.notifier).delete(id, enqueueOfflineMutation)
+      ref.set(selectedItineraryIdProvider, (current) => current === id ? null : current)
       setNotice(navigator.onLine ? t('app.queued') : t('app.savedOffline'))
     } catch (deleteError) {
-      setError(
+      ref.set(
+        appErrorProvider,
         deleteError instanceof Error
           ? deleteError.message
           : t('app.unexpectedError'),
@@ -404,7 +347,7 @@ function App() {
             expenses={expenses}
             todos={todos}
             selectedItineraryId={selectedItineraryId}
-            loading={loading}
+            loading={loading || isRefreshing}
             error={error}
             onSelectItinerary={setSelectedItineraryId}
             onSaveItinerary={handleSaveItinerary}
@@ -414,7 +357,7 @@ function App() {
             onAddExpense={() => handleAdd()}
             onEditExpense={handleEdit}
             onDeleteExpense={handleDeleteExpense}
-            onRefresh={loadData}
+            onRefresh={handleRefresh}
             onSignOut={signOut}
             onOpenGoogleMapsTest={() => navigateView('google-maps-test')}
             onRegisterBrowserBackHandler={registerBrowserBackHandler}

@@ -105,7 +105,18 @@ export function TravelWorkspaceHeader({
                     void onRefresh()
                   }}
                 >
-                  <ListItemIcon><RefreshRoundedIcon fontSize="small" /></ListItemIcon>
+                  <ListItemIcon>
+                    <RefreshRoundedIcon
+                      fontSize="small"
+                      sx={{
+                        animation: loading ? 'spin 1s linear infinite' : 'none',
+                        '@keyframes spin': {
+                          '0%': { transform: 'rotate(0deg)' },
+                          '100%': { transform: 'rotate(360deg)' },
+                        },
+                      }}
+                    />
+                  </ListItemIcon>
                   <ListItemText>重新整理</ListItemText>
                 </MenuItem>
                 <MenuItem
@@ -124,7 +135,15 @@ export function TravelWorkspaceHeader({
               <Tooltip title="重新整理">
                 <span>
                   <IconButton disabled={loading} onClick={() => void onRefresh()} aria-label="重新整理">
-                    <RefreshRoundedIcon />
+                    <RefreshRoundedIcon
+                      sx={{
+                        animation: loading ? 'spin 1s linear infinite' : 'none',
+                        '@keyframes spin': {
+                          '0%': { transform: 'rotate(0deg)' },
+                          '100%': { transform: 'rotate(360deg)' },
+                        },
+                      }}
+                    />
                   </IconButton>
                 </span>
               </Tooltip>

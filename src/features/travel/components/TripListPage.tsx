@@ -37,7 +37,7 @@ export function TripListPage({
         </Button>
       </Stack>
 
-      {loading ? (
+      {loading && itineraries.length === 0 ? (
         <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 3, p: 3 }}>
           <Typography color="text.secondary">正在載入行程…</Typography>
         </Paper>
