@@ -17,11 +17,20 @@ import {
 import { supabase } from '../../lib/supabase'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import type { Itinerary } from '../../types/database'
-import { browserAssistantModel } from './assistantApi'
-import { findIncompleteUserMessage } from './assistantConversationRecovery'
-import { AssistantGraphVersionError, createAssistantGraph } from './assistantGraph'
-import { enrichAppliedProposalPlaces } from './assistantPlaceEnrichment'
-import { applyAssistantOperations, changedDays } from './assistantProposal'
+import { browserAssistantModel } from './api'
+import {
+  AssistantGraphVersionError,
+  createAssistantGraph,
+  findIncompleteUserMessage,
+} from './graph'
+import {
+  applyItineraryOperations as applyAssistantOperations,
+  applyTodoProposal,
+  changedDays,
+  enrichAppliedProposalPlaces,
+  extractProposedCategories,
+  extractProposedTodos,
+} from './tools'
 import type {
   AssistantMessage,
   AssistantProgressPhase,
@@ -308,7 +317,15 @@ export function useAssistantConversation(
       const allAfter = applyAssistantOperations(itinerary, proposal.operations)
       const after = changedDays(before, allAfter)
       const affectedIds = new Set(after.map((day) => day.id))
-      await saveAssistantProposal(proposal, before.filter((day) => affectedIds.has(day.id)), after)
+      const proposedTodos = extractProposedTodos(proposal.operations)
+      const proposedCategories = extractProposedCategories(proposal.operations)
+      await saveAssistantProposal(
+        proposal,
+        before.filter((day) => affectedIds.has(day.id)),
+        after,
+        proposedTodos.length ? proposedTodos : undefined,
+        proposedCategories.length ? proposedCategories : undefined,
+      )
     },
   }), [itinerary])
 
@@ -470,6 +487,9 @@ export function useAssistantConversation(
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status: 'rejected' as const }
         : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status: 'rejected' as const } }
+        : item))
       try {
         await applyStoredAssistantProposal(proposal.id, false)
         void checkpointer.deleteThread(proposal.threadId).catch(() => {})
@@ -477,6 +497,9 @@ export function useAssistantConversation(
       } catch (rejectionError) {
         setProposals((current) => current.map((item) => item.id === proposal.id
           ? { ...item, status: 'pending' as const }
+          : item))
+        setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+          ? { ...item, proposal: { ...item.proposal, status: 'pending' as const } }
           : item))
         setError(friendlyError(rejectionError, '無法拒絕行程提案'))
       } finally {
@@ -491,6 +514,9 @@ export function useAssistantConversation(
     setProposals((current) => current.map((item) => item.id === proposal.id
       ? { ...item, status: 'approved' as const }
       : item))
+    setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+      ? { ...item, proposal: { ...item.proposal, status: 'approved' as const } }
+      : item))
     try {
       const status = await applyStoredAssistantProposal(proposal.id, true)
       if (status !== 'applied' && status !== 'expired') {
@@ -500,17 +526,32 @@ export function useAssistantConversation(
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
         : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status } }
+        : item))
       if (status === 'applied') {
-        setProgressLabel('正在補齊 Google 地點資料…')
-        const enrichment = await enrichAppliedProposalPlaces(proposal)
-        if (enrichment.failed > 0) {
-          setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+        if (proposal.afterDays.length > 0) {
+          setProgressLabel('正在補齊 Google 地點資料…')
+          const enrichment = await enrichAppliedProposalPlaces(proposal)
+          if (enrichment.failed > 0) {
+            setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+          }
         }
+
+        await applyTodoProposal(
+          itinerary,
+          proposal.proposedTodos ?? [],
+          proposal.proposedCategories ?? [],
+        )
+
         await onItineraryApplied()
       }
       await refreshConversation(proposal.threadId, false)
       setProposals((current) => current.map((item) => item.id === proposal.id
         ? { ...item, status }
+        : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status } }
         : item))
     } catch (decisionError) {
       setError(friendlyError(decisionError, '無法處理行程提案'))

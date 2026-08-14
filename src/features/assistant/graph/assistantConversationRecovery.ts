@@ -1,4 +1,4 @@
-import type { AssistantMessage } from './types'
+import type { AssistantMessage } from '../types'
 
 export function findIncompleteUserMessage(
   messages: AssistantMessage[],

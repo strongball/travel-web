@@ -1,21 +1,22 @@
 import { MemorySaver } from '@langchain/langgraph/web'
 import { describe, expect, it } from 'vitest'
-import type { Itinerary } from '../../types/database'
+import type { Itinerary } from '../../../types/database'
 import {
   createAssistantGraph,
-  normalizeAssistantOperations,
-  parseAssistantOperations,
   recentAssistantMessages,
   shouldSummarizeMessages,
-  validateAssistantOperations,
 } from './assistantGraph'
+import {
+  parseAssistantOperations,
+  validateAssistantOperations,
+} from '../api'
 import type {
   AssistantMessage,
   AssistantModel,
   AssistantProposalPersistence,
   AssistantTurnRequest,
   ItineraryChangeProposal,
-} from './types'
+} from '../types'
 
 const itinerary: Itinerary = {
   id: 'trip-1',
@@ -79,8 +80,8 @@ describe('assistant graph helpers', () => {
     expect(() => validateAssistantOperations(itinerary, [{
       type: 'remove_attraction',
       attractionId: 'missing',
-    }])).toThrow('unknown attraction')
-    expect(() => parseAssistantOperations([{ type: 'delete_trip' }])).toThrow('Unsupported')
+    }])).toThrow('找不到景點 missing')
+    expect(() => parseAssistantOperations([{ type: 'delete_trip' }])).toThrow('Unsupported assistant operation')
   })
 
   it('allows a new attraction without a Google match', () => {
@@ -101,24 +102,6 @@ describe('assistant graph helpers', () => {
         locationName: null,
       },
     }])).not.toThrow()
-  })
-
-  it('completes a partial reorder using the existing order for omitted attractions', () => {
-    const second = { ...itinerary.days![0].attractions[0], id: 'place-2', name: '上野公園' }
-    const reorderItinerary: Itinerary = {
-      ...itinerary,
-      days: [{ ...itinerary.days![0], attractions: [itinerary.days![0].attractions[0], second] }],
-    }
-    expect(normalizeAssistantOperations(reorderItinerary, [{
-      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['place-2'],
-    }])).toEqual([{
-      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['place-2', 'place-1'],
-    }])
-    expect(normalizeAssistantOperations(reorderItinerary, [{
-      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['missing'],
-    }])).toEqual([{
-      type: 'reorder_attractions', dayId: 'day-1', attractionIds: ['missing'],
-    }])
   })
 
   it('uses message and character thresholds and keeps the recent window', () => {
@@ -311,7 +294,7 @@ describe('createAssistantGraph', () => {
     const turn = request()
     const completed = await graph.sendTurn(turn)
     expect(completed.request).toBeNull()
-    expect(completed.pendingProposal).toBeNull()
+    expect(completed.assistantMessage?.proposal?.status).toBe('pending')
     expect(proposals.saved).toHaveLength(1)
     expect(proposals.saved[0].status).toBe('pending')
     expect(proposals.saved[0].expectedDayRevisions).toEqual(turn.dayRevisions)

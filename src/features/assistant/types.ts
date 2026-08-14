@@ -23,6 +23,7 @@ export type AssistantMessage = {
   role: AssistantMessageRole
   content: string
   createdAt: string
+  proposal?: ItineraryChangeProposal | null
 }
 
 export type AssistantAttractionDraft = {
@@ -39,6 +40,11 @@ export type AssistantAttractionDraft = {
   locationName: string | null
 }
 
+export type AssistantTodoDraft = {
+  title: string
+  category: string
+}
+
 export type AssistantOperation =
   | { type: 'set_day_start_time'; dayId: string; startTime: string }
   | { type: 'add_attraction'; dayId: string; attraction: AssistantAttractionDraft; index?: number }
@@ -46,6 +52,8 @@ export type AssistantOperation =
   | { type: 'remove_attraction'; attractionId: string }
   | { type: 'move_attraction'; attractionId: string; targetDayId: string; index: number }
   | { type: 'reorder_attractions'; dayId: string; attractionIds: string[] }
+  | { type: 'add_todo'; title: string; category?: string }
+  | { type: 'add_todo_category'; name: string }
 
 export type AssistantProposalStatus =
   | 'pending'

@@ -1,6 +1,6 @@
 import { useEffect, type ReactNode } from 'react'
 import type { Itinerary } from '../../types/database'
-import { AssistantAppBarActions, AssistantConversationView } from './AssistantConversationView'
+import { AssistantAppBarActions, AssistantConversationView } from './components'
 import { useAssistantConversation } from './useAssistantConversation'
 
 export function AssistantSection({
