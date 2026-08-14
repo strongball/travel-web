@@ -252,7 +252,7 @@ export function AssistantConversationView({
                   : null}
               </Stack>
             ))}
-            {sending ? <AssistantProgress label={progressLabel} /> : null}
+            {sending && progressLabel ? <AssistantProgress label={progressLabel} /> : null}
             {!online ? (
               <Alert severity="info" variant="outlined" sx={{ flexShrink: 0, borderRadius: 2 }}>
                 助理與行程確認需要網路連線。

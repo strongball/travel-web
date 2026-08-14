@@ -80,9 +80,10 @@ function App() {
   } = useBrowserNavigation(Boolean(session))
   const userId = session?.user.id ?? null
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (options?: { showLoading?: boolean }) => {
     const requestVersion = dataMutationVersion.current
-    setLoading(true)
+    const showLoading = options?.showLoading ?? true
+    if (showLoading) setLoading(true)
     setError(null)
     try {
       const [nextItineraries, nextExpenses, nextTodos] = await Promise.all([
@@ -137,7 +138,7 @@ function App() {
       }
     } finally {
       setDataReady(true)
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }, [getWorkspaceRoute, setError, setExpenses, setItineraries, setLoading, t, userId])
 
@@ -171,13 +172,17 @@ function App() {
     void saveSnapshot({ userId, itineraries, expenses, todos })
   }, [dataReady, expenses, itineraries, todos, userId])
 
+  const refreshDataAfterSync = useCallback(
+    () => loadData({ showLoading: false }),
+    [loadData],
+  )
   const {
     enqueue: enqueueOfflineMutation,
     flush: flushOfflineMutations,
     pendingCount,
     syncError,
     syncState,
-  } = useOfflineSync(userId, loadData)
+  } = useOfflineSync(userId, refreshDataAfterSync)
 
   const handleAuth = async (email: string, password: string, mode: AuthMode) => {
     setAuthLoading(true)

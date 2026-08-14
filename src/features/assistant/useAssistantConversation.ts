@@ -41,6 +41,17 @@ const progressLabels: Record<AssistantProgressPhase, string> = {
   syncing_conversation: '正在更新對話畫面…',
 }
 
+const hiddenProgressPhases = new Set<AssistantProgressPhase>([
+  'checking_context',
+  'saving_proposal',
+  'saving_checkpoint',
+  'saving_response',
+  'syncing_conversation',
+])
+
+const visibleProgressLabel = (phase: AssistantProgressPhase) =>
+  hiddenProgressPhases.has(phase) ? null : progressLabels[phase]
+
 const waitForUiSync = async (promise: Promise<unknown>, timeoutMs = 8_000) => {
   let timeoutId: number | undefined
   const timeout = new Promise<void>((resolve) => {
@@ -114,7 +125,7 @@ export type AssistantConversationController = {
   sending: boolean
   online: boolean
   rejectingProposalId: string | null
-  progressLabel: string
+  progressLabel: string | null
   error: string | null
   notice: string | null
   hasPendingProposal: boolean
@@ -148,7 +159,7 @@ export function useAssistantConversation(
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [rejectingProposalId, setRejectingProposalId] = useState<string | null>(null)
-  const [progressLabel, setProgressLabel] = useState(progressLabels.checking_context)
+  const [progressLabel, setProgressLabel] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [retryRequest, setRetryRequest] = useState<RetryRequest | null>(null)
@@ -166,7 +177,7 @@ export function useAssistantConversation(
   const currentThread = threads.find((thread) => thread.id === threadId) ?? null
   const hasPendingProposal = proposals.some((proposal) => proposal.status === 'pending')
   const onProgress = useCallback((phase: AssistantProgressPhase) => {
-    setProgressLabel(progressLabels[phase])
+    setProgressLabel(visibleProgressLabel(phase))
   }, [])
 
   const selectThread = useCallback((nextThreadId: string) => {
@@ -372,7 +383,7 @@ export function useAssistantConversation(
       await checkpointer.deleteThread(thread.id)
       state = await runner.sendTurn(input, onProgress)
     }
-    setProgressLabel(progressLabels.saving_response)
+    setProgressLabel(null)
     if (state.assistantMessage) {
       const assistantMessage = state.assistantMessage
       if (activeThreadRef.current === thread.id) {
@@ -386,7 +397,7 @@ export function useAssistantConversation(
     if (state.summary !== thread.summary) {
       await updateAssistantThreadSummary(thread.id, state.summary)
     }
-    setProgressLabel(progressLabels.syncing_conversation)
+    setProgressLabel(null)
     await waitForUiSync(Promise.all([
       refreshConversation(thread.id),
       refreshThreads(thread.id),
@@ -397,7 +408,7 @@ export function useAssistantConversation(
     event.preventDefault()
     const content = text.trim()
     if (!content || sending || sendingRef.current || hasPendingProposal || !online) return
-    setProgressLabel(progressLabels.checking_context)
+    setProgressLabel(null)
     sendingRef.current = true
     setSending(true)
     setError(null)
@@ -436,7 +447,7 @@ export function useAssistantConversation(
 
   const retryLastTurn = useCallback(async () => {
     if (!retryRequest || sending || sendingRef.current || !online) return
-    setProgressLabel(progressLabels.checking_context)
+    setProgressLabel(null)
     sendingRef.current = true
     setSending(true)
     setError(null)
