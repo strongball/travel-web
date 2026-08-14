@@ -4,13 +4,13 @@
 
 旅程助理的 LangGraph 完全在瀏覽器執行。主要程式分工如下：
 
-- `src/features/assistant/assistantGraph.ts`：graph、operation 驗證、前置摘要策略與真實節點進度事件。
-- `src/features/assistant/assistantApi.ts`：Gemini proxy adapter、function calling、Zod runtime 驗證及模型估算的交通時間。
-- `src/features/assistant/assistantSchemas.ts`：一般回答、行程編輯工具、operation 與摘要的 Zod schema。
-- `src/features/assistant/assistantPlaceEnrichment.ts`：提案套用成功後才執行的 Google 地點 best-effort enrichment。
+- `src/features/assistant/graph/assistantGraph.ts`：graph、operation 驗證、前置摘要策略與真實節點進度事件。
+- `src/features/assistant/api/assistantApi.ts`：Gemini proxy adapter、LangChain tool calling、Zod runtime 驗證及模型摘要。
+- `src/features/assistant/api/assistantSchemas.ts`：行程編輯工具、operation 與 assistant result 的 Zod schema。
+- `src/features/assistant/tools/itinerary/itineraryOperations.ts`：提案套用成功後才執行的 Google 地點 best-effort enrichment。
 - `src/features/assistant/AssistantSection.tsx`：組合 conversation controller、聊天室 view 與全頁 toolbar。
 - `src/features/assistant/useAssistantConversation.ts`：thread/message/proposal 載入、canonical persistence、graph 執行與恢復、提案決策。
-- `src/features/assistant/AssistantConversationView.tsx`：對話列表、訊息、提案卡與 composer；不直接存取 repository 或 graph。
+- `src/features/assistant/components/AssistantConversationView.tsx`：對話列表、訊息、提案卡與 composer；不直接存取 repository 或 graph。
 - `src/features/assistant/types.ts`：UI、repository 與 graph 共用的公開型別。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
 - `supabase/functions/gemini-proxy`：只代理已驗證使用者對固定 Gemini model 的 `generateContent`，不執行 graph，也不讀寫資料庫。
@@ -105,26 +105,22 @@ flowchart LR
 | `messages` | graph 目前保留的近期 user/assistant 訊息，不一定是完整聊天歷史。 |
 | `request` | 當次尚待 `respond` 處理的 `AssistantTurnRequest`；完成後清為 `null`。 |
 | `assistantMessage` | 最近一次模型產生的訊息，方便 UI 取得當次輸出。 |
-| `pendingProposal` | `respond` 到 `persist_proposal` 之間的暫存；保存 canonical proposal 後清為 `null`。 |
+| `pendingProposal` | 由 `assistantMessage.proposal` 衍生的相容欄位；canonical proposal 在 `respond` 內保存，不是獨立的 graph channel。 |
 
 節點與 edge：
 
 ```text
-START -> prepare_context -> respond
-  ├─ 無 proposal -> finish_turn -> END
-  └─ 有 proposal -> persist_proposal -> finish_turn -> END
+START -> prepare_context -> respond -> END
 ```
 
 ### Node、context 與 state 對照
 
-正式 UI 注入的是 `assistantApi.ts` 的 `browserAssistantModel`。`START`、`END` 是 LangGraph sentinel，不是自訂 node，因此沒有 prompt 或 state update。
+正式 UI 注入的是 `src/features/assistant/api/assistantApi.ts` 的 `browserAssistantModel`。`START`、`END` 是 LangGraph sentinel，不是自訂 node，因此沒有 prompt 或 state update。
 
 | Node | 讀取的 context | Prompt template | 產出與影響的 state | 外部副作用／下一步 |
 | --- | --- | --- | --- | --- |
 | `prepare_context` | `request.threadId`、`request.turnId`、`summary`、`messages` | 未達摘要門檻時沒有 prompt；達門檻時使用下方「摘要 prompt」 | 未達門檻回傳 `{}`；達門檻更新 `summary`，並把 `messages` 壓成「最近 `recentMessageCount` 則舊訊息 + 本次 turn 訊息」 | 呼叫 `model.summarize`；固定前往 `respond` |
-| `respond` | `summary`、`messages`、`request.text`、`request.itinerary`、`request.dayRevisions`、turn/thread/itinerary ID | 使用下方「回覆 prompt」，強制呼叫一個 tool | 建立 `assistantMessage` 並 append 到 `messages`；有提案時建立 `pendingProposal`，否則為 `null` | 解析 tool output，normalize 並驗證 operations；有提案前往 `persist_proposal`，否則前往 `finish_turn` |
-| `persist_proposal` | `pendingProposal` | 無 prompt | 保存後把 `pendingProposal` 清為 `null` | `proposals.savePending` 冪等寫入 canonical proposal；前往 `finish_turn` |
-| `finish_turn` | `request.threadId`，僅用來回報進度 | 無 prompt | `request = null` | 保存完成 checkpoint，前往 `END` |
+| `respond` | `summary`、`messages`、`request.text`、`request.itinerary`、`request.dayRevisions`、turn/thread/itinerary ID | 使用下方「回覆 prompt」；模型可直接回覆，或呼叫 proposal tool | 解析 direct text 或 tool output；normalize/validate operations；建立 `assistantMessage` 並 append 到 `messages`；有提案時同步呼叫 `proposals.savePending` | 保存 canonical proposal（若有）與完成 checkpoint，前往 `END` |
 
 `respond` 的 context 有兩種用途：
 
@@ -163,15 +159,15 @@ START -> prepare_context -> respond
 
 預設使用者需要你協助釐清需求與做決定。只要目標和限制足夠，就主動給出一個具體安排與簡短理由；非關鍵細節採合理預設，不要反覆把規劃工作丟回使用者。
 
-依語意與上下文判斷意圖，不依賴特定關鍵字。純詢問只回答；若使用者接受、選擇或要求執行前文建議（包括「好」、「就這樣」、「都要」、「幫我決定」等省略語），資訊足夠就呼叫 propose_itinerary_edit，不要要求重述。只有多種合理解讀會明顯改變結果時，才用 answer_travel_question 問一個必要問題。
+依語意與上下文判斷意圖，不依賴特定關鍵字。純詢問直接回答；若使用者接受、選擇或要求執行前文建議（包括「好」、「就這樣」、「都要」、「幫我決定」等省略語），資訊足夠就呼叫適合的 proposal tool，不要要求重述。只有多種合理解讀會明顯改變結果時，才直接提出一個必要問題。
 
-修改只限現有日期的開始時間與景點，且只動要求的部分；不可改旅程日期、幣別、費用或待辦。既有 dayId/attractionId 必須原樣使用；新增景點不給 id；reorder_attractions 可只列移動項目；update_attraction.changes 只放變動欄位。
+修改只限現有日期的開始時間與景點，且只動要求的部分；不可改旅程日期、幣別或費用。既有 dayId/attractionId 必須原樣使用；新增景點不給既有 id；reorder_attractions 必須列出該日完整且不重複的景點 ID；update_attraction.changes 只放變動欄位。
 
 使用使用者語言（{{language_from_current_turn}}），景點也不轉成英文羅馬拼音。新增景點只給 name、duration、transportMode、travelTime 與必要的 locationName；不要給 description、cost、Place ID、座標或地址。
 
 新增或重排景點時，主動為每一段安排 transportMode 與 travelTime；預設採一般觀光客容易使用的步行或公共運輸，僅在明顯不適合時選計程車或其他方式。提案須依 day.startTime、每段交通時間與 duration 順推可執行時間，並考慮相鄰距離與一般營業／遊玩時段；不得重疊、跨日或過晚。沒有即時路線資料時做保守的整數分鐘估算，不必為此追問；無法合理估算才填 null，且不得宣稱已查證。
 
-只呼叫一個工具且不要在工具外回答：一般回答／必要澄清用 answer_travel_question；可執行修改用 propose_itinerary_edit，提供簡短 reply 與 operations，title/explanation 可省略。
+一般回答可直接輸出文字；可執行景點修改呼叫 `propose_itinerary_edit`，待辦清單呼叫 `propose_todo_list`，提供簡短 `reply` 與結構化 payload。Gemini 偶爾會平行呼叫多個 proposal tool，runtime 會先各自驗證，再合併成一個 proposal；任何一個 operation 不合法都會讓整個 proposal 失敗，不會部分套用。
 
 {{#if summary}}
 先前摘要：{{summary}}
@@ -190,14 +186,15 @@ START -> prepare_context -> respond
 
 近期對話先取 `state.messages` 最後 10 則；若最後一則正好是本次 user message，template 會移除它，避免和最後的 `使用者：{{current_user_text}}` 重複。`itinerary_json` 只包含模型排程需要的欄位：trip title/date range，以及每一天的 ID、日期、開始時間和各景點的順序、ID、名稱、地點、時間、duration、transport mode、travel time。
 
-模型被設定為 `temperature: 0.2` 並強制只能呼叫一個工具：
+模型被設定為 `temperature: 0.2`，使用 LangChain 的 `bindTools` 與 Gemini-native function declarations；工具 input 先使用 provider-safe schema 描述，再由 LangChain tool 的 Zod contract 做 runtime validation：
 
 | Tool output | Schema | Graph 轉換 |
 | --- | --- | --- |
-| `answer_travel_question` | `{ "reply": string }` | 建立 assistant message；`pendingProposal = null` |
+| 直接文字 | `string` | 建立 assistant message；沒有 pending proposal |
 | `propose_itinerary_edit` | `{ "reply": string, "title"?: string, "explanation"?: string, "operations": AssistantOperation[] }` | schema 補預設 title/explanation；graph normalize/validate operations，補可信 ID、revision、status 與 timestamps，再建立 pending proposal |
+| `propose_todo_list` | `{ "reply": string, "title"?: string, "explanation"?: string, "todos": TodoDraft[], "newCategories"?: string[] }` | 轉成 `add_todo`/`add_todo_category` operations，再由同一套 proposal persistence 保存 |
 
-若模型版本忽略 function calling 而回傳文字，系統只接受能通過相同 Zod schema 的 JSON fallback；未驗證的文字或未知 operation 不會進入 state。
+若模型不呼叫工具而回傳文字，系統接受非空 direct text；任何工具 arguments 或未知 operation 仍必須通過 LangChain/Zod runtime validation，否則整個 turn 失敗且不會進入 proposal state。
 
 Graph progress callback 只回報實際節點：檢查前文、摘要前文、模型生成、驗證、保存提案與 checkpoint；proposal 套用進度由 UI controller 在呼叫 RPC 時另外更新，不用 timer 模擬。
 
@@ -216,8 +213,8 @@ Graph progress callback 只回報實際節點：檢查前文、摘要前文、�
 ### Proposal 保存與決策
 
 1. `respond` 依本次語意與近期對話判斷修改意圖；不要求特定關鍵字，承接前文的簡短確認也可建立 proposal。
-2. `normalizeAssistantOperations` 先把模型只列出部分景點的 reorder 補成完整順序（未提及的景點維持原順序），再由 `validateAssistantOperations` 驗證 day/attraction ID 與重複/未知 ID；新增景點可以沒有 Google 位置資料，禁止虛構座標即可。
-3. `persist_proposal` 保存 canonical proposal。
+2. `normalizeAssistantOperations` 先以 strict per-type schema 驗證並補上新增景點的 client ID，再由 `validateAssistantOperations` 依序驗證 day/attraction ID、重複/未知 ID 與完整 reorder；新增景點可以沒有 Google 位置資料，禁止虛構座標即可。
+3. `respond` 呼叫 `proposals.savePending` 保存 canonical proposal。
 4. graph 正常結束；UI 從 canonical proposal 顯示 diff 與確認按鈕。
 5. UI 以 proposal ID 呼叫冪等 `apply_assistant_proposal` RPC。核准時 RPC 驗證 owner 與 day revision，衝突回傳 `expired`；拒絕直接寫入 `rejected`，兩者都不觸發模型。
 6. RPC 回傳 `applied` 後，UI 才 best-effort 補齊 Google 地點資料；失敗不回滾行程。
@@ -310,7 +307,7 @@ assistant_put_checkpoint(
 新增 itinerary 修改能力時必須同步完成：
 
 1. 在 `AssistantOperation` union 加入精確型別。
-2. 在 `assistantSchemas.ts` 的 Zod discriminated union 做 runtime allowlist、型別與範圍驗證；未知欄位不可靜默接受。
+2. 在 `assistantSchemas.ts` 的 Zod per-type strict union 做 runtime allowlist、型別與範圍驗證；未知欄位不可靜默接受。
 3. 在 `validateAssistantOperations` 驗證所有引用 ID 與跨欄位 invariant。
 4. 更新 Gemini prompt 的 allowed operation 清單及 structured response contract。
 5. 在 proposal materializer 將 operation 轉成 before/after snapshots；真正套用仍由 `apply_assistant_proposal` 驗證並原子執行。
@@ -328,10 +325,10 @@ assistant_put_checkpoint(
 
 ## 測試與故障排查
 
-主要 graph 測試在 `src/features/assistant/assistantGraph.test.ts`。最低驗證：
+主要 graph 測試在 `src/features/assistant/graph/assistantGraph.test.ts`。最低驗證：
 
 ```sh
-npm test -- --run src/features/assistant/assistantGraph.test.ts
+npm test -- --run src/features/assistant/graph/assistantGraph.test.ts
 npx tsc -p tsconfig.app.json --noEmit
 npm run build
 ```
@@ -345,7 +342,7 @@ checkpointer 變更還應以 Supabase local/preview 環境測試 RLS、RPC CAS�
 | `AssistantGraphVersionError` | 本地程式與 checkpoint 版本不同；從 canonical messages/proposal 重建，不要直接 resume。 |
 | `Assistant turn request is missing` | 舊 checkpoint 的 request 狀態不完整；UI 會刪除該 runtime checkpoint，依 canonical messages 與本次 request 重建後重試。 |
 | `Assistant thread changed on another device` / `40001` | CAS 偵測到同 thread 已前進；重新載入 thread/state，禁止覆蓋或無限自動重試。 |
-| Proposal 沒有出現在 UI | 確認 `persist_proposal` 已用正確的 thread/turn ID 寫入 canonical proposal，並重新載入 proposal list。 |
+| Proposal 沒有出現在 UI | 確認 `respond` 的 `proposals.savePending` 已用正確的 thread/turn ID 寫入 canonical proposal，並重新載入 proposal list。 |
 | 核准後重複套用 | UI 未以 proposal ID 使用原子、冪等 RPC；應呼叫 `apply_assistant_proposal`。 |
 | 套用後確認按鈕再次出現 | canonical proposal 被 replay 的 `savePending` 重設為 pending，或舊的列表請求覆蓋新狀態。保存 proposal 必須使用 `ignoreDuplicates`，UI 以 load sequence 排除過期回應，並在確認後固定顯示 RPC 的 `applied`/`expired` 終態。 |
 | 核准後變成 expired | 目標 day revision 已改變；這是預期的衝突保護，重新產生 proposal。 |

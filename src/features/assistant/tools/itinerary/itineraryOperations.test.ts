@@ -70,6 +70,30 @@ describe('applyItineraryOperations', () => {
       ]),
     ).toThrow('景點排序資料不完整')
   })
+
+  it('does not allow an added attraction to overwrite an existing id', () => {
+    expect(() =>
+      applyItineraryOperations(itinerary, [
+        {
+          type: 'add_attraction',
+          dayId: 'day-2',
+          attraction: {
+            id: 'a-1',
+            name: '重複景點',
+            description: '',
+            cost: 0,
+            latitude: null,
+            longitude: null,
+            duration: 60,
+            transportMode: null,
+            travelTime: null,
+            placeId: null,
+            locationName: null,
+          },
+        },
+      ]),
+    ).toThrow('景點 ID 已存在 a-1')
+  })
 })
 
 describe('placeEnrichmentCandidates', () => {

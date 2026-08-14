@@ -1,7 +1,6 @@
 export {
   PROPOSAL_TOOL_NAME,
   proposeItineraryEditTool,
-  proposalToolArgumentsSchema,
 } from './itineraryTool'
 export {
   applyItineraryOperations,

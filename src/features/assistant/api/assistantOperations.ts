@@ -13,41 +13,30 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
   return parsed.data.map((op): AssistantOperation => {
     switch (op.type) {
       case 'set_day_start_time':
-        if (!op.dayId || !op.startTime) throw new Error('set_day_start_time requires dayId and startTime')
         return {
           type: 'set_day_start_time',
           dayId: op.dayId,
           startTime: normalizeTimeString(op.startTime),
         }
       case 'add_attraction': {
-        if (!op.dayId) throw new Error('add_attraction requires dayId')
-        const attractionDraft = op.attraction || {
-          name: op.name || op.title || '',
-          description: op.description || '',
-          duration: op.duration || 60,
-          transportMode: (op.transportMode as 'driving' | 'walking' | 'transit' | 'bicycling' | null | undefined) ?? null,
-          travelTime: op.travelTime ?? null,
-          locationName: op.locationName ?? null,
-          cost: op.cost ?? 0,
-        }
-        if (!attractionDraft.name) throw new Error('add_attraction requires attraction name')
         return {
           type: 'add_attraction',
           dayId: op.dayId,
-          attraction: normalizeAttractionDraft(attractionDraft),
+          attraction: normalizeAttractionDraft(op.attraction),
           ...(typeof op.index === 'number' ? { index: op.index } : {}),
         }
       }
       case 'update_attraction': {
-        if (!op.attractionId) throw new Error('update_attraction requires attractionId')
-        const changes = op.changes || {
-          ...(op.name ? { name: op.name } : {}),
-          ...(op.description !== undefined ? { description: op.description } : {}),
-          ...(op.duration ? { duration: op.duration } : {}),
-          ...(op.transportMode !== undefined ? { transportMode: op.transportMode as 'driving' | 'walking' | 'transit' | 'bicycling' | null } : {}),
-          ...(op.travelTime !== undefined ? { travelTime: op.travelTime } : {}),
-          ...(op.locationName !== undefined ? { locationName: op.locationName } : {}),
-        }
+        const changes = 'changes' in op
+          ? op.changes
+          : {
+              ...(op.name !== undefined ? { name: op.name } : {}),
+              ...(op.description !== undefined ? { description: op.description } : {}),
+              ...(op.duration !== undefined ? { duration: op.duration } : {}),
+              ...(op.transportMode !== undefined ? { transportMode: op.transportMode } : {}),
+              ...(op.travelTime !== undefined ? { travelTime: op.travelTime } : {}),
+              ...(op.locationName !== undefined ? { locationName: op.locationName } : {}),
+            }
         return {
           type: 'update_attraction',
           attractionId: op.attractionId,
@@ -55,15 +44,11 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
         }
       }
       case 'remove_attraction':
-        if (!op.attractionId) throw new Error('remove_attraction requires attractionId')
         return {
           type: 'remove_attraction',
           attractionId: op.attractionId,
         }
       case 'move_attraction':
-        if (!op.attractionId || !op.targetDayId || typeof op.index !== 'number') {
-          throw new Error('move_attraction requires attractionId, targetDayId, and index')
-        }
         return {
           type: 'move_attraction',
           attractionId: op.attractionId,
@@ -71,21 +56,18 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
           index: op.index,
         }
       case 'reorder_attractions':
-        if (!op.dayId || !op.attractionIds) throw new Error('reorder_attractions requires dayId and attractionIds')
         return {
           type: 'reorder_attractions',
           dayId: op.dayId,
           attractionIds: op.attractionIds,
         }
       case 'add_todo':
-        if (!op.title) throw new Error('add_todo requires title')
         return {
           type: 'add_todo',
           title: op.title,
-          ...(op.category ? { category: op.category } : {}),
+          ...(op.category !== undefined ? { category: op.category } : {}),
         }
       case 'add_todo_category':
-        if (!op.name) throw new Error('add_todo_category requires name')
         return {
           type: 'add_todo_category',
           name: op.name,
@@ -101,30 +83,65 @@ export function validateAssistantOperations(
   itinerary: Itinerary,
   operations: AssistantOperation[],
 ) {
-  const dayIds = new Set((itinerary.days ?? []).map((day) => day.id))
-  const attractionIds = new Set(
-    (itinerary.days ?? []).flatMap((day) => day.attractions.map((item) => item.id)),
+  const days = new Map((itinerary.days ?? []).map((day) => [
+    day.id,
+    new Set(day.attractions.map((item) => item.id)),
+  ] as const))
+  const attractionToDay = new Map(
+    (itinerary.days ?? []).flatMap((day) => day.attractions.map((item) => [item.id, day.id] as const)),
   )
 
+  const requireDay = (dayId: string) => {
+    if (!days.has(dayId)) throw new Error(`找不到日期 ${dayId}`)
+    return days.get(dayId)!
+  }
+
+  const requireAttraction = (attractionId: string) => {
+    const dayId = attractionToDay.get(attractionId)
+    if (!dayId) throw new Error(`找不到景點 ${attractionId}`)
+    return dayId
+  }
+
   for (const operation of operations) {
-    if (operation.type === 'set_day_start_time' && !dayIds.has(operation.dayId)) {
-      throw new Error(`找不到日期 ${operation.dayId}`)
+    if (operation.type === 'set_day_start_time') {
+      requireDay(operation.dayId)
+      continue
     }
-    if (operation.type === 'add_attraction' && !dayIds.has(operation.dayId)) {
-      throw new Error(`找不到日期 ${operation.dayId}`)
+    if (operation.type === 'add_attraction') {
+      const dayAttractions = requireDay(operation.dayId)
+      const attractionId = operation.attraction.id
+      if (attractionToDay.has(attractionId)) throw new Error(`景點 ID 已存在 ${attractionId}`)
+      dayAttractions.add(attractionId)
+      attractionToDay.set(attractionId, operation.dayId)
+      continue
     }
-    if (operation.type === 'update_attraction' && !attractionIds.has(operation.attractionId)) {
-      throw new Error(`找不到景點 ${operation.attractionId}`)
+    if (operation.type === 'update_attraction') {
+      requireAttraction(operation.attractionId)
+      continue
     }
-    if (operation.type === 'remove_attraction' && !attractionIds.has(operation.attractionId)) {
-      throw new Error(`找不到景點 ${operation.attractionId}`)
+    if (operation.type === 'remove_attraction') {
+      const dayId = requireAttraction(operation.attractionId)
+      days.get(dayId)!.delete(operation.attractionId)
+      attractionToDay.delete(operation.attractionId)
+      continue
     }
     if (operation.type === 'move_attraction') {
-      if (!attractionIds.has(operation.attractionId)) throw new Error(`找不到景點 ${operation.attractionId}`)
-      if (!dayIds.has(operation.targetDayId)) throw new Error(`找不到目的日期 ${operation.targetDayId}`)
+      const sourceDayId = requireAttraction(operation.attractionId)
+      const destination = requireDay(operation.targetDayId)
+      days.get(sourceDayId)!.delete(operation.attractionId)
+      destination.add(operation.attractionId)
+      attractionToDay.set(operation.attractionId, operation.targetDayId)
+      continue
     }
-    if (operation.type === 'reorder_attractions' && !dayIds.has(operation.dayId)) {
-      throw new Error(`找不到日期 ${operation.dayId}`)
+    if (operation.type === 'reorder_attractions') {
+      const dayAttractions = requireDay(operation.dayId)
+      const requestedIds = new Set(operation.attractionIds)
+      if (requestedIds.size !== operation.attractionIds.length ||
+        requestedIds.size !== dayAttractions.size ||
+        operation.attractionIds.some((id) => !dayAttractions.has(id))) {
+        throw new Error(`日期 ${operation.dayId} 的景點排序資料不完整`)
+      }
+      continue
     }
   }
 }

@@ -5,8 +5,6 @@ import {
   executeAssistantToolCall,
   parseAssistantModelResult,
 } from './assistantApi'
-import { jsonSchemaFor } from './assistantSchemas'
-import { proposalToolArgumentsSchema } from '../tools'
 
 describe('parseAssistantModelResult', () => {
   it('parses a regular assistant answer', () => {
@@ -72,10 +70,10 @@ describe('parseAssistantModelResult', () => {
           ],
         },
       }),
-    ).toThrow('不支援的行程修改：delete_entire_trip')
+    ).toThrow('助理回傳格式錯誤')
   })
 
-  it('normalizes legacy empty values in attraction drafts', () => {
+  it('normalizes model-safe attraction drafts with server-owned defaults', () => {
     const result = parseAssistantModelResult({
       reply: '新增晴空塔。',
       proposal: {
@@ -90,7 +88,6 @@ describe('parseAssistantModelResult', () => {
               transportMode: 'transit',
               travelTime: 20,
               locationName: '押上',
-              cost: 2500,
             },
           },
         ],
@@ -104,7 +101,7 @@ describe('parseAssistantModelResult', () => {
 
     expect(draft.attraction).toMatchObject({
       name: '東京晴空塔',
-      cost: 2500,
+      cost: 0,
       latitude: null,
       longitude: null,
       duration: 90,
@@ -194,16 +191,6 @@ describe('buildAssistantPrompt', () => {
     expect(prompt).toContain('使用者：第一天早上想去淺草寺。')
     expect(prompt).toContain('下午想去晴空塔，怎麼排比較順？')
     expect(prompt).toContain('propose_itinerary_edit')
-  })
-})
-
-describe('tool schema compatibility with Gemini', () => {
-  it('omits disallowed fields like $schema and pattern from tool schemas', () => {
-    const schema = jsonSchemaFor(proposalToolArgumentsSchema)
-    const json = JSON.stringify(schema)
-    expect(json).not.toContain('"$schema"')
-    expect(json).not.toContain('"pattern"')
-    expect(json).not.toContain('"minLength"')
   })
 })
 

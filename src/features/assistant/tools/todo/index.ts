@@ -1,7 +1,6 @@
 export {
   TODO_PROPOSAL_TOOL_NAME,
   proposeTodoListTool,
-  todoProposalToolArgumentsSchema,
 } from './todoTool'
 export {
   extractProposedTodos,

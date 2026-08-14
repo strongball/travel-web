@@ -18,6 +18,7 @@ export function applyItineraryOperations(
   const originalDayByAttraction = new Map(
     days.flatMap((day) => day.attractions.map((attraction) => [attraction.id, day.id] as const)),
   )
+  const originalAttractionIds = new Set(originalDayByAttraction.keys())
 
   const findAttraction = (id: string) => {
     for (const day of days) {
@@ -38,6 +39,10 @@ export function applyItineraryOperations(
       const day = days.find((item) => item.id === operation.dayId)
       if (!day) throw new Error('找不到指定日期')
       if (!operation.attraction.name.trim()) throw new Error('景點名稱不可空白')
+      if (originalAttractionIds.has(operation.attraction.id) || days.some((item) =>
+        item.attractions.some((attraction) => attraction.id === operation.attraction.id))) {
+        throw new Error(`景點 ID 已存在 ${operation.attraction.id}`)
+      }
       const attraction: Attraction = {
         ...operation.attraction,
         dayId: day.id,

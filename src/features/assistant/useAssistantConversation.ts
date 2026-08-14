@@ -559,7 +559,7 @@ export function useAssistantConversation(
     } finally {
       setSending(false)
     }
-  }, [checkpointer, onItineraryApplied, online, refreshConversation])
+  }, [checkpointer, itinerary, onItineraryApplied, online, refreshConversation])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || messages.length === 0 || sending || sendingRef.current || !online) return

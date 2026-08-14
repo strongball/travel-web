@@ -12,22 +12,16 @@ import {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  assistantTools,
   executeAssistantToolCall,
-  parseAssistantFunctionCalls,
   parseAssistantModelResult,
-  assertSupportedOperations,
 } from '../tools'
 
 export {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  assistantTools,
   executeAssistantToolCall,
-  parseAssistantFunctionCalls,
   parseAssistantModelResult,
-  assertSupportedOperations,
 }
 
 const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
@@ -57,6 +51,15 @@ export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI
     ...(baseUrl ? { baseUrl } : {}),
     ...(customHeaders ? { customHeaders } : {}),
   })
+}
+
+/**
+ * Bind the proposal tool contract using the provider-supported option.
+ * Gemini may still return parallel calls, so the response path applies one
+ * deterministic merge before invoking the graph proposal persistence.
+ */
+export function bindAssistantTools(model: ChatGoogleGenerativeAI) {
+  return model.bindTools(langchainAssistantTools, { tool_choice: 'auto' })
 }
 
 export function buildAssistantPrompt(
@@ -129,7 +132,7 @@ export const browserAssistantModel: AssistantModel = {
   },
   respond: async (modelRequest: AssistantModelRequest): Promise<AssistantModelResult> => {
     const model = await createLangChainChatModel()
-    const modelWithTools = model.bindTools(langchainAssistantTools)
+    const modelWithTools = bindAssistantTools(model)
 
     const prompt = buildAssistantPrompt(
       modelRequest.itinerary,
@@ -142,12 +145,7 @@ export const browserAssistantModel: AssistantModel = {
 
     // 1. Tool Call invocation via LangChain
     if (response.tool_calls && response.tool_calls.length > 0) {
-      if (response.tool_calls.length !== 1) {
-        throw new Error('必須且只能呼叫一個旅程助理工具')
-      }
-      const call = response.tool_calls[0]
-      if (!call?.name) throw new Error('工具名稱遺失')
-      return await executeAssistantToolCall(call.name, (call.args ?? {}) as Record<string, unknown>)
+      return await executeAssistantToolCalls(response.tool_calls)
     }
 
     // 2. Direct plain text response (No tool called)
@@ -158,4 +156,45 @@ export const browserAssistantModel: AssistantModel = {
 
     return { reply }
   },
+}
+
+type AssistantToolCallLike = {
+  name?: unknown
+  args?: unknown
+}
+
+/**
+ * Gemini supports parallel function calling. Merge all validated tool results
+ * into one proposal so a parallel response cannot leave a half-applied turn.
+ */
+export async function executeAssistantToolCalls(
+  toolCalls: readonly AssistantToolCallLike[],
+): Promise<AssistantModelResult> {
+  if (toolCalls.length === 0) throw new Error('模型沒有回傳工具呼叫')
+
+  const calls = toolCalls.map((call) => {
+    if (!call || typeof call.name !== 'string' || !call.name) {
+      throw new Error('工具名稱遺失')
+    }
+    const args = call.args && typeof call.args === 'object' && !Array.isArray(call.args)
+      ? call.args as Record<string, unknown>
+      : {}
+    return { name: call.name, args }
+  })
+
+  const results = await Promise.all(calls.map((call) => executeAssistantToolCall(call.name, call.args)))
+  if (results.length === 1) return results[0]
+
+  const proposals = results.flatMap((result) => result.proposal ? [result.proposal] : [])
+  const reply = results.map((result) => result.reply.trim()).filter(Boolean).join('\n\n')
+  if (proposals.length === 0) return { reply }
+
+  return {
+    reply,
+    proposal: {
+      title: proposals.length === 1 ? proposals[0].title : '綜合旅程與待辦提案',
+      explanation: proposals.map((proposal) => proposal.explanation).filter(Boolean).join('\n\n'),
+      operations: proposals.flatMap((proposal) => proposal.operations),
+    },
+  }
 }
