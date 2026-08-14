@@ -1,4 +1,4 @@
-import type { Itinerary } from '../../types/database'
+import type { Itinerary, TodoItem } from '../../types/database'
 
 export const ASSISTANT_GRAPH_VERSION = 4
 
@@ -80,6 +80,8 @@ export type AssistantTurnRequest = {
   turnId: string
   text: string
   itinerary: Itinerary
+  todos?: TodoItem[]
+  todoCategories?: string[]
   dayRevisions: Record<string, number>
   createdAt?: string
   rehydratedSummary?: string
@@ -91,6 +93,8 @@ export type AssistantModelRequest = {
   messages: AssistantMessage[]
   userText: string
   itinerary: Itinerary
+  todos?: TodoItem[]
+  todoCategories?: string[]
 }
 
 export type AssistantModelResult = {

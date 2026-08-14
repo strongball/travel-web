@@ -67,6 +67,8 @@ export function buildAssistantPrompt(
   summary: string | null,
   messages: AssistantMessage[],
   currentQuestion: string,
+  todos: Array<{ title: string; category: string; isCompleted: boolean }> = [],
+  todoCategories: string[] = [],
 ) {
   const promptParts = [
     '你是一位專業、條理分明的旅遊行程規劃助理。',
@@ -99,6 +101,15 @@ export function buildAssistantPrompt(
   if (summary) {
     promptParts.push('', '## 先前對話摘要', summary)
   }
+
+  promptParts.push(
+    '',
+    '## 目前待辦清單',
+    `現有分類：${todoCategories.length > 0 ? todoCategories.join('、') : '行前準備、旅途中、其他'}`,
+    ...(todos.length > 0
+      ? todos.map((todo, index) => `${index + 1}. [${todo.isCompleted ? '已完成' : '未完成'}] ${todo.title}（分類：${todo.category}）`)
+      : ['- （目前尚無待辦事項）']),
+  )
 
   if (messages.length > 0) {
     promptParts.push(
@@ -139,6 +150,8 @@ export const browserAssistantModel: AssistantModel = {
       modelRequest.summary || null,
       modelRequest.messages,
       modelRequest.userText,
+      modelRequest.todos ?? [],
+      modelRequest.todoCategories ?? [],
     )
 
     const response = await modelWithTools.invoke([new HumanMessage(prompt)])

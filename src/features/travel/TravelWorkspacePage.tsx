@@ -180,9 +180,10 @@ export function TravelWorkspacePage({
   const completedTodos = selectedTodos.filter((todo) => todo.isCompleted).length
   const categories = useMemo(() => {
     const fromTrip = selectedItinerary?.todoCategories ?? []
-    if (fromTrip.length > 0) return fromTrip
-    return ['行前準備', '旅途中', '其他']
-  }, [selectedItinerary?.todoCategories])
+    const fromTodos = selectedTodos.map((todo) => todo.category).filter(Boolean)
+    const merged = Array.from(new Set([...fromTrip, ...fromTodos]))
+    return merged.length > 0 ? merged : ['行前準備', '旅途中', '其他']
+  }, [selectedItinerary?.todoCategories, selectedTodos])
 
   useEffect(() => {
     if (!categories.includes(todoCategory)) {
@@ -241,9 +242,7 @@ export function TravelWorkspacePage({
 
       const fallback = validNextCats[0] || '其他'
       const todosToUpdate = selectedTodos.filter((todo) => todo.category === categoryName)
-      for (const todo of todosToUpdate) {
-        await onSaveTodo({ ...todo, category: fallback })
-      }
+      await Promise.all(todosToUpdate.map((todo) => onSaveTodo({ ...todo, category: fallback })))
       if (todoCategory === categoryName) {
         setTodoCategory(fallback)
       }
@@ -500,7 +499,14 @@ export function TravelWorkspacePage({
               ) : null}
               {section === 'assistant' ? (
                 <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: 300 }}>載入旅程助理…</Box>}>
-                  <AssistantSection itinerary={selectedItinerary} onItineraryApplied={onRefresh} fullPage onAssistantToolbarChange={handleAssistantToolbarChange} />
+                  <AssistantSection
+                    itinerary={selectedItinerary}
+                    todos={selectedTodos}
+                    todoCategories={categories}
+                    onItineraryApplied={onRefresh}
+                    fullPage
+                    onAssistantToolbarChange={handleAssistantToolbarChange}
+                  />
                 </Suspense>
               ) : null}
               {section === 'todos' ? (

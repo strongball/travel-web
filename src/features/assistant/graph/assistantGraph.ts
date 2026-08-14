@@ -102,6 +102,8 @@ export const createAssistantGraph = (
         messages: state.messages,
         userText: req.text,
         itinerary: req.itinerary,
+        todos: req.todos,
+        todoCategories: req.todoCategories,
       })
 
       let proposal: ItineraryChangeProposal | null = null

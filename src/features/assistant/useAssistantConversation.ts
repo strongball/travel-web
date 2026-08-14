@@ -16,7 +16,7 @@ import {
 } from '../../lib/repositories/assistantRepository'
 import { supabase } from '../../lib/supabase'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
-import type { Itinerary } from '../../types/database'
+import type { Itinerary, TodoItem } from '../../types/database'
 import { browserAssistantModel } from './api'
 import {
   AssistantGraphVersionError,
@@ -156,6 +156,8 @@ export type AssistantConversationController = {
 export function useAssistantConversation(
   itinerary: Itinerary,
   onItineraryApplied: () => void | Promise<void>,
+  todos: TodoItem[] = [],
+  todoCategories: string[] = [],
 ): AssistantConversationController {
   const [threads, setThreads] = useState<AssistantThread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -176,6 +178,10 @@ export function useAssistantConversation(
   const threadsRef = useRef<AssistantThread[]>([])
   const itineraryRef = useRef(itinerary)
   itineraryRef.current = itinerary
+  const todosRef = useRef(todos)
+  todosRef.current = todos
+  const todoCategoriesRef = useRef(todoCategories)
+  todoCategoriesRef.current = todoCategories
   // Close the small window where two events can start before React rerenders.
   const sendingRef = useRef(false)
   const creatingThreadRef = useRef(false)
@@ -277,6 +283,8 @@ export function useAssistantConversation(
           turnId: incompleteMessage.turnId,
           text: incompleteMessage.content,
           itinerary: currentItinerary,
+          todos: todosRef.current,
+          todoCategories: todoCategoriesRef.current,
           dayRevisions: Object.fromEntries(
             (currentItinerary.days ?? []).map((day) => [day.id, day.revision]),
           ),
@@ -445,6 +453,8 @@ export function useAssistantConversation(
         turnId,
         text: content,
         itinerary,
+        todos,
+        todoCategories,
         dayRevisions: Object.fromEntries((itinerary.days ?? []).map((day) => [day.id, day.revision])),
         createdAt: userMessage.createdAt,
       }
