@@ -109,7 +109,7 @@ export function TodoItemEditorDialog({
           </FormControl>
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
+      <DialogActions>
         <Button onClick={onClose} color="inherit">
           取消
         </Button>
@@ -118,7 +118,6 @@ export function TodoItemEditorDialog({
           disabled={saving || !title.trim()}
           onClick={handleSave}
           startIcon={saving ? <CircularProgress size={18} color="inherit" /> : undefined}
-          sx={{ borderRadius: 2, px: 3 }}
         >
           {saving ? '儲存中…' : '儲存'}
         </Button>

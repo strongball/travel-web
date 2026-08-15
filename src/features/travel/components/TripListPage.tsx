@@ -1,7 +1,7 @@
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import FlightTakeoffRoundedIcon from '@mui/icons-material/FlightTakeoffRounded'
-import { Avatar, Box, Button, Card, CardActionArea, CardContent, Chip, Paper, Stack, Typography } from '@mui/material'
+import { Avatar, Box, Button, Card, CardActionArea, CardContent, Chip, Stack, Typography } from '@mui/material'
 import type { Itinerary } from '../../../types/database'
 import { formatDate } from '../travelWorkspaceUtils'
 
@@ -27,26 +27,15 @@ export function TripListPage({
       >
         <Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5 }}>
-            <FlightTakeoffRoundedIcon sx={{ fontSize: 18, color: '#0d766e' }} />
+            <FlightTakeoffRoundedIcon color="primary" fontSize="small" />
             <Typography
-              variant="caption"
-              sx={{ fontWeight: 900, color: '#0d766e', letterSpacing: '0.06em', textTransform: 'uppercase' }}
+              variant="h5"
+              sx={{ fontWeight: 900, letterSpacing: '-0.02em' }}
             >
-              MY TRIPS · 我的行程
+              我的旅遊行程
             </Typography>
           </Stack>
-          <Typography
-            variant="h4"
-            sx={{
-              fontWeight: 900,
-              fontSize: { xs: '1.6rem', sm: '2.1rem' },
-              letterSpacing: '-0.03em',
-              color: '#17211f',
-            }}
-          >
-            選擇一段旅程
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography variant="body2" color="text.secondary">
             進入旅程以查看日程排程、管理待辦事項、記錄費用與使用 AI 旅程助理。
           </Typography>
         </Box>
@@ -54,62 +43,33 @@ export function TripListPage({
           variant="contained"
           startIcon={<AddRoundedIcon />}
           onClick={onNew}
-          sx={{
-            alignSelf: { xs: 'stretch', sm: 'auto' },
-            borderRadius: 3,
-            px: 2.5,
-            py: 1.25,
-            background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-            boxShadow: '0 4px 16px rgba(13, 118, 110, 0.3)',
-            '&:hover': {
-              background: 'linear-gradient(135deg, #075c57 0%, #0d766e 100%)',
-            },
-          }}
+          sx={{ alignSelf: { xs: 'stretch', sm: 'auto' } }}
         >
           新增行程
         </Button>
       </Stack>
 
       {loading && itineraries.length === 0 ? (
-        <Paper
-          elevation={0}
-          sx={{
-            border: '1px solid rgba(13, 118, 110, 0.12)',
-            borderRadius: 4,
-            p: 4,
-            textAlign: 'center',
-            bgcolor: '#ffffff',
-          }}
-        >
-          <Typography color="text.secondary" sx={{ fontWeight: 650 }}>
+        <Card sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
             正在載入行程…
           </Typography>
-        </Paper>
+        </Card>
       ) : itineraries.length === 0 ? (
-        <Paper
-          elevation={0}
-          sx={{
-            border: '1px solid rgba(13, 118, 110, 0.12)',
-            borderRadius: 4,
-            p: { xs: 4, md: 6 },
-            textAlign: 'center',
-            bgcolor: '#ffffff',
-            boxShadow: '0 8px 30px rgba(15, 23, 42, 0.04)',
-          }}
-        >
+        <Card sx={{ p: { xs: 4, md: 6 }, textAlign: 'center' }}>
           <Avatar
             sx={{
               width: 64,
               height: 64,
               mx: 'auto',
               mb: 2,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-              boxShadow: '0 4px 20px rgba(13, 118, 110, 0.25)',
+              bgcolor: 'primary.main',
+              color: 'common.white',
             }}
           >
-            <FlightTakeoffRoundedIcon sx={{ fontSize: 32, color: '#ffffff' }} />
+            <FlightTakeoffRoundedIcon sx={{ fontSize: 32 }} />
           </Avatar>
-          <Typography variant="h6" sx={{ fontWeight: 900, color: '#17211f' }}>
+          <Typography variant="h6" sx={{ fontWeight: 900 }}>
             還沒有建立任何行程
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 3 }}>
@@ -119,16 +79,10 @@ export function TripListPage({
             variant="contained"
             startIcon={<AddRoundedIcon />}
             onClick={onNew}
-            sx={{
-              borderRadius: 3,
-              px: 3,
-              py: 1.25,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-            }}
           >
             建立第一個行程
           </Button>
-        </Paper>
+        </Card>
       ) : (
         <Box
           sx={{
@@ -146,22 +100,12 @@ export function TripListPage({
             return (
               <Card
                 key={itinerary.id}
-                elevation={0}
                 sx={{
-                  border: isSelected
-                    ? '1.5px solid #0d766e'
-                    : '1px solid rgba(13, 118, 110, 0.12)',
-                  borderRadius: 4,
+                  borderWidth: isSelected ? '1.5px' : '1px',
+                  borderColor: isSelected ? 'primary.main' : undefined,
                   overflow: 'hidden',
-                  bgcolor: '#ffffff',
-                  boxShadow: isSelected
-                    ? '0 6px 24px rgba(13, 118, 110, 0.12)'
-                    : '0 4px 16px rgba(15, 23, 42, 0.04)',
-                  transition: 'all 200ms cubic-bezier(0.34, 1.56, 0.64, 1)',
                   '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: '0 8px 28px rgba(13, 118, 110, 0.12)',
-                    borderColor: '#0d766e',
+                    borderColor: 'primary.main',
                   },
                 }}
               >

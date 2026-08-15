@@ -91,11 +91,48 @@ export const theme = createTheme({
         root: {
           borderRadius: 14,
           border: '1px solid rgba(13, 118, 110, 0.12)',
+          backgroundColor: '#ffffff',
+        },
+      },
+    },
+    MuiPaper: {
+      defaultProps: { elevation: 0 },
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
+        rounded: { borderRadius: 14 },
+        outlined: {
+          border: '1px solid rgba(13, 118, 110, 0.12)',
+        },
+      },
+    },
+    MuiDivider: {
+      styleOverrides: {
+        root: {
+          borderColor: 'rgba(13, 118, 110, 0.08)',
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
         },
       },
     },
     MuiChip: {
-      styleOverrides: { root: { borderRadius: 8, minHeight: 30 } },
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+          minHeight: 28,
+          fontWeight: 700,
+          '&.MuiChip-outlinedPrimary': {
+            borderColor: 'rgba(13, 118, 110, 0.25)',
+            backgroundColor: 'rgba(13, 118, 110, 0.04)',
+          },
+        },
+      },
     },
     MuiDialog: {
       styleOverrides: { paper: { borderRadius: 16 } },
@@ -107,11 +144,6 @@ export const theme = createTheme({
           borderTop: '1px solid rgba(23, 33, 31, 0.12)',
           backgroundColor: '#ffffff',
         },
-      },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        rounded: { borderRadius: 14 },
       },
     },
     MuiBottomNavigation: {

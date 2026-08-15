@@ -4,6 +4,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
   Box,
   Button,
+  Card,
   Chip,
   CircularProgress,
   Dialog,
@@ -13,7 +14,6 @@ import {
   IconButton,
   InputLabel,
   MenuItem,
-  Paper,
   Select,
   Stack,
   TextField,
@@ -165,51 +165,60 @@ export function TripEditorDialog({
       />
       <DialogContent sx={{ p: 0, bgcolor: 'background.default' }}>
         {itinerary ? (
-          <Stack spacing={2.5} sx={{ width: '100%', maxWidth: 640, mx: 'auto', p: 2 }}>
-            <TextField
-              autoFocus
-              label="行程名稱"
-              value={itinerary.title}
-              onChange={(event) =>
-                onChange({ ...itinerary, title: event.target.value })
-              }
-            />
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField
-                type="date"
-                label="開始日期"
-                value={itinerary.startDate?.slice(0, 10) ?? ''}
-                slotProps={{ inputLabel: { shrink: true } }}
-                onChange={(event) => onDateChange('startDate', event.target.value)}
-              />
-              <TextField
-                type="date"
-                label="結束日期"
-                value={itinerary.endDate?.slice(0, 10) ?? ''}
-                slotProps={{ inputLabel: { shrink: true } }}
-                onChange={(event) => onDateChange('endDate', event.target.value)}
-              />
-            </Stack>
-            <FormControl fullWidth>
-              <InputLabel id="trip-currency-label">主要顯示貨幣</InputLabel>
-              <Select
-                labelId="trip-currency-label"
-                label="主要顯示貨幣"
-                value={itinerary.currency}
-                onChange={(event) => handleCurrencyChange(event.target.value)}
-              >
-                {supportedCurrencies.map((currency) => {
-                  const info = getCurrencyInfo(currency)
-                  return (
-                    <MenuItem key={currency} value={currency}>
-                      {info.flag} {currency} — {info.name}
-                    </MenuItem>
-                  )
-                })}
-              </Select>
-            </FormControl>
+          <Stack spacing={2.5} sx={{ width: '100%', maxWidth: 640, mx: 'auto', p: { xs: 2, sm: 2.5 } }}>
+            {/* 基本資訊 */}
+            <Card sx={{ p: { xs: 2, sm: 2.5 } }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 2 }}>
+                基本資訊
+              </Typography>
+              <Stack spacing={2}>
+                <TextField
+                  autoFocus
+                  label="行程名稱"
+                  placeholder="例如：2026 東京賞櫻之旅"
+                  value={itinerary.title}
+                  onChange={(event) =>
+                    onChange({ ...itinerary, title: event.target.value })
+                  }
+                />
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                  <TextField
+                    type="date"
+                    label="開始日期"
+                    value={itinerary.startDate?.slice(0, 10) ?? ''}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    onChange={(event) => onDateChange('startDate', event.target.value)}
+                  />
+                  <TextField
+                    type="date"
+                    label="結束日期"
+                    value={itinerary.endDate?.slice(0, 10) ?? ''}
+                    slotProps={{ inputLabel: { shrink: true } }}
+                    onChange={(event) => onDateChange('endDate', event.target.value)}
+                  />
+                </Stack>
+                <FormControl fullWidth>
+                  <InputLabel id="trip-currency-label">主要顯示貨幣</InputLabel>
+                  <Select
+                    labelId="trip-currency-label"
+                    label="主要顯示貨幣"
+                    value={itinerary.currency}
+                    onChange={(event) => handleCurrencyChange(event.target.value)}
+                  >
+                    {supportedCurrencies.map((currency) => {
+                      const info = getCurrencyInfo(currency)
+                      return (
+                        <MenuItem key={currency} value={currency}>
+                          {info.flag} {currency} — {info.name}
+                        </MenuItem>
+                      )
+                    })}
+                  </Select>
+                </FormControl>
+              </Stack>
+            </Card>
 
-            {/* Redesigned Modern Exchange Rate Editor */}
+            {/* 匯率換算設定 */}
             <ExchangeRateEditor
               itinerary={itinerary}
               saving={saving}
@@ -223,42 +232,31 @@ export function TripEditorDialog({
               onRemoveRateCurrency={handleRemoveRateCurrency}
             />
 
-
-            {/* Todo Categories Section */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                border: '1px solid rgba(13, 118, 110, 0.12)',
-                bgcolor: '#ffffff',
-              }}
-            >
-              <Typography
-                variant="subtitle2"
-                sx={{ fontWeight: 800, color: 'text.secondary', mb: 1 }}
-              >
+            {/* 待辦事項預設分類 */}
+            <Card sx={{ p: { xs: 2, sm: 2.5 } }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
                 待辦事項預設分類
               </Typography>
-              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                自訂此旅程新增待辦事項時可選用的分類標籤。
+              </Typography>
+
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: 2 }}>
                 {categories.map((cat) => (
                   <Chip
                     key={cat}
                     label={cat}
+                    color="primary"
+                    variant="outlined"
                     onDelete={categories.length > 1 ? () => handleDeleteCategory(cat) : undefined}
-                    sx={{
-                      fontWeight: 700,
-                      bgcolor: 'rgba(13, 118, 110, 0.08)',
-                      color: '#0d766e',
-                      borderColor: 'rgba(13, 118, 110, 0.2)',
-                    }}
                   />
                 ))}
               </Stack>
+
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <TextField
                   size="small"
-                  placeholder="新增分類標籤…"
+                  placeholder="輸入新分類名稱…"
                   value={newTag}
                   onChange={(e) => setNewTag(e.target.value)}
                   onKeyDown={(e) => {
@@ -273,17 +271,12 @@ export function TripEditorDialog({
                   color="primary"
                   disabled={!newTag.trim()}
                   onClick={handleAddCategory}
-                  sx={{
-                    bgcolor: 'rgba(13, 118, 110, 0.08)',
-                    borderRadius: 2,
-                    '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.16)' },
-                  }}
                   aria-label="新增分類"
                 >
                   <AddRoundedIcon />
                 </IconButton>
               </Stack>
-            </Paper>
+            </Card>
           </Stack>
         ) : null}
       </DialogContent>
@@ -314,3 +307,5 @@ export function TripEditorDialog({
     </Dialog>
   )
 }
+
+

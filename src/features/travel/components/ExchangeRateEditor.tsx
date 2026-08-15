@@ -9,6 +9,7 @@ import {
   Alert,
   Box,
   Button,
+  Card,
   Chip,
   CircularProgress,
   Collapse,
@@ -161,16 +162,7 @@ export function ExchangeRateEditor({
   )
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: { xs: 2, sm: 2.5 },
-        borderRadius: 3.5,
-        border: '1px solid rgba(13, 118, 110, 0.16)',
-        bgcolor: '#ffffff',
-        boxShadow: '0 2px 12px rgba(13, 118, 110, 0.04)',
-      }}
-    >
+    <Card sx={{ p: { xs: 2, sm: 2.5 } }}>
       {/* Header with Title & Auto-fetch Button */}
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -183,21 +175,17 @@ export function ExchangeRateEditor({
       >
         <Box>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#134e4a' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
               匯率換算設定
             </Typography>
             <Chip
               size="small"
+              color="primary"
+              variant="outlined"
               label={`基準：${baseInfo.flag} ${baseCurrency}`}
-              sx={{
-                fontWeight: 700,
-                bgcolor: 'rgba(13, 118, 110, 0.1)',
-                color: '#0d766e',
-                fontSize: '0.75rem',
-              }}
             />
           </Stack>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontSize: '0.825rem' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             請設定「1 單位外幣 = 幾單位主要幣別」。記帳會保留原始金額，費用與總覽於顯示時換算。
           </Typography>
         </Box>
@@ -215,18 +203,7 @@ export function ExchangeRateEditor({
           }
           disabled={saving || isFetchingRates}
           onClick={() => void handleFetchAllLiveRates()}
-          sx={{
-            flexShrink: 0,
-            borderRadius: 2.5,
-            fontWeight: 700,
-            textTransform: 'none',
-            bgcolor: 'rgba(13, 118, 110, 0.04)',
-            borderWidth: '1.5px',
-            '&:hover': {
-              bgcolor: 'rgba(13, 118, 110, 0.08)',
-              borderWidth: '1.5px',
-            },
-          }}
+          sx={{ flexShrink: 0 }}
         >
           {isFetchingRates ? '抓取中…' : '一鍵更新即時匯率'}
         </Button>
@@ -243,17 +220,11 @@ export function ExchangeRateEditor({
               size="small"
               disabled={isFetchingRates}
               onClick={() => void handleFetchAllLiveRates()}
-              sx={{ fontWeight: 700, fontSize: '0.78rem' }}
             >
               一鍵自動補齊
             </Button>
           }
-          sx={{
-            mb: 2,
-            borderRadius: 2.5,
-            fontWeight: 600,
-            fontSize: '0.85rem',
-          }}
+          sx={{ mb: 2 }}
         >
           尚未設定：{missingCurrencies.join('、')} 匯率，請設定以避免總額計算錯誤。
         </Alert>
@@ -261,24 +232,22 @@ export function ExchangeRateEditor({
 
       {/* Base Currency Anchor Card */}
       <Paper
-        elevation={0}
+        variant="outlined"
         sx={{
           p: 1.5,
           mb: 2,
-          borderRadius: 2.5,
-          bgcolor: 'rgba(13, 118, 110, 0.04)',
-          border: '1px dashed rgba(13, 118, 110, 0.3)',
+          bgcolor: 'action.hover',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}
       >
         <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-          <Typography sx={{ fontSize: '1.4rem', lineHeight: 1 }}>
+          <Typography sx={{ fontSize: '1.4rem' }}>
             {baseInfo.flag}
           </Typography>
           <Box>
-            <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f766e' }}>
+            <Typography variant="body2" sx={{ fontWeight: 800 }}>
               {baseInfo.code} · {baseInfo.name}
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -286,16 +255,7 @@ export function ExchangeRateEditor({
             </Typography>
           </Box>
         </Stack>
-        <Chip
-          size="small"
-          label="基準固定"
-          sx={{
-            fontWeight: 700,
-            bgcolor: 'rgba(13, 118, 110, 0.15)',
-            color: '#0f766e',
-            fontSize: '0.72rem',
-          }}
-        />
+        <Chip size="small" label="基準固定" color="primary" />
       </Paper>
 
       {/* Foreign Currencies List */}
@@ -315,20 +275,11 @@ export function ExchangeRateEditor({
           return (
             <Paper
               key={currency}
-              elevation={0}
+              variant="outlined"
               sx={{
                 p: { xs: 1.5, sm: 2 },
-                borderRadius: 3,
-                border: isMissing
-                  ? '1.5px solid #f59e0b'
-                  : '1px solid rgba(226, 232, 240, 0.9)',
-                bgcolor: isMissing ? '#fffbeb' : '#fafafa',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  borderColor: isMissing ? '#f59e0b' : 'rgba(13, 118, 110, 0.3)',
-                  bgcolor: isMissing ? '#fffbeb' : '#ffffff',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
-                },
+                borderColor: isMissing ? 'warning.main' : undefined,
+                bgcolor: isMissing ? 'warning.lighter' : undefined,
               }}
             >
               {/* Row 1: Currency info + Status badges + Actions */}
@@ -342,13 +293,13 @@ export function ExchangeRateEditor({
                 }}
               >
                 <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <Typography sx={{ fontSize: '1.3rem', lineHeight: 1 }}>
+                  <Typography sx={{ fontSize: '1.3rem' }}>
                     {info.flag}
                   </Typography>
-                  <Typography sx={{ fontWeight: 800, fontSize: '0.95rem' }}>
+                  <Typography sx={{ fontWeight: 800 }}>
                     {currency}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                  <Typography variant="caption" color="text.secondary">
                     {info.name}
                   </Typography>
                   {isMissing ? (
@@ -356,7 +307,6 @@ export function ExchangeRateEditor({
                       size="small"
                       label="記帳使用中，需設定"
                       color="warning"
-                      sx={{ height: 22, fontSize: '0.7rem', fontWeight: 700 }}
                     />
                   ) : null}
                 </Stack>
@@ -366,24 +316,15 @@ export function ExchangeRateEditor({
                     <span>
                       <IconButton
                         size="small"
+                        color="primary"
                         disabled={saving || isSingleFetching}
                         onClick={() => void handleFetchSingleRate(currency)}
-                        sx={{
-                          color: '#0d766e',
-                          bgcolor: 'rgba(13, 118, 110, 0.06)',
-                          width: 32,
-                          height: 32,
-                          minWidth: 32,
-                          minHeight: 32,
-                          borderRadius: 2,
-                          '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.14)' },
-                        }}
                         aria-label={`更新 ${currency} 即時匯率`}
                       >
                         {isSingleFetching ? (
                           <CircularProgress size={14} color="inherit" />
                         ) : (
-                          <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+                          <RefreshRoundedIcon fontSize="small" />
                         )}
                       </IconButton>
                     </span>
@@ -392,20 +333,11 @@ export function ExchangeRateEditor({
                   <Tooltip title="反向換算小幫手 (以主要幣別輸入)">
                     <IconButton
                       size="small"
+                      color="primary"
                       onClick={() => openInverseCalculator(currency)}
-                      sx={{
-                        color: '#6366f1',
-                        bgcolor: 'rgba(99, 102, 241, 0.08)',
-                        width: 32,
-                        height: 32,
-                        minWidth: 32,
-                        minHeight: 32,
-                        borderRadius: 2,
-                        '&:hover': { bgcolor: 'rgba(99, 102, 241, 0.16)' },
-                      }}
                       aria-label={`反向計算 ${currency} 匯率`}
                     >
-                      <SwapHorizRoundedIcon sx={{ fontSize: 18 }} />
+                      <SwapHorizRoundedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
 
@@ -415,17 +347,8 @@ export function ExchangeRateEditor({
                       size="small"
                       aria-label={`移除 ${currency} 匯率`}
                       onClick={() => onRemoveRateCurrency(currency)}
-                      sx={{
-                        width: 32,
-                        height: 32,
-                        minWidth: 32,
-                        minHeight: 32,
-                        borderRadius: 2,
-                        bgcolor: 'rgba(239, 68, 68, 0.06)',
-                        '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.12)' },
-                      }}
                     >
-                      <DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} />
+                      <DeleteOutlineRoundedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 </Stack>
@@ -446,14 +369,14 @@ export function ExchangeRateEditor({
                       min: 0.000001,
                       step: 'any',
                       inputMode: 'decimal',
-                      style: { fontWeight: 700, fontSize: '0.95rem' },
                     },
                     input: {
                       startAdornment: (
                         <InputAdornment position="start">
                           <Typography
                             variant="body2"
-                            sx={{ fontWeight: 800, color: '#0d766e', mr: 0.5 }}
+                            color="primary.main"
+                            sx={{ fontWeight: 800, mr: 0.5 }}
                           >
                             1 {currency} =
                           </Typography>
@@ -463,7 +386,8 @@ export function ExchangeRateEditor({
                         <InputAdornment position="end">
                           <Typography
                             variant="body2"
-                            sx={{ fontWeight: 700, color: 'text.secondary' }}
+                            color="text.secondary"
+                            sx={{ fontWeight: 700 }}
                           >
                             {baseCurrency}
                           </Typography>
@@ -484,28 +408,19 @@ export function ExchangeRateEditor({
                     justifyContent: 'space-between',
                     alignItems: { xs: 'flex-start', sm: 'center' },
                     pt: 0.5,
-                    borderTop: '1px dashed rgba(0, 0, 0, 0.06)',
                   }}
                 >
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                  <Typography variant="caption" color="text.secondary">
                     💡 反向對照：1 {baseCurrency} ≈ <strong>{inverseRate}</strong> {currency}
                   </Typography>
                   <Chip
                     size="small"
                     variant="outlined"
                     label={`試算：${info.symbol} ${sampleForeignAmount.toLocaleString()} ≈ ${baseInfo.symbol} ${sampleConverted?.toLocaleString()} ${baseCurrency}`}
-                    sx={{
-                      height: 22,
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      borderColor: 'rgba(13, 118, 110, 0.25)',
-                      color: '#0f766e',
-                      bgcolor: '#ffffff',
-                    }}
                   />
                 </Stack>
               ) : (
-                <Typography variant="caption" color="error" sx={{ fontWeight: 600 }}>
+                <Typography variant="caption" color="error">
                   ⚠️ 尚未輸入有效匯率，請輸入數值或點擊「抓取即時匯率」
                 </Typography>
               )}
@@ -516,35 +431,27 @@ export function ExchangeRateEditor({
 
       {/* Quick Add Popular Currencies Chips */}
       {quickAddCandidates.length > 0 ? (
-        <Box sx={{ mt: 2.5, pt: 2, borderTop: '1px solid rgba(0, 0, 0, 0.06)' }}>
+        <Box sx={{ mt: 2.5, pt: 2, borderTop: 1, borderColor: 'divider' }}>
           <Typography
             variant="caption"
-            sx={{ fontWeight: 800, color: 'text.secondary', display: 'block', mb: 1 }}
+            color="text.secondary"
+            sx={{ fontWeight: 700, display: 'block', mb: 1 }}
           >
             常用旅遊幣別快速新增（點擊直接加入並填入即時匯率）：
           </Typography>
-          <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', gap: 0.75 }}>
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
             {quickAddCandidates.map((curr) => {
               const info = getCurrencyInfo(curr)
               return (
                 <Chip
                   key={curr}
-                  icon={<AddRoundedIcon sx={{ fontSize: 16 }} />}
+                  icon={<AddRoundedIcon fontSize="small" />}
                   label={`${info.flag} ${curr} ${info.name}`}
                   clickable
+                  variant="outlined"
+                  color="primary"
                   disabled={saving}
                   onClick={() => void handleQuickAddCurrency(curr)}
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.78rem',
-                    bgcolor: 'rgba(13, 118, 110, 0.06)',
-                    borderColor: 'rgba(13, 118, 110, 0.2)',
-                    color: '#0d766e',
-                    '&:hover': {
-                      bgcolor: 'rgba(13, 118, 110, 0.14)',
-                      borderColor: '#0d766e',
-                    },
-                  }}
                 />
               )
             })}
@@ -596,13 +503,7 @@ export function ExchangeRateEditor({
               startIcon={<AddRoundedIcon />}
               disabled={saving || !newRateCurrency}
               onClick={() => void handleQuickAddCurrency(newRateCurrency)}
-              sx={{
-                minWidth: { sm: 120 },
-                minHeight: 40,
-                flexShrink: 0,
-                borderRadius: 2,
-                fontWeight: 700,
-              }}
+              sx={{ minWidth: { sm: 120 } }}
             >
               新增幣別
             </Button>
@@ -644,7 +545,7 @@ export function ExchangeRateEditor({
             onChange={(e) => setInverseInputValue(e.target.value)}
           />
           {Number(inverseInputValue) > 0 ? (
-            <Typography variant="caption" sx={{ mt: 1.5, display: 'block', color: '#0d766e', fontWeight: 700 }}>
+            <Typography variant="caption" color="primary" sx={{ mt: 1.5, display: 'block', fontWeight: 700 }}>
               💡 自動換算：1 {inverseModalCurrency} ≈ {Number((1 / Number(inverseInputValue)).toPrecision(6))} {baseCurrency}
             </Typography>
           ) : null}
@@ -669,6 +570,6 @@ export function ExchangeRateEditor({
         message={feedbackMessage}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
-    </Paper>
+    </Card>
   )
 }

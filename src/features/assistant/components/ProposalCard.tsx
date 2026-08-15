@@ -5,9 +5,9 @@ import {
   Avatar,
   Box,
   Button,
+  Card,
   Chip,
   CircularProgress,
-  Paper,
   Stack,
   Typography,
 } from '@mui/material'
@@ -42,7 +42,6 @@ export function ProposalCard({
             icon={<CircularProgress size={12} color="inherit" />}
             label="正在套用…"
             color="primary"
-            sx={{ fontWeight: 800 }}
           />
         )
       case 'applied':
@@ -51,11 +50,7 @@ export function ProposalCard({
             size="small"
             icon={<CheckCircleRoundedIcon fontSize="small" />}
             label="已成功套用"
-            sx={{
-              bgcolor: 'rgba(16, 185, 129, 0.12)',
-              color: '#059669',
-              fontWeight: 800,
-            }}
+            color="success"
           />
         )
       case 'expired':
@@ -63,7 +58,6 @@ export function ProposalCard({
           <Chip
             size="small"
             label="行程已異動，提案已過期"
-            sx={{ bgcolor: 'rgba(0,0,0,0.06)', color: 'text.secondary', fontWeight: 700 }}
           />
         )
       case 'pending':
@@ -71,11 +65,7 @@ export function ProposalCard({
           <Chip
             size="small"
             label="待確認"
-            sx={{
-              bgcolor: 'rgba(238, 124, 69, 0.12)',
-              color: '#d95a1c',
-              fontWeight: 800,
-            }}
+            color="warning"
           />
         )
       default:
@@ -83,7 +73,6 @@ export function ProposalCard({
           <Chip
             size="small"
             label="未套用"
-            sx={{ bgcolor: 'rgba(0,0,0,0.06)', color: 'text.secondary', fontWeight: 700 }}
           />
         )
     }
@@ -103,22 +92,13 @@ export function ProposalCard({
       : '行程修改建議'
 
   return (
-    <Paper
-      elevation={0}
+    <Card
       sx={{
         alignSelf: 'flex-start',
         width: 'min(100%, 680px)',
         p: { xs: 1.75, sm: 2.25 },
-        borderRadius: 3.5,
-        border:
-          proposal.status === 'pending'
-            ? '1.5px solid #0d766e'
-            : '1px solid rgba(13, 118, 110, 0.12)',
-        bgcolor: '#ffffff',
-        boxShadow:
-          proposal.status === 'pending'
-            ? '0 6px 24px rgba(13, 118, 110, 0.1)'
-            : '0 2px 10px rgba(0, 0, 0, 0.04)',
+        borderWidth: proposal.status === 'pending' ? '1.5px' : '1px',
+        borderColor: proposal.status === 'pending' ? 'primary.main' : undefined,
       }}
     >
       <Stack
@@ -131,12 +111,13 @@ export function ProposalCard({
             sx={{
               width: 26,
               height: 26,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+              bgcolor: 'primary.main',
+              color: 'common.white',
             }}
           >
-            <AutoAwesomeRoundedIcon sx={{ fontSize: 14, color: '#ffffff' }} />
+            <AutoAwesomeRoundedIcon sx={{ fontSize: 14 }} />
           </Avatar>
-          <Typography sx={{ fontWeight: 900, color: '#0d766e', fontSize: '0.96rem' }}>
+          <Typography color="primary.main" sx={{ fontWeight: 900 }}>
             {proposalTitle}
           </Typography>
         </Stack>
@@ -147,9 +128,10 @@ export function ProposalCard({
         sx={{
           mt: 1.5,
           p: 1.5,
-          borderRadius: 2.5,
-          bgcolor: 'rgba(13, 118, 110, 0.04)',
-          borderLeft: '3px solid #0d766e',
+          borderRadius: 2,
+          bgcolor: 'action.hover',
+          borderLeft: '3px solid',
+          borderColor: 'primary.main',
         }}
       >
         <Typography variant="body2" sx={{ lineHeight: 1.6, color: 'text.primary' }}>
@@ -163,7 +145,7 @@ export function ProposalCard({
           aria-expanded={changesExpanded}
           aria-controls={changesId}
           onClick={() => setChangesExpanded((expanded) => !expanded)}
-          sx={{ mt: 1, px: 1, borderRadius: 2, fontWeight: 700 }}
+          sx={{ mt: 1 }}
         >
           {changesExpanded ? '收合變更內容' : '查看變更內容'}
         </Button>
@@ -186,7 +168,6 @@ export function ProposalCard({
             variant="outlined"
             disabled={busy || !online}
             onClick={() => onDecision(proposal, false)}
-            sx={{ borderRadius: 2.5, px: 2, py: 1 }}
           >
             不套用，繼續討論
           </Button>
@@ -195,21 +176,11 @@ export function ProposalCard({
             disabled={busy || !online}
             onClick={() => onDecision(proposal, true)}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <CheckCircleRoundedIcon />}
-            sx={{
-              borderRadius: 2.5,
-              px: 2.5,
-              py: 1,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-              boxShadow: '0 4px 14px rgba(13, 118, 110, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(135deg, #075c57 0%, #0d766e 100%)',
-              },
-            }}
           >
             確認儲存並套用
           </Button>
         </Stack>
       ) : null}
-    </Paper>
+    </Card>
   )
 }

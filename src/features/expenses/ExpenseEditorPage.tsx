@@ -92,7 +92,6 @@ export function ExpenseEditorPage({
           variant="contained"
           disabled={isBusy || !draft.itineraryId || !draft.title.trim()}
           onClick={() => void onSave()}
-          sx={{ minHeight: 48, borderRadius: 3, fontWeight: 700 }}
         >
           {isSaving ? <CircularProgress size={24} color="inherit" /> : t('editor.save')}
         </Button>
