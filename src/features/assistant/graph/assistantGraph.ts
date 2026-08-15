@@ -12,6 +12,7 @@ import type {
   AssistantProgressListener,
   AssistantProgressPhase,
   AssistantTurnRequest,
+  AssistantUserDecision,
 } from '../types'
 import { ASSISTANT_GRAPH_VERSION } from '../types'
 import {
@@ -20,9 +21,11 @@ import {
   summarizeWithGemini,
   validateAssistantOperations,
 } from '../api'
+import { ToolNode } from '@langchain/langgraph/prebuilt'
+import { langchainAssistantTools } from '../tools'
 import { assistantGraphState } from './graphState'
 import { routeAfterRespond, routeAfterTools } from './routing'
-import { createExecuteToolsNode } from './nodes/executeToolsNode'
+import { createApplyProposalNode } from './nodes/applyProposalNode'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
 import { createPrepareContextNode } from './nodes/prepareContextNode'
 import { createRespondNode } from './nodes/respondNode'
@@ -73,6 +76,8 @@ export const createAssistantGraph = (
     if (threadId && phase) progressListeners.get(threadId)?.(phase)
   }
 
+  const toolNode = new ToolNode(langchainAssistantTools, { handleToolErrors: false })
+
   const workflow = new StateGraph(assistantGraphState)
     .addNode('prepare_context', createPrepareContextNode({
       messageThreshold: msgLimit,
@@ -83,11 +88,12 @@ export const createAssistantGraph = (
       recentAssistantMessages,
     }))
     .addNode('respond', createRespondNode({ emitProgress }))
-    .addNode('execute_tools', createExecuteToolsNode())
-    .addNode('finalize_response', createFinalizeResponseNode({
-      savePending: dependencies.proposals.savePending,
+    .addNode('execute_tools', (state, config) => toolNode.invoke({ ...state, messages: state.modelMessages }, config))
+    .addNode('apply_proposal', createApplyProposalNode({
+      proposals: dependencies.proposals,
       emitProgress,
     }))
+    .addNode('finalize_response', createFinalizeResponseNode({ emitProgress }))
     .addNode('tool_limit', createToolLimitNode(maxToolRounds))
     .addEdge(START, 'prepare_context')
     .addEdge('prepare_context', 'respond')
@@ -98,13 +104,24 @@ export const createAssistantGraph = (
     })
     .addConditionalEdges('execute_tools', (state) => routeAfterTools(state, maxToolRounds), {
       respond: 'respond',
-      finalize_response: 'finalize_response',
+      apply_proposal: 'apply_proposal',
       tool_limit: 'tool_limit',
     })
+    .addEdge('apply_proposal', 'respond')
     .addEdge('finalize_response', END)
-    .compile({ checkpointer })
+    .compile({
+      checkpointer,
+      interruptBefore: ['apply_proposal'],
+    })
 
-  const config = (threadId: string) => ({ configurable: { thread_id: threadId }, durability: 'exit' as const })
+  const config = (threadId: string, req?: AssistantTurnRequest | null) => ({
+    configurable: {
+      thread_id: threadId,
+      request: req,
+      savePending: dependencies.proposals.savePending,
+    },
+    durability: 'exit' as const,
+  })
   const inFlightTurns = new Map<string, Promise<AssistantGraphState>>()
 
   const getState = async (threadId: string): Promise<AssistantGraphState | null> => {
@@ -113,7 +130,7 @@ export const createAssistantGraph = (
     const values = snapshot.values as AssistantGraphState
     return {
       ...values,
-      pendingProposal: values.assistantMessage?.proposal ?? null,
+      pendingProposal: values.pendingProposal ?? values.assistantMessage?.proposal ?? null,
     }
   }
 
@@ -131,7 +148,7 @@ export const createAssistantGraph = (
 
         // Return cached assistant message if this turn was already completed
         const completed = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'assistant')
-        if (completed && previous) return { ...previous, assistantMessage: completed }
+        if (completed && previous && !previous.pendingProposal) return { ...previous, assistantMessage: completed }
 
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??
           request.rehydratedMessages?.find((m) => m.turnId === request.turnId && m.role === 'user')
@@ -153,15 +170,16 @@ export const createAssistantGraph = (
           messages,
           request,
           assistantMessage: null,
+          pendingProposal: null,
+          userDecision: null,
           modelMessages: [],
           toolRound: 0,
-          toolCallKind: null,
         }, config(request.threadId))
 
-        const stateOutput = output as AssistantGraphState
+        const stateOutput = output as unknown as AssistantGraphState
         return {
           ...stateOutput,
-          pendingProposal: stateOutput.assistantMessage?.proposal ?? null,
+          pendingProposal: stateOutput.pendingProposal ?? stateOutput.assistantMessage?.proposal ?? null,
         }
       } finally {
         progressListeners.delete(request.threadId)
@@ -176,8 +194,40 @@ export const createAssistantGraph = (
     }
   }
 
+  const resumeTurn = async (
+    threadId: string,
+    decision: AssistantUserDecision,
+    onProgress?: AssistantProgressListener,
+  ): Promise<AssistantGraphState> => {
+    const active = inFlightTurns.get(threadId)
+    if (active) return active
+
+    const run = (async () => {
+      if (onProgress) progressListeners.set(threadId, onProgress)
+      try {
+        await workflow.updateState(config(threadId), { userDecision: decision })
+        const output = await workflow.invoke(null, config(threadId))
+        const stateOutput = output as unknown as AssistantGraphState
+        return {
+          ...stateOutput,
+          pendingProposal: stateOutput.pendingProposal ?? stateOutput.assistantMessage?.proposal ?? null,
+        }
+      } finally {
+        progressListeners.delete(threadId)
+      }
+    })()
+
+    inFlightTurns.set(threadId, run)
+    try {
+      return await run
+    } finally {
+      if (inFlightTurns.get(threadId) === run) inFlightTurns.delete(threadId)
+    }
+  }
+
   return {
     sendTurn,
+    resumeTurn,
     async summarizeThread(threadId) {
       const prev = await getState(threadId)
       if (!prev) throw new Error('Assistant thread has no checkpoint to summarize')

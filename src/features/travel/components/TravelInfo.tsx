@@ -170,36 +170,30 @@ export function TravelInfoCard({
   const canNavigate = Boolean(destinationPoint)
   return (
     <Paper
-      elevation={0}
+      variant="outlined"
       sx={{
         display: 'block',
         width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
         ml: { xs: '46px', sm: '60px' },
         mb: 1.25,
-        p: 0.85,
-        px: 1.25,
-        textAlign: 'left',
-        borderRadius: 2.5,
-        border: '1px dashed rgba(13, 118, 110, 0.22)',
-        bgcolor: 'rgba(13, 118, 110, 0.03)',
-        color: 'inherit',
-        transition: 'all 160ms ease',
+        p: 1,
+        borderStyle: 'dashed',
+        bgcolor: 'action.hover',
         '&:hover': {
-          bgcolor: 'rgba(13, 118, 110, 0.06)',
-          borderColor: 'rgba(13, 118, 110, 0.35)',
+          borderColor: 'primary.main',
         },
       }}
     >
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
         <Box
           sx={{
-            color: '#0d766e',
+            color: 'primary.main',
             display: 'grid',
             placeItems: 'center',
             width: 28,
             height: 28,
             borderRadius: '50%',
-            bgcolor: 'rgba(13, 118, 110, 0.08)',
+            bgcolor: 'action.selected',
             flexShrink: 0,
             '& svg': { fontSize: 16 },
           }}
@@ -210,7 +204,7 @@ export function TravelInfoCard({
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', fontSize: '0.72rem', fontWeight: 700 }}
+            sx={{ display: 'block', fontWeight: 700 }}
           >
             {transportLabel(attraction.transportMode)}
           </Typography>
@@ -218,8 +212,7 @@ export function TravelInfoCard({
             variant="body2"
             sx={{
               fontWeight: 750,
-              fontSize: '0.84rem',
-              color: attraction.travelTime !== null ? '#0d766e' : 'text.secondary',
+              color: attraction.travelTime !== null ? 'primary.main' : 'text.secondary',
               overflowWrap: 'anywhere',
             }}
           >
@@ -240,10 +233,10 @@ export function TravelInfoCard({
               target="_blank"
               rel="noreferrer"
               color="primary"
+              size="small"
               aria-label="在 Google 地圖開啟導航"
-              sx={{ width: 34, height: 34, bgcolor: 'rgba(13, 118, 110, 0.06)' }}
             >
-              <NavigationRoundedIcon sx={{ fontSize: 16 }} />
+              <NavigationRoundedIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         ) : null}
@@ -251,9 +244,8 @@ export function TravelInfoCard({
           size="small"
           aria-label="編輯交通方式"
           onClick={onEdit}
-          sx={{ width: 34, height: 34 }}
         >
-          <EditRoundedIcon sx={{ fontSize: 16 }} />
+          <EditRoundedIcon fontSize="small" />
         </IconButton>
       </Stack>
     </Paper>

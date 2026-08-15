@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Attraction, Itinerary, TripDay } from '../../types/database'
-import { daysForRange, recalculateDayTimes } from './travelWorkspaceUtils'
+import type { Attraction, Expense, Itinerary, TripDay } from '../../types/database'
+import { convertExpenseAmount, daysForRange, recalculateDayTimes } from './travelWorkspaceUtils'
 
 const itinerary = (days: TripDay[] = []): Itinerary => ({
   id: 'trip-1',
@@ -95,5 +95,30 @@ describe('recalculateDayTimes', () => {
     ])
     expect(first.startTime).toBeNull()
     expect(sourceDay.attractions).toEqual([])
+  })
+})
+
+describe('convertExpenseAmount', () => {
+  it('converts only for display and keeps the original expense amount untouched', () => {
+    const expense: Expense = {
+      id: 'expense-1',
+      itineraryId: 'trip-1',
+      attractionId: null,
+      title: 'Lunch',
+      amount: 1000,
+      date: '2026-08-12',
+      currency: 'JPY',
+      note: '',
+      imageUrl: null,
+      receiptImagePaths: [],
+      receiptSourceLocale: null,
+      receiptTargetLocale: null,
+      receiptScannedAt: null,
+      items: [],
+    }
+
+    expect(convertExpenseAmount(expense, 'TWD', { TWD: 1, JPY: 0.22 })).toBe(220)
+    expect(expense.amount).toBe(1000)
+    expect(expense.currency).toBe('JPY')
   })
 })

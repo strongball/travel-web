@@ -33,7 +33,6 @@ export function createPrepareContextNode(options: PrepareContextNodeOptions) {
       return {
         modelMessages: [],
         toolRound: 0,
-        toolCallKind: null,
       }
     }
 
@@ -48,7 +47,6 @@ export function createPrepareContextNode(options: PrepareContextNodeOptions) {
       ],
       modelMessages: [],
       toolRound: 0,
-      toolCallKind: null,
     }
   }
 }

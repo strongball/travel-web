@@ -1,4 +1,5 @@
 import type { Itinerary } from '../../types/database'
+import { normalizeExchangeRates } from '../currencies'
 import { supabase } from '../supabase'
 import { mapItinerary, type DatabaseRow } from './rowMappers'
 
@@ -25,7 +26,7 @@ export const saveItinerary = async (itinerary: Itinerary): Promise<void> => {
     start_date: startDate,
     end_date: endDate,
     currency: itinerary.currency,
-    exchange_rates: itinerary.exchangeRates ?? { [itinerary.currency]: 1 },
+    exchange_rates: normalizeExchangeRates(itinerary.currency, itinerary.exchangeRates),
     todo_categories: itinerary.todoCategories ?? [],
   })
   if (error) throw error

@@ -9,6 +9,7 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import {
   Box,
   Button,
+  Card,
   Checkbox,
   Chip,
   CircularProgress,
@@ -22,7 +23,6 @@ import {
   InputLabel,
   Menu,
   MenuItem,
-  Paper,
   Select,
   Stack,
   TextField,
@@ -173,16 +173,7 @@ export function TodoSection({
   return (
     <Stack spacing={2.5}>
       {/* Category Filter Chips & Management Bar */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 1.5, sm: 2 },
-          bgcolor: '#ffffff',
-          borderRadius: 3.5,
-          border: '1px solid rgba(13, 118, 110, 0.12)',
-          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.03)',
-        }}
-      >
+      <Card sx={{ p: { xs: 1.5, sm: 2 } }}>
         <Stack
           direction="row"
           spacing={1}
@@ -201,8 +192,6 @@ export function TodoSection({
               overflowX: 'auto',
               maxWidth: '100%',
               pb: { xs: 0.5, sm: 0 },
-              '&::-webkit-scrollbar': { height: 4 },
-              '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(13, 118, 110, 0.15)', borderRadius: 2 },
             }}
           >
             <Chip
@@ -210,12 +199,7 @@ export function TodoSection({
               onClick={() => setSelectedFilterCategory('all')}
               variant={selectedFilterCategory === 'all' ? 'filled' : 'outlined'}
               color={selectedFilterCategory === 'all' ? 'primary' : 'default'}
-              sx={{
-                fontWeight: 700,
-                fontSize: '0.85rem',
-                cursor: 'pointer',
-                borderColor: 'rgba(13, 118, 110, 0.2)',
-              }}
+              clickable
             />
             {categoryOrder.map((cat) => {
               const catItems = grouped[cat] ?? []
@@ -229,15 +213,7 @@ export function TodoSection({
                   onClick={() => setSelectedFilterCategory(isSelected ? 'all' : cat)}
                   variant={isSelected ? 'filled' : 'outlined'}
                   color={isSelected ? 'primary' : 'default'}
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.85rem',
-                    cursor: 'pointer',
-                    borderColor: 'rgba(13, 118, 110, 0.2)',
-                    ...(isSelected && {
-                      background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-                    }),
-                  }}
+                  clickable
                 />
               )
             })}
@@ -249,37 +225,18 @@ export function TodoSection({
               variant="outlined"
               startIcon={<TuneRoundedIcon />}
               onClick={() => setManagerOpen(true)}
-              sx={{
-                borderRadius: 2,
-                minHeight: 34,
-                borderColor: 'rgba(13, 118, 110, 0.25)',
-                color: 'primary.main',
-                fontSize: '0.82rem',
-                fontWeight: 700,
-                '&:hover': {
-                  borderColor: 'primary.main',
-                  bgcolor: 'rgba(13, 118, 110, 0.04)',
-                },
-              }}
             >
               管理分類
             </Button>
           </Stack>
         </Stack>
-      </Paper>
+      </Card>
 
       {/* Add Todo Form */}
-      <Paper
+      <Card
         component="form"
         onSubmit={onSubmit}
-        elevation={0}
-        sx={{
-          border: '1px solid rgba(13, 118, 110, 0.12)',
-          borderRadius: 3.5,
-          p: { xs: 2, sm: 2.5 },
-          bgcolor: '#ffffff',
-          boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)',
-        }}
+        sx={{ p: { xs: 2, sm: 2.5 } }}
       >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
           <TextField
@@ -317,7 +274,6 @@ export function TodoSection({
                 sx={{
                   color: 'primary.main',
                   fontWeight: 700,
-                  fontSize: '0.88rem',
                   display: 'flex',
                   alignItems: 'center',
                   gap: 0.5,
@@ -339,32 +295,20 @@ export function TodoSection({
                 <AddRoundedIcon />
               )
             }
-            sx={{
-              borderRadius: 2.5,
-              px: 3,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-            }}
           >
             {saving ? '新增中…' : '新增'}
           </Button>
         </Stack>
-      </Paper>
+      </Card>
 
       {/* Todo Groups */}
       {displayedGroups.map(([group, items]) => {
         const completedInGroup = items.filter((i) => i.isCompleted).length
 
         return (
-          <Paper
+          <Card
             key={group}
-            elevation={0}
-            sx={{
-              border: '1px solid rgba(13, 118, 110, 0.12)',
-              borderRadius: 3.5,
-              overflow: 'hidden',
-              bgcolor: '#ffffff',
-              boxShadow: '0 4px 16px rgba(15, 23, 42, 0.03)',
-            }}
+            sx={{ overflow: 'hidden' }}
           >
             <Stack
               direction="row"
@@ -375,30 +319,19 @@ export function TodoSection({
                 pb: 1,
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                bgcolor: 'rgba(13, 118, 110, 0.02)',
-                borderBottom: '1px solid rgba(13, 118, 110, 0.06)',
+                bgcolor: 'action.hover',
+                borderBottom: 1,
+                borderColor: 'divider',
               }}
             >
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <Typography sx={{ fontWeight: 900, fontSize: '0.98rem' }}>
+                <Typography sx={{ fontWeight: 900 }}>
                   {group}
                 </Typography>
                 <Chip
                   size="small"
                   label={`${completedInGroup}/${items.length}`}
-                  sx={{
-                    height: 22,
-                    fontSize: '0.75rem',
-                    fontWeight: 800,
-                    bgcolor:
-                      items.length > 0 && completedInGroup === items.length
-                        ? 'rgba(13, 118, 110, 0.15)'
-                        : 'rgba(0, 0, 0, 0.06)',
-                    color:
-                      items.length > 0 && completedInGroup === items.length
-                        ? '#0d766e'
-                        : 'text.secondary',
-                  }}
+                  color={items.length > 0 && completedInGroup === items.length ? 'primary' : 'default'}
                 />
               </Stack>
 
@@ -406,8 +339,8 @@ export function TodoSection({
                 <Tooltip title="新增事項至此分類">
                   <IconButton
                     size="small"
+                    color="primary"
                     onClick={() => handleAddTodoToGroup(group)}
-                    sx={{ width: 32, height: 32, color: 'primary.main' }}
                     aria-label={`新增事項至 ${group}`}
                   >
                     <AddRoundedIcon fontSize="small" />
@@ -416,7 +349,6 @@ export function TodoSection({
                 <IconButton
                   size="small"
                   onClick={(e) => handleOpenGroupMenu(e, group)}
-                  sx={{ width: 32, height: 32 }}
                   aria-label={`分類選單 ${group}`}
                 >
                   <MoreVertRoundedIcon fontSize="small" />
@@ -425,7 +357,7 @@ export function TodoSection({
             </Stack>
 
             {items.length > 0 ? (
-              <Stack divider={<Divider sx={{ borderColor: 'rgba(13, 118, 110, 0.06)' }} />}>
+              <Stack divider={<Divider />}>
                 {items.map((todo) => (
                   <Stack
                     key={todo.id}
@@ -435,8 +367,7 @@ export function TodoSection({
                       alignItems: 'center',
                       px: 1.5,
                       py: 0.75,
-                      transition: 'background-color 150ms ease',
-                      '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.03)' },
+                      '&:hover': { bgcolor: 'action.hover' },
                     }}
                   >
                     <Checkbox
@@ -451,7 +382,6 @@ export function TodoSection({
                         flex: 1,
                         textDecoration: todo.isCompleted ? 'line-through' : 'none',
                         color: todo.isCompleted ? 'text.secondary' : 'text.primary',
-                        fontSize: '0.92rem',
                         userSelect: 'none',
                       }}
                     >
@@ -463,7 +393,6 @@ export function TodoSection({
                           size="small"
                           aria-label={`編輯 ${todo.title}`}
                           onClick={() => setEditingTodo(todo)}
-                          sx={{ width: 34, height: 34, color: 'text.secondary' }}
                         >
                           <EditOutlinedIcon fontSize="small" />
                         </IconButton>
@@ -475,7 +404,6 @@ export function TodoSection({
                         color="error"
                         aria-label={`刪除 ${todo.title}`}
                         onClick={() => onDelete(todo)}
-                        sx={{ width: 34, height: 34 }}
                       >
                         <DeleteOutlineRoundedIcon fontSize="small" />
                       </IconButton>
@@ -490,26 +418,17 @@ export function TodoSection({
                 </Typography>
               </Box>
             )}
-          </Paper>
+          </Card>
         )
       })}
 
       {todos.length === 0 ? (
-        <Paper
-          elevation={0}
-          sx={{
-            border: '1px solid rgba(13, 118, 110, 0.12)',
-            borderRadius: 3.5,
-            p: 4,
-            textAlign: 'center',
-            bgcolor: '#ffffff',
-          }}
-        >
+        <Card sx={{ p: 4, textAlign: 'center' }}>
           <TaskAltRoundedIcon color="disabled" sx={{ fontSize: 44, opacity: 0.7 }} />
           <Typography color="text.secondary" sx={{ mt: 1, fontWeight: 650 }}>
             還沒有待辦事項，輸入上方表單建立清單。
           </Typography>
-        </Paper>
+        </Card>
       ) : null}
 
       {/* Group Action Menu */}

@@ -151,33 +151,22 @@ export function ScheduleSection({
       </Box>
 
       {/* Active Day Card & Timeline */}
-      <Paper
-        elevation={0}
-        sx={{
-          border: '1px solid rgba(13, 118, 110, 0.12)',
-          borderRadius: 3.5,
-          p: { xs: 1.5, sm: 2.25 },
-          bgcolor: '#ffffff',
-          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.04)',
-        }}
-      >
+      <Card sx={{ p: { xs: 1.5, sm: 2.25 } }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
           <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0, flex: 1 }}>
             <Avatar
               sx={{
-                background: 'linear-gradient(135deg, #ee7c45 0%, #f97316 100%)',
-                color: '#ffffff',
+                bgcolor: 'secondary.main',
+                color: 'common.white',
                 width: 38,
                 height: 38,
                 fontWeight: 900,
-                fontSize: '1rem',
-                boxShadow: '0 3px 10px rgba(238, 124, 69, 0.25)',
               }}
             >
               {activeDayIndex + 1}
             </Avatar>
             <Box sx={{ minWidth: 0 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 900, fontSize: '1.05rem', letterSpacing: '-0.02em' }} noWrap>
+              <Typography variant="subtitle1" sx={{ fontWeight: 900 }} noWrap>
                 {formatDate(activeDay.date)}
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
@@ -188,82 +177,49 @@ export function ScheduleSection({
           <Stack direction="row" spacing={0.75} sx={{ flexShrink: 0 }}>
             <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
               <IconButton
-                color="primary"
-                aria-label="查看今日景點地圖"
+                aria-label={`查看 ${formatDate(activeDay.date)} 景點地圖`}
+                disabled={activeDay.attractions.length === 0}
                 onClick={() => setMapOpen(true)}
-                sx={{
-                  width: 40,
-                  height: 40,
-                  bgcolor: 'rgba(13, 118, 110, 0.08)',
-                  borderRadius: 2.5,
-                  '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.16)' },
-                }}
               >
-                <MapRoundedIcon fontSize="small" />
+                <MapRoundedIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title="編排今日景點順序">
-              <IconButton
-                color="primary"
-                aria-label="編排今日景點順序"
-                onClick={() => setSortOpen(true)}
-                sx={{
-                  width: 40,
-                  height: 40,
-                  bgcolor: 'rgba(13, 118, 110, 0.08)',
-                  borderRadius: 2.5,
-                  '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.16)' },
-                }}
-              >
-                <SortRoundedIcon fontSize="small" />
-              </IconButton>
+            <Tooltip title="調整景點順序">
+              <span>
+                <IconButton
+                  aria-label="調整景點順序"
+                  disabled={activeDay.attractions.length < 2}
+                  onClick={() => setSortOpen(true)}
+                >
+                  <SortRoundedIcon />
+                </IconButton>
+              </span>
             </Tooltip>
           </Stack>
         </Stack>
 
-        <Divider sx={{ my: 1.75, borderColor: 'rgba(13, 118, 110, 0.08)' }} />
+        <Divider sx={{ my: 2 }} />
 
         {activeDay.attractions.length === 0 ? (
-          <Box
-            sx={{
-              bgcolor: 'rgba(13, 118, 110, 0.03)',
-              border: '1px dashed rgba(13, 118, 110, 0.2)',
-              borderRadius: 3,
-              py: 4,
-              px: 2,
-              textAlign: 'center',
-            }}
-          >
-            <PlaceRoundedIcon color="disabled" sx={{ fontSize: 36, opacity: 0.6 }} />
-            <Typography color="text.secondary" variant="body2" sx={{ mt: 0.5, fontWeight: 600 }}>
-              這天還沒有安排任何景點
+          <Box sx={{ py: 4, textAlign: 'center' }}>
+            <PlaceRoundedIcon color="disabled" sx={{ fontSize: 44, opacity: 0.6 }} />
+            <Typography color="text.secondary" sx={{ mt: 1 }}>
+              這一天還沒有安排任何景點
             </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => onAddAttraction(activeDay.id)}
-              sx={{ mt: 1.5, borderRadius: 2 }}
-            >
-              新增第一個景點
-            </Button>
           </Box>
         ) : (
           <Stack spacing={1.5}>
             {activeDay.attractions.map((attraction, attractionIndex) => (
-              <Box key={attraction.id} sx={{ borderRadius: 2 }}>
+              <Box key={attraction.id}>
                 {attractionIndex === 0 ? (
                   <Paper
-                    elevation={0}
+                    variant="outlined"
                     sx={{
                       width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
                       ml: { xs: '46px', sm: '60px' },
                       mb: 1.25,
-                      p: 0.75,
-                      px: 1.25,
-                      borderRadius: 2.5,
-                      border: '1px solid rgba(13, 118, 110, 0.18)',
-                      bgcolor: 'rgba(13, 118, 110, 0.06)',
+                      p: 1,
+                      bgcolor: 'action.hover',
                     }}
                   >
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -296,15 +252,7 @@ export function ScheduleSection({
                         value={activeDay.startTime?.slice(11, 16) ?? '09:00'}
                         slotProps={{ htmlInput: { step: 300, 'aria-label': '每日開始時間' } }}
                         onChange={(event) => onStartTimeChange(activeDay.id, event.target.value)}
-                        sx={{
-                          width: { xs: 130, sm: 150 },
-                          '& .MuiOutlinedInput-root': {
-                            bgcolor: '#ffffff',
-                            borderRadius: 2,
-                            height: 34,
-                          },
-                          '& input': { py: 0.4, fontSize: '0.84rem', fontWeight: 800 },
-                        }}
+                        sx={{ width: { xs: 130, sm: 150 } }}
                       />
                     </Stack>
                   </Paper>
@@ -323,7 +271,7 @@ export function ScheduleSection({
                     <Typography
                       variant="caption"
                       color="text.secondary"
-                      sx={{ fontWeight: 750, fontSize: '0.78rem' }}
+                      sx={{ fontWeight: 750 }}
                     >
                       {attraction.startTime
                         ? attraction.startTime.slice(11, 16)
@@ -333,22 +281,18 @@ export function ScheduleSection({
                   <Box
                     sx={{
                       width: 2,
-                      bgcolor: 'rgba(13, 118, 110, 0.25)',
-                      borderRadius: 2,
+                      bgcolor: 'primary.main',
+                      opacity: 0.3,
+                      borderRadius: 1,
                       my: 0.5,
                     }}
                   />
                   <Card
-                    elevation={0}
+                    variant="outlined"
                     sx={{
                       flex: 1,
-                      borderRadius: 3,
-                      border: '1px solid rgba(13, 118, 110, 0.12)',
-                      boxShadow: '0 2px 10px rgba(15, 23, 42, 0.03)',
-                      transition: 'all 160ms ease',
                       '&:hover': {
-                        borderColor: 'rgba(13, 118, 110, 0.3)',
-                        boxShadow: '0 4px 14px rgba(15, 23, 42, 0.06)',
+                        borderColor: 'primary.main',
                       },
                     }}
                   >
@@ -362,9 +306,7 @@ export function ScheduleSection({
                           <Typography
                             sx={{
                               fontWeight: 850,
-                              fontSize: { xs: '0.94rem', sm: '1rem' },
                               overflowWrap: 'anywhere',
-                              letterSpacing: '-0.01em',
                             }}
                           >
                             {attraction.name}
@@ -374,7 +316,6 @@ export function ScheduleSection({
                             color="text.secondary"
                             sx={{
                               overflowWrap: 'anywhere',
-                              fontSize: '0.8rem',
                               mt: 0.2,
                             }}
                           >
@@ -394,11 +335,6 @@ export function ScheduleSection({
                                 rel="noreferrer"
                                 color="primary"
                                 aria-label={`在 Google 地圖查看 ${attraction.name}`}
-                                sx={{
-                                  width: 32,
-                                  height: 32,
-                                  bgcolor: 'rgba(13, 118, 110, 0.06)',
-                                }}
                               >
                                 <PlaceRoundedIcon fontSize="small" />
                               </IconButton>
@@ -408,7 +344,6 @@ export function ScheduleSection({
                             size="small"
                             aria-label={`編輯 ${attraction.name}`}
                             onClick={() => onEditAttraction(activeDay, attraction)}
-                            sx={{ width: 32, height: 32 }}
                           >
                             <EditRoundedIcon fontSize="small" />
                           </IconButton>
@@ -417,7 +352,6 @@ export function ScheduleSection({
                             color="error"
                             aria-label={`刪除 ${attraction.name}`}
                             onClick={() => onDeleteAttraction(activeDay, attraction.id)}
-                            sx={{ width: 32, height: 32 }}
                           >
                             <DeleteOutlineRoundedIcon fontSize="small" />
                           </IconButton>
@@ -427,24 +361,13 @@ export function ScheduleSection({
                         <Chip
                           size="small"
                           label={`${attraction.duration} 分鐘`}
-                          sx={{
-                            height: 22,
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            bgcolor: 'rgba(0, 0, 0, 0.05)',
-                          }}
                         />
                         {attraction.cost > 0 ? (
                           <Chip
                             size="small"
+                            color="primary"
+                            variant="outlined"
                             label={formatAmount(attraction.cost, currency)}
-                            sx={{
-                              height: 22,
-                              fontSize: '0.72rem',
-                              fontWeight: 750,
-                              bgcolor: 'rgba(13, 118, 110, 0.08)',
-                              color: 'primary.main',
-                            }}
                           />
                         ) : null}
                       </Stack>
@@ -463,21 +386,15 @@ export function ScheduleSection({
           onClick={() => onAddAttraction(activeDay.id)}
           sx={{
             mt: 2,
-            borderRadius: 3,
-            py: 1.2,
             borderStyle: 'dashed',
-            borderWidth: '1.5px',
-            fontWeight: 750,
             '&:hover': {
               borderStyle: 'dashed',
-              borderWidth: '1.5px',
-              bgcolor: 'rgba(13, 118, 110, 0.04)',
             },
           }}
         >
           新增景點
         </Button>
-      </Paper>
+      </Card>
 
       <AttractionSortDialog open={sortOpen} day={activeDay} onClose={() => setSortOpen(false)} onApply={applyAttractionOrder} />
       <Suspense fallback={null}>

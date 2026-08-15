@@ -1,15 +1,27 @@
+import { z } from 'zod'
 import type { Itinerary } from '../../../types/database'
 import type { AssistantOperation } from '../types'
 import {
-  assistantOperationsSchema,
+  itineraryOperationSchema,
   normalizeAttractionDraft,
   normalizeTimeString,
-} from './assistantSchemas'
+} from '../tools/itinerary/itineraryToolSchema'
+import { todoOperationSchema } from '../tools/todo/todoToolSchema'
+
+export const assistantOperationSchema = z.union([
+  itineraryOperationSchema,
+  todoOperationSchema,
+])
+
+export const assistantOperationsSchema = z.array(assistantOperationSchema).min(1)
 
 export const parseAssistantOperations = (value: unknown): AssistantOperation[] => {
   if (!Array.isArray(value) || value.length === 0) throw new Error('Proposal requires operations')
   const parsed = assistantOperationsSchema.safeParse(value)
-  if (!parsed.success) throw new Error('Unsupported assistant operation')
+  if (!parsed.success) {
+    const errorDetails = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+    throw new Error(`Unsupported assistant operation: ${errorDetails}`)
+  }
   return parsed.data.map((op): AssistantOperation => {
     switch (op.type) {
       case 'set_day_start_time':
@@ -19,24 +31,29 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
           startTime: normalizeTimeString(op.startTime),
         }
       case 'add_attraction': {
+        const draftInput = op.attraction ?? {
+          name: op.name ?? '新景點',
+          duration: op.duration ?? 60,
+          transportMode: op.transportMode ?? null,
+          travelTime: op.travelTime ?? null,
+          locationName: op.locationName ?? null,
+        }
         return {
           type: 'add_attraction',
           dayId: op.dayId,
-          attraction: normalizeAttractionDraft(op.attraction),
+          attraction: normalizeAttractionDraft(draftInput),
           ...(typeof op.index === 'number' ? { index: op.index } : {}),
         }
       }
       case 'update_attraction': {
-        const changes = 'changes' in op
-          ? op.changes
-          : {
-              ...(op.name !== undefined ? { name: op.name } : {}),
-              ...(op.description !== undefined ? { description: op.description } : {}),
-              ...(op.duration !== undefined ? { duration: op.duration } : {}),
-              ...(op.transportMode !== undefined ? { transportMode: op.transportMode } : {}),
-              ...(op.travelTime !== undefined ? { travelTime: op.travelTime } : {}),
-              ...(op.locationName !== undefined ? { locationName: op.locationName } : {}),
-            }
+        const changes = op.changes ?? {
+          ...(op.name !== undefined ? { name: op.name } : {}),
+          ...(op.description !== undefined ? { description: op.description } : {}),
+          ...(op.duration !== undefined ? { duration: op.duration } : {}),
+          ...(op.transportMode !== undefined ? { transportMode: op.transportMode } : {}),
+          ...(op.travelTime !== undefined ? { travelTime: op.travelTime } : {}),
+          ...(op.locationName !== undefined ? { locationName: op.locationName } : {}),
+        }
         return {
           type: 'update_attraction',
           attractionId: op.attractionId,

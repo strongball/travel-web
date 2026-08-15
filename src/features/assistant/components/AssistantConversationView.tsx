@@ -62,52 +62,9 @@ export function AssistantConversationView({
       const messageAdded = messages.length > previousMessageCountRef.current
       const lastMessage = messages.at(-1)
       const userJustSent = messageAdded && lastMessage?.role === 'user'
-      const assistantJustReplied = messageAdded && lastMessage?.role === 'assistant'
-      const progressStarted = sending && !previousSendingRef.current
 
-      if (userJustSent && lastMessage) {
-        const userElement = container.querySelector<HTMLElement>(
-          `[data-message-id="${lastMessage.id}"]`,
-        )
-        if (userElement) {
-          const top =
-            userElement.getBoundingClientRect().top -
-            container.getBoundingClientRect().top +
-            container.scrollTop -
-            16
-          container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-        }
-      } else if (assistantJustReplied && lastMessage) {
-        const turnUserMessage = [...messages]
-          .reverse()
-          .find((m) => m.turnId === lastMessage.turnId && m.role === 'user')
-        const anchorElement = turnUserMessage
-          ? container.querySelector<HTMLElement>(`[data-message-id="${turnUserMessage.id}"]`) ??
-            container.querySelector<HTMLElement>(`[data-message-id="${lastMessage.id}"]`)
-          : container.querySelector<HTMLElement>(`[data-message-id="${lastMessage.id}"]`)
-        if (anchorElement) {
-          const top =
-            anchorElement.getBoundingClientRect().top -
-            container.getBoundingClientRect().top +
-            container.scrollTop -
-            16
-          container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-        }
-      } else if (progressStarted) {
-        const lastUser = [...messages].reverse().find((m) => m.role === 'user')
-        if (lastUser) {
-          const userElement = container.querySelector<HTMLElement>(
-            `[data-message-id="${lastUser.id}"]`,
-          )
-          if (userElement) {
-            const top =
-              userElement.getBoundingClientRect().top -
-              container.getBoundingClientRect().top +
-              container.scrollTop -
-              16
-            container.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-          }
-        }
+      if (userJustSent) {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       } else if (nearBottomRef.current && messageAdded) {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
       }

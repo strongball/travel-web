@@ -4,20 +4,17 @@ import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
   AssistantMessage,
-  AssistantModelResult,
 } from '../types'
 import {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  parseAssistantModelResult,
 } from '../tools'
 
 export {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
   langchainAssistantTools,
-  parseAssistantModelResult,
 }
 
 const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
@@ -139,19 +136,4 @@ export async function summarizeWithGemini(currentSummary: string, messages: Assi
   return typeof response.content === 'string' ? response.content.trim() : ''
 }
 
-export function mergeAssistantToolResults(results: AssistantModelResult[]): AssistantModelResult {
-  if (results.length === 1) return results[0]
 
-  const proposals = results.flatMap((result) => result.proposal ? [result.proposal] : [])
-  const reply = results.map((result) => result.reply.trim()).filter(Boolean).join('\n\n')
-  if (proposals.length === 0) return { reply }
-
-  return {
-    reply,
-    proposal: {
-      title: proposals.length === 1 ? proposals[0].title : '綜合旅程與待辦提案',
-      explanation: proposals.map((proposal) => proposal.explanation).filter(Boolean).join('\n\n'),
-      operations: proposals.flatMap((proposal) => proposal.operations),
-    },
-  }
-}

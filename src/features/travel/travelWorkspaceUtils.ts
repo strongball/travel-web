@@ -1,4 +1,5 @@
 import type { Attraction, Expense, Itinerary, TripDay } from '../../types/database'
+import { getExchangeRate } from '../../lib/currencies'
 import type { GoogleRoutePoint } from './googleMaps'
 
 export type WorkspaceSection = 'schedule' | 'assistant' | 'todos' | 'expenses' | 'overview'
@@ -47,8 +48,8 @@ export const convertExpenseAmount = (
   itineraryCurrency: string,
   exchangeRates?: Record<string, number>,
 ) => {
-  if (expense.currency === itineraryCurrency) return expense.amount
-  return expense.amount * (exchangeRates?.[expense.currency] ?? 1)
+  const rate = getExchangeRate(expense.currency, itineraryCurrency, exchangeRates)
+  return expense.amount * (rate ?? 1)
 }
 
 export const emptyDay = (itineraryId: string, date: string): TripDay => ({

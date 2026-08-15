@@ -136,7 +136,6 @@ export function ReceiptReviewPage({
             size="large"
             variant="outlined"
             onClick={onCancel}
-            sx={{ minHeight: 48, borderRadius: 3 }}
           >
             {t('common.cancel')}
           </Button>
@@ -146,7 +145,6 @@ export function ReceiptReviewPage({
             variant="contained"
             disabled={!isValid}
             onClick={applyResult}
-            sx={{ minHeight: 48, borderRadius: 3, fontWeight: 700 }}
           >
             {t('review.apply')}
           </Button>
@@ -217,7 +215,7 @@ export function ReceiptReviewPage({
           ))}
 
           {items.length === 0 ? (
-            <Card variant="outlined" sx={{ borderStyle: 'dashed', borderRadius: 3 }}>
+            <Card variant="outlined" sx={{ borderStyle: 'dashed' }}>
               <CardContent sx={{ textAlign: 'center' }}>
                 <Typography color="text.secondary">{t('review.empty')}</Typography>
               </CardContent>
@@ -228,13 +226,12 @@ export function ReceiptReviewPage({
             variant="outlined"
             startIcon={<AddRoundedIcon />}
             onClick={addItem}
-            sx={{ minHeight: 48, borderRadius: 3 }}
           >
             {t('review.addItem')}
           </Button>
         </Stack>
 
-        <Card variant="outlined" sx={{ borderRadius: 3 }}>
+        <Card variant="outlined">
           <CardContent>
             <Stack spacing={1.5}>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>{t('review.totals')}</Typography>

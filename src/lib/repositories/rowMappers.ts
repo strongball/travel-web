@@ -1,5 +1,6 @@
 import type { Attraction, Expense, Itinerary, TripDay } from '../../types/database'
 import type { ExpenseItem } from '../../types/receipt'
+import { normalizeExchangeRates } from '../currencies'
 import { canonicalizeImageReference } from '../imageReference'
 
 export type DatabaseRow = Record<string, unknown>
@@ -135,24 +136,27 @@ const mapDay = (row: DatabaseRow): TripDay => ({
     : [],
 })
 
-export const mapItinerary = (row: DatabaseRow): Itinerary => ({
-  id: asText(row.id),
-  title: asText(row.title),
-  ownerId: asText(row.owner_id),
-  currency: asText(row.currency) || 'TWD',
-  startDate: typeof row.start_date === 'string' ? row.start_date : undefined,
-  endDate: typeof row.end_date === 'string' ? row.end_date : undefined,
-  days: Array.isArray(row.days)
-    ? row.days
-        .map((entry) => mapDay(entry as DatabaseRow))
-        .sort((first, second) => first.date.slice(0, 10).localeCompare(second.date.slice(0, 10)))
-    : [],
-  exchangeRates: row.exchange_rates && typeof row.exchange_rates === 'object'
-    ? Object.fromEntries(Object.entries(row.exchange_rates as Record<string, unknown>).map(
-        ([key, value]) => [key, asNumber(value)],
-      ))
-    : { [asText(row.currency) || 'TWD']: 1 },
-  todoCategories: Array.isArray(row.todo_categories)
-    ? row.todo_categories.filter((category): category is string => typeof category === 'string')
-    : [],
-})
+export const mapItinerary = (row: DatabaseRow): Itinerary => {
+  const currency = asText(row.currency) || 'TWD'
+  const rawExchangeRates = row.exchange_rates && typeof row.exchange_rates === 'object' && !Array.isArray(row.exchange_rates)
+    ? row.exchange_rates as Record<string, unknown>
+    : undefined
+
+  return {
+    id: asText(row.id),
+    title: asText(row.title),
+    ownerId: asText(row.owner_id),
+    currency,
+    startDate: typeof row.start_date === 'string' ? row.start_date : undefined,
+    endDate: typeof row.end_date === 'string' ? row.end_date : undefined,
+    days: Array.isArray(row.days)
+      ? row.days
+          .map((entry) => mapDay(entry as DatabaseRow))
+          .sort((first, second) => first.date.slice(0, 10).localeCompare(second.date.slice(0, 10)))
+      : [],
+    exchangeRates: normalizeExchangeRates(currency, rawExchangeRates),
+    todoCategories: Array.isArray(row.todo_categories)
+      ? row.todo_categories.filter((category): category is string => typeof category === 'string')
+      : [],
+  }
+}

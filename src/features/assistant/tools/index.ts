@@ -1,9 +1,3 @@
-import type { AssistantModelResult } from '../types'
-import {
-  assistantModelResultSchema,
-  formatAssistantSchemaError,
-} from '../api/assistantSchemas'
-import { parseAssistantOperations } from '../api/assistantOperations'
 import {
   PROPOSAL_TOOL_NAME,
   proposeItineraryEditTool,
@@ -38,45 +32,26 @@ export {
   TodoProposalView,
 }
 
-/** LangChain tools used by ChatGoogleGenerativeAI.bindTools. */
-export const assistantToolDefinitions = [
-  {
-    tool: proposeItineraryEditTool,
-    continueAfterTool: false,
-  },
-  {
-    tool: proposeTodoListTool,
-    continueAfterTool: false,
-  },
+/** 提案 / UI 類工具：執行後中斷模型回合，交由前端 UI 確認 */
+export const assistantProposalTools = [
+  proposeItineraryEditTool,
+  proposeTodoListTool,
 ] as const
 
-export const langchainAssistantTools = assistantToolDefinitions.map(({ tool }) => tool)
+/** 一般查詢 / 背景類工具：執行後將結果回傳給模型繼續思考 */
+export const assistantGeneralTools = [
+  // 供未來擴充：例如 lookupWeatherTool, searchPlacesTool 等
+] as const
 
-const assistantToolsByName = new Map<string, (typeof assistantToolDefinitions)[number]>(
-  assistantToolDefinitions.map((definition) => [definition.tool.name, definition]),
-)
+/** 供 ChatGoogleGenerativeAI.bindTools 使用的完整工具清單 */
+export const langchainAssistantTools = [
+  ...assistantProposalTools,
+  ...assistantGeneralTools,
+]
 
-/** Proposal tools stop the model turn; read/external tools continue it. */
-export function shouldContinueAfterAssistantTool(name: string) {
-  return assistantToolsByName.get(name)?.continueAfterTool ?? true
-}
+const allToolNames = new Set<string>(langchainAssistantTools.map((tool) => tool.name))
 
+/** 判斷是否為已註冊的助理工具名稱 */
 export function isAssistantToolName(name: string) {
-  return assistantToolsByName.has(name)
-}
-
-export function parseAssistantModelResult(value: unknown): AssistantModelResult {
-  const parsed = assistantModelResultSchema.safeParse(value)
-  if (!parsed.success) {
-    throw new Error(`助理回傳格式錯誤：${formatAssistantSchemaError(parsed.error)}`)
-  }
-  if (!parsed.data.proposal) return { reply: parsed.data.reply }
-  return {
-    reply: parsed.data.reply,
-    proposal: {
-      title: parsed.data.proposal.title ?? '行程修改提案',
-      explanation: parsed.data.proposal.explanation ?? '',
-      operations: parseAssistantOperations(parsed.data.proposal.operations),
-    },
-  }
+  return allToolNames.has(name)
 }

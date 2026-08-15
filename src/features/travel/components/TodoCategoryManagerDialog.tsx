@@ -9,6 +9,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined'
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded'
 import {
   Button,
+  Card,
   Chip,
   Dialog,
   DialogActions,
@@ -19,7 +20,6 @@ import {
   ListItem,
   ListItemSecondaryAction,
   ListItemText,
-  Paper,
   Stack,
   TextField,
   Tooltip,
@@ -142,14 +142,11 @@ export function TodoCategoryManagerDialog({
         </Typography>
 
         {/* Add Category Form */}
-        <Paper
-          elevation={0}
+        <Card
           sx={{
             p: 1.5,
             mb: 2.5,
-            bgcolor: 'rgba(13, 118, 110, 0.04)',
-            border: '1px solid rgba(13, 118, 110, 0.15)',
-            borderRadius: 2.5,
+            bgcolor: 'action.hover',
           }}
         >
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -167,20 +164,14 @@ export function TodoCategoryManagerDialog({
                   handleAddCategory()
                 }
               }}
-              sx={{ flex: 1, bgcolor: '#ffffff' }}
+              sx={{ flex: 1 }}
             />
             <Button
               variant="contained"
               disabled={!newCategoryName.trim()}
               onClick={handleAddCategory}
               startIcon={<AddRoundedIcon />}
-              sx={{
-                borderRadius: 2,
-                minHeight: 40,
-                px: 2,
-                background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-                whiteSpace: 'nowrap',
-              }}
+              sx={{ whiteSpace: 'nowrap' }}
             >
               新增
             </Button>
@@ -190,18 +181,15 @@ export function TodoCategoryManagerDialog({
               {errorText}
             </Typography>
           ) : null}
-        </Paper>
+        </Card>
 
         {/* Category List */}
         <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, color: 'text.secondary' }}>
           現有分類（共 {categories.length} 個）
         </Typography>
 
-        <Paper
-          elevation={0}
+        <Card
           sx={{
-            border: '1px solid rgba(13, 118, 110, 0.12)',
-            borderRadius: 2.5,
             overflow: 'hidden',
             maxHeight: 320,
             overflowY: 'auto',
@@ -219,10 +207,9 @@ export function TodoCategoryManagerDialog({
                   sx={{
                     py: 1,
                     px: 2,
-                    bgcolor: isEditing ? 'rgba(13, 118, 110, 0.05)' : 'transparent',
-                    transition: 'background-color 150ms ease',
+                    bgcolor: isEditing ? 'action.selected' : 'transparent',
                     '&:hover': {
-                      bgcolor: isEditing ? 'rgba(13, 118, 110, 0.05)' : 'rgba(13, 118, 110, 0.02)',
+                      bgcolor: isEditing ? 'action.selected' : 'action.hover',
                     },
                   }}
                 >
@@ -337,7 +324,7 @@ export function TodoCategoryManagerDialog({
               )
             })}
           </List>
-        </Paper>
+        </Card>
       </DialogContent>
       <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
         <Button

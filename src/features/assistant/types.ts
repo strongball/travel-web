@@ -63,18 +63,23 @@ export type AssistantProposalStatus =
   | 'rejected'
   | 'expired'
 
-export type ItineraryChangeProposal = {
+export type BaseAssistantProposal = {
   id: string
   threadId: string
   turnId: string
-  itineraryId: string
   title: string
   explanation: string
-  expectedDayRevisions: Record<string, number>
-  operations: AssistantOperation[]
   status: AssistantProposalStatus
   createdAt: string
 }
+
+export type ItineraryChangeProposal = BaseAssistantProposal & {
+  itineraryId: string
+  expectedDayRevisions: Record<string, number>
+  operations: AssistantOperation[]
+}
+
+export type AssistantProposal = ItineraryChangeProposal
 
 export type AssistantTurnRequest = {
   threadId: string
@@ -89,17 +94,15 @@ export type AssistantTurnRequest = {
   rehydratedMessages?: AssistantMessage[]
 }
 
-export type AssistantModelResult = {
-  reply: string
-  proposal?: {
-    title: string
-    explanation: string
-    operations: AssistantOperation[]
-  }
+export type AssistantUserDecision = {
+  approved: boolean
+  feedback?: string
 }
 
 export type AssistantProposalPersistence = {
   savePending: (proposal: ItineraryChangeProposal) => Promise<void>
+  applyPending?: (proposal: ItineraryChangeProposal) => Promise<void>
+  rejectPending?: (proposal: ItineraryChangeProposal) => Promise<void>
 }
 
 export type AssistantGraphDependencies = {
@@ -118,13 +121,14 @@ export type AssistantGraphState = {
   request: AssistantTurnRequest | null
   assistantMessage: AssistantMessage | null
   pendingProposal: ItineraryChangeProposal | null
+  userDecision: AssistantUserDecision | null
   modelMessages: BaseMessage[]
   toolRound: number
-  toolCallKind: 'continuing' | 'terminal' | null
 }
 
 export type AssistantGraphRunner = {
   sendTurn: (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => Promise<AssistantGraphState>
+  resumeTurn: (threadId: string, decision: AssistantUserDecision, onProgress?: AssistantProgressListener) => Promise<AssistantGraphState>
   summarizeThread: (threadId: string) => Promise<AssistantGraphState>
   getState: (threadId: string) => Promise<AssistantGraphState | null>
 }

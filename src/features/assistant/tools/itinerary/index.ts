@@ -3,6 +3,15 @@ export {
   proposeItineraryEditTool,
 } from './itineraryTool'
 export {
+  itineraryToolInputSchema,
+  itineraryOperationSchema,
+  timeSchema,
+  normalizeTimeString,
+  assistantAttractionDraftSchema,
+  normalizeAttractionDraft,
+  attractionChangesSchema,
+} from './itineraryToolSchema'
+export {
   applyItineraryOperations,
   changedDays,
   enrichAppliedProposalPlaces,
