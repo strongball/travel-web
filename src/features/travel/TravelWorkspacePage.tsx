@@ -538,10 +538,26 @@ export function TravelWorkspacePage({
                 />
               ) : null}
               {section === 'expenses' ? (
-                <ExpenseSection expenses={selectedExpenses} attractions={days.flatMap((day) => day.attractions)} currency={selectedItinerary.currency} exchangeRates={selectedItinerary.exchangeRates} onAdd={onAddExpense} onEdit={onEditExpense} onDelete={onDeleteExpense} />
+                <ExpenseSection
+                  expenses={selectedExpenses}
+                  attractions={days.flatMap((day) => day.attractions)}
+                  currency={selectedItinerary.currency}
+                  exchangeRates={selectedItinerary.exchangeRates}
+                  onAdd={onAddExpense}
+                  onEdit={onEditExpense}
+                  onDelete={onDeleteExpense}
+                  onEditTrip={() => setTripEditor(selectedItinerary)}
+                />
               ) : null}
               {section === 'overview' ? (
-                <OverviewSection itinerary={selectedItinerary} days={days} expenses={selectedExpenses} todos={selectedTodos} totalAmount={totalAmount} />
+                <OverviewSection
+                  itinerary={selectedItinerary}
+                  days={days}
+                  expenses={selectedExpenses}
+                  todos={selectedTodos}
+                  totalAmount={totalAmount}
+                  onEditTrip={() => setTripEditor(selectedItinerary)}
+                />
               ) : null}
             </Box>
           </Box>

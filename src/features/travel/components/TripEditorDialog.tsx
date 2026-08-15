@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import {
-  Alert,
   Box,
   Button,
   Chip,
@@ -22,7 +21,7 @@ import {
 } from '@mui/material'
 import { PageHeader } from '../../../components/PageHeader'
 import {
-  getExchangeRate,
+  getCurrencyInfo,
   missingExchangeRateCurrencies,
   normalizeCurrency,
   normalizeExchangeRates,
@@ -30,6 +29,7 @@ import {
   supportedCurrencies,
 } from '../../../lib/currencies'
 import type { Itinerary } from '../../../types/database'
+import { ExchangeRateEditor } from './ExchangeRateEditor'
 
 interface TripEditorDialogProps {
   itinerary: Itinerary | null
@@ -128,9 +128,10 @@ export function TripEditorDialog({
     })
   }
 
-  const handleAddRateCurrency = () => {
-    if (!newRateCurrency || rateCurrencies.includes(newRateCurrency)) return
-    setPendingRateCurrencies((current) => [...current, newRateCurrency])
+  const handleAddRateCurrency = (currencyToAdd?: string) => {
+    const target = currencyToAdd || newRateCurrency
+    if (!target || rateCurrencies.includes(target)) return
+    setPendingRateCurrencies((current) => [...current, target])
     setNewRateCurrency('')
   }
 
@@ -197,105 +198,31 @@ export function TripEditorDialog({
                 value={itinerary.currency}
                 onChange={(event) => handleCurrencyChange(event.target.value)}
               >
-                {supportedCurrencies.map((currency) => (
-                  <MenuItem key={currency} value={currency}>
-                    {currency}
-                  </MenuItem>
-                ))}
+                {supportedCurrencies.map((currency) => {
+                  const info = getCurrencyInfo(currency)
+                  return (
+                    <MenuItem key={currency} value={currency}>
+                      {info.flag} {currency} — {info.name}
+                    </MenuItem>
+                  )
+                })}
               </Select>
             </FormControl>
 
-            <Paper
-              elevation={0}
-              sx={{
-                p: 2,
-                borderRadius: 3,
-                border: '1px solid rgba(13, 118, 110, 0.12)',
-                bgcolor: '#ffffff',
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'text.secondary' }}>
-                匯率設定
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>
-                請輸入「1 單位來源貨幣 = 幾單位主要顯示貨幣」。記帳會保留原始金額，費用清單與總覽只在顯示時換算。
-              </Typography>
-              {missingCurrencies.length > 0 ? (
-                <Alert severity="warning" sx={{ mb: 1.5 }}>
-                  尚未設定：{missingCurrencies.join('、')}。請完成匯率後再儲存，避免總額換算錯誤。
-                </Alert>
-              ) : null}
-              <Stack spacing={1.25}>
-                {rateCurrencies.map((currency) => {
-                  const isBaseCurrency = currency === itinerary.currency
-                  const rate = getExchangeRate(currency, itinerary.currency, itinerary.exchangeRates)
-                  return (
-                    <Stack
-                      key={currency}
-                      direction={{ xs: 'column', sm: 'row' }}
-                      spacing={1}
-                      sx={{ alignItems: { sm: 'center' } }}
-                    >
-                      <Typography sx={{ minWidth: { sm: 52 }, fontWeight: 800 }}>
-                        {currency}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ minWidth: { sm: 90 } }}>
-                        1 {currency} =
-                      </Typography>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        type="number"
-                        label={`${currency} 匯率`}
-                        value={isBaseCurrency ? '1' : rate?.toString() ?? ''}
-                        disabled={isBaseCurrency || saving}
-                        placeholder={isBaseCurrency ? undefined : '請輸入匯率'}
-                        slotProps={{ htmlInput: { min: 0.000001, step: 'any', inputMode: 'decimal' } }}
-                        onChange={(event) => handleRateChange(currency, event.target.value)}
-                      />
-                      <Typography variant="body2" color="text.secondary" sx={{ minWidth: { sm: 52 } }}>
-                        {itinerary.currency}
-                      </Typography>
-                      {!isBaseCurrency ? (
-                        <IconButton
-                          color="error"
-                          size="small"
-                          aria-label={`移除 ${currency} 匯率`}
-                          onClick={() => handleRemoveRateCurrency(currency)}
-                        >
-                          <DeleteOutlineRoundedIcon fontSize="small" />
-                        </IconButton>
-                      ) : null}
-                    </Stack>
-                  )
-                })}
-              </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1.5 }}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="new-rate-currency-label">新增來源貨幣</InputLabel>
-                  <Select
-                    labelId="new-rate-currency-label"
-                    label="新增來源貨幣"
-                    value={newRateCurrency}
-                    onChange={(event) => setNewRateCurrency(event.target.value)}
-                    disabled={saving || availableRateCurrencies.length === 0}
-                  >
-                    {availableRateCurrencies.map((currency) => (
-                      <MenuItem key={currency} value={currency}>{currency}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <Button
-                  variant="outlined"
-                  startIcon={<AddRoundedIcon />}
-                  disabled={saving || !newRateCurrency}
-                  onClick={handleAddRateCurrency}
-                  sx={{ minWidth: { sm: 112 } }}
-                >
-                  新增貨幣
-                </Button>
-              </Stack>
-            </Paper>
+            {/* Redesigned Modern Exchange Rate Editor */}
+            <ExchangeRateEditor
+              itinerary={itinerary}
+              saving={saving}
+              rateCurrencies={rateCurrencies}
+              missingCurrencies={missingCurrencies}
+              availableRateCurrencies={availableRateCurrencies}
+              newRateCurrency={newRateCurrency}
+              onNewRateCurrencyChange={setNewRateCurrency}
+              onAddRateCurrency={handleAddRateCurrency}
+              onRateChange={handleRateChange}
+              onRemoveRateCurrency={handleRemoveRateCurrency}
+            />
+
 
             {/* Todo Categories Section */}
             <Paper

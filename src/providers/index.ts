@@ -4,3 +4,5 @@ export * from './expensesProvider'
 export * from './todosProvider'
 export * from './receiptProviders'
 export * from './uiProviders'
+export * from './currencyProviders'
+

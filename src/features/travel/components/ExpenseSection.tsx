@@ -3,7 +3,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
-import { Alert, Box, Button, ButtonBase, Card, CardActionArea, CardContent, Collapse, Divider, IconButton, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, ButtonBase, Card, CardActionArea, Collapse, Divider, IconButton, Paper, Stack, TextField, Typography } from '@mui/material'
 import { getExchangeRate, missingExchangeRateCurrencies } from '../../../lib/currencies'
 import type { Attraction, Expense } from '../../../types/database'
 import { convertExpenseAmount, formatAmount, formatDate } from '../travelWorkspaceUtils'
@@ -16,6 +16,7 @@ export function ExpenseSection({
   onAdd,
   onEdit,
   onDelete,
+  onEditTrip,
 }: {
   expenses: Expense[]
   attractions: Attraction[]
@@ -24,6 +25,7 @@ export function ExpenseSection({
   onAdd: () => void
   onEdit: (expense: Expense) => void
   onDelete: (expense: Expense) => void | Promise<void>
+  onEditTrip?: () => void
 }) {
   const [query, setQuery] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -85,7 +87,16 @@ export function ExpenseSection({
   return (
     <Stack spacing={2}>
       {missingCurrencies.length > 0 ? (
-        <Alert severity="warning">
+        <Alert
+          severity="warning"
+          action={
+            onEditTrip ? (
+              <Button color="inherit" size="small" onClick={onEditTrip} sx={{ fontWeight: 700 }}>
+                立即設定
+              </Button>
+            ) : undefined
+          }
+        >
           尚未設定 {missingCurrencies.join('、')} 對 {currency} 的匯率，請編輯行程完成設定；原始記帳資料不會被修改。
         </Alert>
       ) : null}
@@ -223,84 +234,94 @@ export function ExpenseSection({
             <Collapse in={!isCollapsed} timeout="auto" unmountOnExit>
               <Stack divider={<Divider sx={{ borderColor: 'rgba(13, 118, 110, 0.06)' }} />}>
                 {group.expenses.map((expense) => (
-                  <Card key={expense.id} elevation={0} sx={{ borderRadius: 0 }}>
-                    <CardActionArea onClick={() => onEdit(expense)}>
-                      <CardContent sx={{ p: { xs: 1.75, sm: 2 }, '&:last-child': { pb: { xs: 1.75, sm: 2 } } }}>
-                        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography noWrap sx={{ fontWeight: 750, fontSize: '0.94rem' }}>
-                              {expense.title}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {formatDate(expense.date)}
-                            </Typography>
-                          </Box>
-                          <Box sx={{ textAlign: 'right' }}>
-                            <Typography
-                              color="primary.main"
-                              sx={{ fontWeight: 850, fontSize: '0.95rem', whiteSpace: 'nowrap' }}
-                            >
-                              {getExchangeRate(expense.currency, currency, exchangeRates) === null
-                                ? formatAmount(expense.amount, expense.currency)
-                                : formatAmount(
-                                    convertExpenseAmount(expense, currency, exchangeRates),
-                                    currency,
-                                  )}
-                            </Typography>
-                            {expense.currency !== currency && getExchangeRate(expense.currency, currency, exchangeRates) !== null ? (
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{ whiteSpace: 'nowrap', display: 'block' }}
-                              >
-                                {formatAmount(expense.amount, expense.currency)}
-                              </Typography>
-                            ) : null}
-                          </Box>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            aria-label={`刪除 ${expense.title}`}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void onDelete(expense)
-                            }}
-                            sx={{ width: 34, height: 34 }}
+                  <Card
+                    key={expense.id}
+                    elevation={0}
+                    sx={{
+                      borderRadius: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      transition: 'background-color 150ms ease',
+                      '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.02)' },
+                    }}
+                  >
+                    <CardActionArea
+                      onClick={() => onEdit(expense)}
+                      sx={{ flex: 1, minWidth: 0, p: { xs: 1.75, sm: 2 } }}
+                    >
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography noWrap sx={{ fontWeight: 750, fontSize: '0.94rem' }}>
+                            {expense.title}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {formatDate(expense.date)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography
+                            color="primary.main"
+                            sx={{ fontWeight: 850, fontSize: '0.95rem', whiteSpace: 'nowrap' }}
                           >
-                            <DeleteOutlineRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                        {expense.items.length ? (
-                          <Stack
-                            direction="row"
-                            spacing={0.75}
-                            sx={{ mt: 0.75, alignItems: 'center', minWidth: 0 }}
-                          >
+                            {getExchangeRate(expense.currency, currency, exchangeRates) === null
+                              ? formatAmount(expense.amount, expense.currency)
+                              : formatAmount(
+                                  convertExpenseAmount(expense, currency, exchangeRates),
+                                  currency,
+                                )}
+                          </Typography>
+                          {expense.currency !== currency && getExchangeRate(expense.currency, currency, exchangeRates) !== null ? (
                             <Typography
                               variant="caption"
                               color="text.secondary"
-                              noWrap
-                              sx={{
-                                minWidth: 0,
-                                flex: 1,
-                                bgcolor: 'rgba(0, 0, 0, 0.04)',
-                                px: 1,
-                                py: 0.25,
-                                borderRadius: 1.5,
-                              }}
+                              sx={{ whiteSpace: 'nowrap', display: 'block' }}
                             >
-                              {expense.items
-                                .slice(0, 2)
-                                .map((item) => item.localizedName || item.sourceName)
-                                .join(' · ')}
-                              {expense.items.length > 2
-                                ? ` 等共 ${expense.items.length} 項`
-                                : ''}
+                              {formatAmount(expense.amount, expense.currency)}
                             </Typography>
-                          </Stack>
-                        ) : null}
-                      </CardContent>
+                          ) : null}
+                        </Box>
+                      </Stack>
+                      {expense.items.length ? (
+                        <Stack
+                          direction="row"
+                          spacing={0.75}
+                          sx={{ mt: 0.75, alignItems: 'center', minWidth: 0 }}
+                        >
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                            sx={{
+                              minWidth: 0,
+                              flex: 1,
+                              bgcolor: 'rgba(0, 0, 0, 0.04)',
+                              px: 1,
+                              py: 0.25,
+                              borderRadius: 1.5,
+                            }}
+                          >
+                            {expense.items
+                              .slice(0, 2)
+                              .map((item) => item.localizedName || item.sourceName)
+                              .join(' · ')}
+                            {expense.items.length > 2
+                              ? ` 等共 ${expense.items.length} 項`
+                              : ''}
+                          </Typography>
+                        </Stack>
+                      ) : null}
                     </CardActionArea>
+                    <Box sx={{ pr: { xs: 1.25, sm: 1.75 }, flexShrink: 0 }}>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        aria-label={`刪除 ${expense.title}`}
+                        onClick={() => void onDelete(expense)}
+                        sx={{ width: 34, height: 34 }}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
                   </Card>
                 ))}
               </Stack>

@@ -3,7 +3,7 @@ import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
-import { Alert, Box, Paper, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material'
 import { missingExchangeRateCurrencies } from '../../../lib/currencies'
 import type { Expense, Itinerary, TodoItem, TripDay } from '../../../types/database'
 import { formatAmount, formatDate } from '../travelWorkspaceUtils'
@@ -14,12 +14,14 @@ export function OverviewSection({
   expenses,
   todos,
   totalAmount,
+  onEditTrip,
 }: {
   itinerary: Itinerary
   days: TripDay[]
   expenses: Expense[]
   todos: TodoItem[]
   totalAmount: number | null
+  onEditTrip?: () => void
 }) {
   const attractionCount = days.reduce((sum, day) => sum + day.attractions.length, 0)
   const completed = todos.filter((todo) => todo.isCompleted).length
@@ -37,8 +39,17 @@ export function OverviewSection({
         <StatCard label="總花費" value={totalAmount === null ? '尚未完成換算' : formatAmount(totalAmount, itinerary.currency)} icon={<PaidRoundedIcon />} />
       </Box>
       {missingCurrencies.length > 0 ? (
-        <Alert severity="warning">
-          尚未設定 {missingCurrencies.join('、')} 對 {itinerary.currency} 的匯率，請到「編輯行程」完成設定後再查看總額。
+        <Alert
+          severity="warning"
+          action={
+            onEditTrip ? (
+              <Button color="inherit" size="small" onClick={onEditTrip} sx={{ fontWeight: 700 }}>
+                立即設定
+              </Button>
+            ) : undefined
+          }
+        >
+          尚未設定 {missingCurrencies.join('、')} 對 {itinerary.currency} 的匯率，請完成設定後再查看總額。
         </Alert>
       ) : null}
       <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 4, p: 2.5 }}>

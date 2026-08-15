@@ -11,6 +11,7 @@ import {
   CircularProgress,
   IconButton,
   List,
+  ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
@@ -127,71 +128,78 @@ export function ConversationList({ controller }: { controller: AssistantConversa
         {threads.map((thread) => {
           const isSelected = thread.id === threadId
           return (
-            <ListItemButton
+            <ListItem
               key={thread.id}
-              selected={isSelected}
-              onClick={() => controller.selectThread(thread.id)}
-              sx={{
-                my: 0.6,
-                p: 1.25,
-                borderRadius: 2.5,
-                transition: 'all 160ms ease',
-                border: isSelected
-                  ? '1px solid rgba(13, 118, 110, 0.25)'
-                  : '1px solid transparent',
-                bgcolor: isSelected ? 'rgba(13, 118, 110, 0.08)' : 'transparent',
-                '&:hover': {
-                  bgcolor: isSelected
-                    ? 'rgba(13, 118, 110, 0.12)'
-                    : 'rgba(13, 118, 110, 0.04)',
-                },
-              }}
-            >
-              <ListItemIcon sx={{ minWidth: 36 }}>
-                <Avatar
+              disablePadding
+              secondaryAction={
+                <IconButton
+                  size="small"
+                  aria-label={`${thread.title} 的更多操作`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setMenu({ anchorEl: event.currentTarget, thread })
+                  }}
                   sx={{
-                    width: 28,
-                    height: 28,
-                    bgcolor: isSelected ? 'primary.main' : 'action.hover',
-                    color: isSelected ? '#ffffff' : 'text.secondary',
-                    fontSize: '0.8rem',
+                    color: 'text.secondary',
+                    '&:hover': { color: 'text.primary', bgcolor: 'rgba(0, 0, 0, 0.04)' },
                   }}
                 >
-                  <ForumRoundedIcon sx={{ fontSize: 16 }} />
-                </Avatar>
-              </ListItemIcon>
-              <ListItemText
-                primary={thread.title}
-                secondary={threadTimeLabel(thread.updatedAt)}
-                slotProps={{
-                  primary: {
-                    noWrap: true,
-                    sx: {
-                      fontWeight: isSelected ? 850 : 650,
-                      fontSize: '0.88rem',
-                      color: isSelected ? 'primary.main' : 'text.primary',
-                    },
-                  },
-                  secondary: {
-                    sx: { fontSize: '0.72rem', mt: 0.2 },
-                  },
-                }}
-              />
-              <IconButton
-                size="small"
-                aria-label={`${thread.title} 的更多操作`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setMenu({ anchorEl: event.currentTarget, thread })
-                }}
+                  <MoreVertRoundedIcon fontSize="small" />
+                </IconButton>
+              }
+              sx={{ my: 0.6 }}
+            >
+              <ListItemButton
+                selected={isSelected}
+                onClick={() => controller.selectThread(thread.id)}
                 sx={{
-                  color: 'text.secondary',
-                  '&:hover': { color: 'text.primary', bgcolor: 'rgba(0, 0, 0, 0.04)' },
+                  p: 1.25,
+                  pr: 6,
+                  borderRadius: 2.5,
+                  transition: 'all 160ms ease',
+                  border: isSelected
+                    ? '1px solid rgba(13, 118, 110, 0.25)'
+                    : '1px solid transparent',
+                  bgcolor: isSelected ? 'rgba(13, 118, 110, 0.08)' : 'transparent',
+                  '&:hover': {
+                    bgcolor: isSelected
+                      ? 'rgba(13, 118, 110, 0.12)'
+                      : 'rgba(13, 118, 110, 0.04)',
+                  },
                 }}
               >
-                <MoreVertRoundedIcon fontSize="small" />
-              </IconButton>
-            </ListItemButton>
+                <ListItemIcon sx={{ minWidth: 36 }}>
+                  <Avatar
+                    sx={{
+                      width: 28,
+                      height: 28,
+                      bgcolor: isSelected ? 'primary.main' : 'action.hover',
+                      color: isSelected ? '#ffffff' : 'text.secondary',
+                      fontSize: '0.8rem',
+                    }}
+                  >
+                    <ForumRoundedIcon sx={{ fontSize: 16 }} />
+                  </Avatar>
+                </ListItemIcon>
+                <ListItemText
+                  primary={thread.title}
+                  secondary={threadTimeLabel(thread.updatedAt)}
+                  slotProps={{
+                    primary: {
+                      noWrap: true,
+                      sx: {
+                        fontWeight: isSelected ? 850 : 650,
+                        fontSize: '0.88rem',
+                        color: isSelected ? 'primary.main' : 'text.primary',
+                      },
+                    },
+                    secondary: {
+                      sx: { fontSize: '0.72rem', mt: 0.2 },
+                    },
+                  }}
+                />
+              </ListItemButton>
+            </ListItem>
           )
         })}
       </List>
