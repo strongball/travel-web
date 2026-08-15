@@ -1,7 +1,6 @@
 import { AIMessage, HumanMessage } from '@langchain/core/messages'
 import { buildAssistantPrompt, invokeAssistantModel } from '../../api'
 import type { AssistantProgressPhase } from '../../types'
-import { classifyAssistantToolCalls } from '../routing'
 import type { AssistantGraphNodeState } from '../graphState'
 
 type RespondNodeOptions = {
@@ -42,7 +41,7 @@ export function createRespondNode(options: RespondNodeOptions) {
 
     return {
       modelMessages: [...modelMessages, normalizedResponse],
-      toolCallKind: classifyAssistantToolCalls(toolCalls),
+      toolRound: toolCalls.length > 0 ? state.toolRound + 1 : state.toolRound,
     }
   }
 }

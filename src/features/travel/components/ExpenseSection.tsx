@@ -3,7 +3,8 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
-import { Box, Button, ButtonBase, Card, CardActionArea, CardContent, Collapse, Divider, IconButton, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, ButtonBase, Card, CardActionArea, CardContent, Collapse, Divider, IconButton, Paper, Stack, TextField, Typography } from '@mui/material'
+import { getExchangeRate, missingExchangeRateCurrencies } from '../../../lib/currencies'
 import type { Attraction, Expense } from '../../../types/database'
 import { convertExpenseAmount, formatAmount, formatDate } from '../travelWorkspaceUtils'
 
@@ -26,10 +27,17 @@ export function ExpenseSection({
 }) {
   const [query, setQuery] = useState('')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-  const total = expenses.reduce(
-    (sum, expense) => sum + convertExpenseAmount(expense, currency, exchangeRates),
-    0,
+  const missingCurrencies = missingExchangeRateCurrencies(
+    expenses.map((expense) => expense.currency),
+    currency,
+    exchangeRates,
   )
+  const total = missingCurrencies.length === 0
+    ? expenses.reduce(
+        (sum, expense) => sum + convertExpenseAmount(expense, currency, exchangeRates),
+        0,
+      )
+    : null
   const visibleExpenses = expenses.filter((expense) => {
     const haystack = [
       expense.title,
@@ -76,6 +84,11 @@ export function ExpenseSection({
 
   return (
     <Stack spacing={2}>
+      {missingCurrencies.length > 0 ? (
+        <Alert severity="warning">
+          尚未設定 {missingCurrencies.join('、')} 對 {currency} 的匯率，請編輯行程完成設定；原始記帳資料不會被修改。
+        </Alert>
+      ) : null}
       <Paper
         elevation={0}
         sx={{
@@ -109,7 +122,7 @@ export function ExpenseSection({
                 mt: 0.2,
               }}
             >
-              {formatAmount(total, currency)}
+              {total === null ? '尚未完成換算' : formatAmount(total, currency)}
             </Typography>
           </Box>
           <Button
@@ -145,10 +158,17 @@ export function ExpenseSection({
       {groupedExpenses.map((group) => {
         const groupKey = group.id ?? '__general__'
         const isCollapsed = collapsedGroups.has(groupKey)
-        const groupTotal = group.expenses.reduce(
-          (sum, expense) => sum + convertExpenseAmount(expense, currency, exchangeRates),
-          0,
+        const groupMissingCurrencies = missingExchangeRateCurrencies(
+          group.expenses.map((expense) => expense.currency),
+          currency,
+          exchangeRates,
         )
+        const groupTotal = groupMissingCurrencies.length === 0
+          ? group.expenses.reduce(
+              (sum, expense) => sum + convertExpenseAmount(expense, currency, exchangeRates),
+              0,
+            )
+          : null
         return (
           <Paper
             key={groupKey}
@@ -189,7 +209,7 @@ export function ExpenseSection({
                   color="primary.main"
                   sx={{ fontWeight: 900, fontSize: '1rem', whiteSpace: 'nowrap', mr: 0.5 }}
                 >
-                  {formatAmount(groupTotal, currency)}
+                  {groupTotal === null ? '尚未換算' : formatAmount(groupTotal, currency)}
                 </Typography>
                 <ExpandMoreRoundedIcon
                   color="action"
@@ -220,12 +240,14 @@ export function ExpenseSection({
                               color="primary.main"
                               sx={{ fontWeight: 850, fontSize: '0.95rem', whiteSpace: 'nowrap' }}
                             >
-                              {formatAmount(
-                                convertExpenseAmount(expense, currency, exchangeRates),
-                                currency,
-                              )}
+                              {getExchangeRate(expense.currency, currency, exchangeRates) === null
+                                ? formatAmount(expense.amount, expense.currency)
+                                : formatAmount(
+                                    convertExpenseAmount(expense, currency, exchangeRates),
+                                    currency,
+                                  )}
                             </Typography>
-                            {expense.currency !== currency ? (
+                            {expense.currency !== currency && getExchangeRate(expense.currency, currency, exchangeRates) !== null ? (
                               <Typography
                                 variant="caption"
                                 color="text.secondary"
@@ -332,5 +354,4 @@ export function ExpenseSection({
     </Stack>
   )
 }
-
 

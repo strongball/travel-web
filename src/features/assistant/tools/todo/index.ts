@@ -3,6 +3,12 @@ export {
   proposeTodoListTool,
 } from './todoTool'
 export {
+  todoToolInputSchema,
+  todoOperationSchema,
+  addTodoOperationSchema,
+  addTodoCategoryOperationSchema,
+} from './todoToolSchema'
+export {
   extractProposedTodos,
   extractProposedCategories,
   applyTodoProposal,

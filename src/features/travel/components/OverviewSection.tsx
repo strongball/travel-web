@@ -3,7 +3,8 @@ import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded'
-import { Box, Paper, Stack, Typography } from '@mui/material'
+import { Alert, Box, Paper, Stack, Typography } from '@mui/material'
+import { missingExchangeRateCurrencies } from '../../../lib/currencies'
 import type { Expense, Itinerary, TodoItem, TripDay } from '../../../types/database'
 import { formatAmount, formatDate } from '../travelWorkspaceUtils'
 
@@ -18,18 +19,28 @@ export function OverviewSection({
   days: TripDay[]
   expenses: Expense[]
   todos: TodoItem[]
-  totalAmount: number
+  totalAmount: number | null
 }) {
   const attractionCount = days.reduce((sum, day) => sum + day.attractions.length, 0)
   const completed = todos.filter((todo) => todo.isCompleted).length
+  const missingCurrencies = missingExchangeRateCurrencies(
+    expenses.map((expense) => expense.currency),
+    itinerary.currency,
+    itinerary.exchangeRates,
+  )
   return (
     <Stack spacing={2}>
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' } }}>
         <StatCard label="行程天數" value={`${days.length} 天`} icon={<CalendarMonthRoundedIcon />} />
         <StatCard label="景點" value={`${attractionCount}`} icon={<PlaceRoundedIcon />} />
         <StatCard label="待辦完成" value={`${completed}/${todos.length || 0}`} icon={<TaskAltRoundedIcon />} />
-        <StatCard label="總花費" value={formatAmount(totalAmount, itinerary.currency)} icon={<PaidRoundedIcon />} />
+        <StatCard label="總花費" value={totalAmount === null ? '尚未完成換算' : formatAmount(totalAmount, itinerary.currency)} icon={<PaidRoundedIcon />} />
       </Box>
+      {missingCurrencies.length > 0 ? (
+        <Alert severity="warning">
+          尚未設定 {missingCurrencies.join('、')} 對 {itinerary.currency} 的匯率，請到「編輯行程」完成設定後再查看總額。
+        </Alert>
+      ) : null}
       <Paper elevation={0} sx={{ border: 1, borderColor: 'divider', borderRadius: 4, p: 2.5 }}>
         <Typography variant="h6" sx={{ fontWeight: 900 }}>旅程摘要</Typography>
         <Stack spacing={1.5} sx={{ mt: 2 }}>
@@ -50,5 +61,4 @@ function StatCard({ label, value, icon }: { label: string; value: string; icon: 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2 }}><Typography color="text.secondary">{label}</Typography><Typography sx={{ fontWeight: 700, textAlign: 'right' }}>{value}</Typography></Stack>
 }
-
 

@@ -14,6 +14,14 @@ vi.mock('../api', async (importOriginal) => ({
   summarizeWithGemini: assistantGraphMocks.summarizeWithGemini,
 }))
 
+vi.mock('../tools', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../tools')>()
+  return {
+    ...actual,
+    isAssistantToolName: (name: string) => name === 'lookup_weather' || actual.isAssistantToolName(name),
+  }
+})
+
 import {
   createAssistantGraph,
   recentAssistantMessages,
@@ -141,20 +149,30 @@ describe('assistant graph helpers', () => {
 })
 
 describe('assistant graph routing', () => {
-  const state = (toolCallKind: AssistantGraphNodeState['toolCallKind'], toolRound: number) => ({
-    toolCallKind,
+  const stateWithAiMessage = (toolCalls: any[], toolRound: number, pendingProposal: any = null) => ({
+    modelMessages: [
+      new AIMessage({
+        content: '',
+        tool_calls: toolCalls,
+      }),
+    ],
     toolRound,
+    pendingProposal,
   } as AssistantGraphNodeState)
 
-  it('returns to respond after a continuing tool and stops at the round limit', () => {
-    expect(routeAfterRespond(state('continuing', 0), 4)).toBe('execute_tools')
-    expect(routeAfterTools(state('continuing', 1), 4)).toBe('respond')
-    expect(routeAfterTools(state('continuing', 4), 4)).toBe('tool_limit')
+  it('routes continuing tool to execute_tools and stops at the round limit', () => {
+    const continuingCall = { id: '1', name: 'lookup_weather', args: {}, type: 'tool_call' as const }
+    expect(routeAfterRespond(stateWithAiMessage([continuingCall], 0), 4)).toBe('execute_tools')
+    expect(routeAfterTools(stateWithAiMessage([continuingCall], 1), 4)).toBe('respond')
+    expect(routeAfterTools(stateWithAiMessage([continuingCall], 4), 4)).toBe('tool_limit')
   })
 
-  it('finalizes direct text and terminal proposal tool calls', () => {
-    expect(routeAfterRespond(state(null, 0), 4)).toBe('finalize_response')
-    expect(routeAfterTools(state('terminal', 1), 4)).toBe('finalize_response')
+  it('routes to apply_proposal when pendingProposal is present', () => {
+    expect(routeAfterTools(stateWithAiMessage([], 1, { title: 'Proposal' }), 4)).toBe('apply_proposal')
+  })
+
+  it('finalizes direct text responses when no tool calls exist', () => {
+    expect(routeAfterRespond(stateWithAiMessage([], 0), 4)).toBe('finalize_response')
   })
 })
 
@@ -180,7 +198,6 @@ describe('createAssistantGraph', () => {
     expect(phases).toEqual([
       'checking_context',
       'generating_response',
-      'validating_response',
       'saving_checkpoint',
     ])
   })
@@ -283,29 +300,45 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.summary).toBe(summarized.summary)
   })
 
-  it('runs a terminal proposal tool, finalizes it, and does not call the model again', async () => {
-    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({
-      tool_calls: [{
-        id: 'proposal-call',
-        name: 'propose_itinerary_edit',
-        args: {
-          reply: '我準備把第一天改成十點開始。',
-          title: '延後第一天開始時間',
-          explanation: '09:00 改成 10:00',
-          operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
-        },
-        type: 'tool_call',
-      }],
-    }))
+  it('runs a proposal tool, pauses at apply_proposal breakpoint, and resumes on user decision', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({
+        tool_calls: [{
+          id: 'proposal-call',
+          name: 'propose_itinerary_edit',
+          args: {
+            reply: '我準備把第一天改成十點開始。',
+            title: '延後第一天開始時間',
+            explanation: '09:00 改成 10:00',
+            operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({
+        content: '好的，已為您將第一天調整為十點出發！',
+      }))
+
     const proposals = persistence()
+    let applied = false
     const graph = createAssistantGraph(new MemorySaver(), {
-      proposals,
+      proposals: {
+        ...proposals,
+        applyPending: async () => { applied = true },
+      },
     })
-    const completed = await graph.sendTurn(request())
+
+    const req = request()
+    const paused = await graph.sendTurn(req)
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(1)
-    expect(completed.request).toBeNull()
-    expect(completed.assistantMessage?.proposal?.status).toBe('pending')
+    expect(paused.pendingProposal?.status).toBe('pending')
     expect(proposals.saved).toHaveLength(1)
     expect(proposals.saved[0].expectedDayRevisions).toEqual({ 'day-1': 3 })
+
+    const resumed = await graph.resumeTurn(req.threadId, { approved: true })
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(2)
+    expect(applied).toBe(true)
+    expect(resumed.assistantMessage?.content).toBe('好的，已為您將第一天調整為十點出發！')
+    expect(resumed.pendingProposal).toBeNull()
   })
 })

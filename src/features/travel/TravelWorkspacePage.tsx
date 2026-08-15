@@ -14,6 +14,7 @@ import {
   Tabs,
 } from '@mui/material'
 import type { MapLocation } from './MapPickerDialog'
+import { missingExchangeRateCurrencies } from '../../lib/currencies'
 import {
   convertExpenseAmount,
   daysForRange,
@@ -173,10 +174,19 @@ export function TravelWorkspacePage({
     (todo) => todo.itineraryId === selectedItinerary?.id,
   )
   const days = selectedItinerary?.days ?? []
-  const totalAmount = selectedExpenses.reduce(
-    (sum, expense) => sum + convertExpenseAmount(expense, selectedItinerary?.currency ?? 'TWD', selectedItinerary?.exchangeRates),
-    0,
-  )
+  const missingExpenseCurrencies = selectedItinerary
+    ? missingExchangeRateCurrencies(
+        selectedExpenses.map((expense) => expense.currency),
+        selectedItinerary.currency,
+        selectedItinerary.exchangeRates,
+      )
+    : []
+  const totalAmount = missingExpenseCurrencies.length === 0
+    ? selectedExpenses.reduce(
+        (sum, expense) => sum + convertExpenseAmount(expense, selectedItinerary?.currency ?? 'TWD', selectedItinerary?.exchangeRates),
+        0,
+      )
+    : null
   const completedTodos = selectedTodos.filter((todo) => todo.isCompleted).length
   const categories = useMemo(() => {
     const fromTrip = selectedItinerary?.todoCategories ?? []
@@ -598,6 +608,7 @@ export function TravelWorkspacePage({
         itinerary={tripEditor}
         saving={saving}
         canDelete={Boolean(tripEditor && itineraries.some((item) => item.id === tripEditor.id))}
+        expenseCurrencies={tripEditor ? expenses.filter((expense) => expense.itineraryId === tripEditor.id).map((expense) => expense.currency) : []}
         onClose={() => setTripEditor(null)}
         onChange={updateTrip}
         onDateChange={updateTripDate}

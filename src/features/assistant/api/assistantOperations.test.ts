@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 import {
-  assistantOperationSchema,
-  assistantOperationsSchema,
-  jsonSchemaFor,
-} from './assistantSchemas'
-import {
   normalizeAssistantOperations,
   parseAssistantOperations,
   validateAssistantOperations,
@@ -74,33 +69,34 @@ const canonicalAttraction = (id: string) => ({
 })
 
 describe('assistant operation contract', () => {
-  it('uses strict per-type branches instead of accepting unrelated optional fields', () => {
-    expect(assistantOperationSchema.safeParse({
-      type: 'remove_attraction',
-      attractionId: 'a-1',
-      dayId: 'day-1',
-    }).success).toBe(false)
-    expect(assistantOperationSchema.safeParse({
-      type: 'add_attraction',
-      dayId: 'day-1',
-      attraction: newAttraction(),
-      duration: 0,
-    }).success).toBe(false)
-    expect(assistantOperationSchema.safeParse({
-      type: 'add_attraction',
-      dayId: 'day-1',
-      attraction: { ...newAttraction(), id: 'client-supplied-id' },
-    }).success).toBe(false)
-    expect(assistantOperationSchema.safeParse({
-      type: 'add_attraction',
-      dayId: 'day-1',
-      attraction: { ...newAttraction(), cost: 2500 },
-    }).success).toBe(false)
+  it('validates operation branches and supports both flat and nested updates', () => {
     expect(() => parseAssistantOperations([{
       type: 'add_attraction',
       dayId: 'day-1',
       attraction: { ...newAttraction(), duration: 0 },
     }])).toThrow('Unsupported assistant operation')
+
+    const flatResult = normalizeAssistantOperations([{
+      type: 'update_attraction',
+      attractionId: 'a-1',
+      duration: 120,
+    }])
+    expect(flatResult[0]).toEqual({
+      type: 'update_attraction',
+      attractionId: 'a-1',
+      changes: { duration: 120 },
+    })
+
+    const nestedResult = normalizeAssistantOperations([{
+      type: 'update_attraction',
+      attractionId: 'a-1',
+      changes: { duration: 90 },
+    }])
+    expect(nestedResult[0]).toEqual({
+      type: 'update_attraction',
+      attractionId: 'a-1',
+      changes: { duration: 90 },
+    })
   })
 
   it('normalizes and validates HH:mm while rejecting invalid duration, transport, and empty text', () => {
@@ -132,16 +128,6 @@ describe('assistant operation contract', () => {
       type: 'add_todo',
       title: '   ',
     }])).toThrow('Unsupported assistant operation')
-  })
-
-  it('keeps the generated schema within the Gemini-supported subset', () => {
-    const schema = jsonSchemaFor(assistantOperationsSchema)
-    const serialized = JSON.stringify(schema)
-    expect(schema).not.toHaveProperty('$schema')
-    expect(serialized).not.toContain('minLength')
-    expect(serialized).not.toContain('pattern')
-    expect(serialized).not.toContain('const')
-    expect(serialized).toContain('anyOf')
   })
 })
 

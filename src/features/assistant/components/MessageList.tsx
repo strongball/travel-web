@@ -243,18 +243,7 @@ export function MessageList({
         </Alert>
       ) : null}
 
-      {/* Dynamic bottom placeholder space: only expands while sending/responding */}
-      {sending && messages.length > 0 ? (
-        <Box
-          sx={{
-            minHeight: { xs: 'calc(100dvh - 240px)', md: 'calc(100dvh - 280px)' },
-            flexShrink: 0,
-            pointerEvents: 'none',
-          }}
-        />
-      ) : (
-        <Box sx={{ minHeight: { xs: 16, sm: 24 }, flexShrink: 0 }} />
-      )}
+      <Box sx={{ minHeight: { xs: 16, sm: 24 }, flexShrink: 0 }} />
     </Stack>
   )
 }

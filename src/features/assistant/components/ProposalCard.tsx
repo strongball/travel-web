@@ -25,7 +25,7 @@ export function ProposalCard({
   online: boolean
   onDecision: (proposal: StoredAssistantProposal, approved: boolean) => void
 }) {
-  const [changesExpanded, setChangesExpanded] = useState(false)
+  const [changesExpanded, setChangesExpanded] = useState(proposal.status === 'pending')
   const compactable =
     proposal.status === 'applied' ||
     proposal.status === 'rejected' ||
