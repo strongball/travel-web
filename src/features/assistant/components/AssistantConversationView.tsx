@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
@@ -43,6 +43,17 @@ export function AssistantConversationView({
     hasPendingProposal,
   } = controller
 
+  const composerInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
+  const prevSendingRef = useRef(sending)
+
+  useEffect(() => {
+    controller.registerFocusComposer(() => {
+      requestAnimationFrame(() => {
+        composerInputRef.current?.focus()
+      })
+    })
+  }, [controller])
+
   useLayoutEffect(() => {
     const container = conversationScrollRef.current
     if (!threadId) {
@@ -74,6 +85,17 @@ export function AssistantConversationView({
     previousSendingRef.current = sending
   }, [conversationLoading, messages, sending, threadId])
 
+  const composerDisabled = conversationLoading || sending || hasPendingProposal || !online
+
+  useEffect(() => {
+    if (prevSendingRef.current && !sending && !composerDisabled) {
+      requestAnimationFrame(() => {
+        composerInputRef.current?.focus()
+      })
+    }
+    prevSendingRef.current = sending
+  }, [composerDisabled, sending])
+
   if (loading) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 260 }}>
@@ -87,8 +109,6 @@ export function AssistantConversationView({
     : hasPendingProposal
     ? '請先確認或拒絕待處理的行程提案'
     : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
-
-  const composerDisabled = conversationLoading || sending || hasPendingProposal || !online
 
   return (
     <Stack spacing={0} sx={{ height: '100%' }}>
@@ -191,6 +211,7 @@ export function AssistantConversationView({
 
           {threadId ? (
             <ChatComposer
+              inputRef={composerInputRef}
               text={text}
               onChangeText={controller.setText}
               onSubmit={controller.send}

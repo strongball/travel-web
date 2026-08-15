@@ -13,6 +13,7 @@ import {
 } from '@mui/material'
 import type { StoredAssistantProposal } from '../../../lib/repositories/assistantRepository'
 import { ItineraryProposalView, TodoProposalView } from '../tools'
+import { formatAssistantText } from '../utils/formatAssistantText'
 
 export function ProposalCard({
   proposal,
@@ -135,7 +136,7 @@ export function ProposalCard({
         }}
       >
         <Typography variant="body2" sx={{ lineHeight: 1.6, color: 'text.primary' }}>
-          {proposal.explanation}
+          {formatAssistantText(proposal.explanation)}
         </Typography>
       </Box>
 

@@ -150,6 +150,8 @@ export type AssistantConversationController = {
   retryLastTurn: () => Promise<void>
   decideProposal: (proposal: StoredAssistantProposal, approved: boolean) => Promise<void>
   manualSummarize: () => Promise<void>
+  registerFocusComposer: (fn: () => void) => void
+  focusComposer: () => void
 }
 
 export function useAssistantConversation(
@@ -168,7 +170,6 @@ export function useAssistantConversation(
   const [creatingThread, setCreatingThread] = useState(false)
   const [deletingThreadId, setDeletingThreadId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
-  const [rejectingProposalId, setRejectingProposalId] = useState<string | null>(null)
   const [progressLabel, setProgressLabel] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -186,7 +187,15 @@ export function useAssistantConversation(
   const creatingThreadRef = useRef(false)
   const conversationLoadRef = useRef(0)
   const online = useOnlineStatus()
+  const focusComposerRef = useRef<(() => void) | null>(null)
   const threadStorageKey = `assistant-active-thread:${itinerary.id}`
+
+  const registerFocusComposer = useCallback((fn: () => void) => {
+    focusComposerRef.current = fn
+  }, [])
+  const focusComposer = useCallback(() => {
+    focusComposerRef.current?.()
+  }, [])
 
   const currentThread = threads.find((thread) => thread.id === threadId) ?? null
   const hasPendingProposal = proposals.some((proposal) => proposal.status === 'pending')
@@ -518,11 +527,30 @@ export function useAssistantConversation(
   const decideProposal = useCallback(async (proposal: StoredAssistantProposal, approved: boolean) => {
     if (!online) return
     setError(null)
-    setSending(true)
-    if (!approved) setRejectingProposalId(proposal.id)
-    setProgressLabel(approved ? progressLabels.applying_proposal : '正在更新對話…')
 
-    const nextStatus = approved ? ('applied' as const) : ('rejected' as const)
+    if (!approved) {
+      const nextStatus = 'rejected' as const
+      setProposals((current) => current.map((item) => item.id === proposal.id
+        ? { ...item, status: nextStatus }
+        : item))
+      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
+        ? { ...item, proposal: { ...item.proposal, status: nextStatus } }
+        : item))
+
+      focusComposer()
+
+      try {
+        await applyStoredAssistantProposal(proposal.id, false)
+      } catch (decisionError) {
+        setError(friendlyError(decisionError, '無法拒絕行程提案'))
+      }
+      return
+    }
+
+    setSending(true)
+    setProgressLabel(progressLabels.applying_proposal)
+
+    const nextStatus = 'applied' as const
     setProposals((current) => current.map((item) => item.id === proposal.id
       ? { ...item, status: nextStatus }
       : item))
@@ -531,7 +559,7 @@ export function useAssistantConversation(
       : item))
 
     try {
-      const state = await runner.resumeTurn(proposal.threadId, { approved }, onProgress)
+      const state = await runner.resumeTurn(proposal.threadId, { approved: true }, onProgress)
       if (state.assistantMessage) {
         const assistantMessage = state.assistantMessage
         if (activeThreadRef.current === proposal.threadId) {
@@ -547,15 +575,15 @@ export function useAssistantConversation(
       }
       await refreshConversation(proposal.threadId, false)
       await refreshThreads(proposal.threadId)
+      focusComposer()
     } catch (decisionError) {
-      setError(friendlyError(decisionError, approved ? '無法套用行程提案' : '無法拒絕行程提案'))
+      setError(friendlyError(decisionError, '無法套用行程提案'))
       await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
       setSending(false)
-      setRejectingProposalId(null)
       setProgressLabel(null)
     }
-  }, [onProgress, online, refreshConversation, refreshThreads, runner])
+  }, [focusComposer, onProgress, online, refreshConversation, refreshThreads, runner])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || messages.length === 0 || sending || sendingRef.current || !online) return
@@ -588,7 +616,7 @@ export function useAssistantConversation(
     deletingThreadId,
     sending,
     online,
-    rejectingProposalId,
+    rejectingProposalId: null,
     progressLabel,
     error,
     notice,
@@ -606,5 +634,7 @@ export function useAssistantConversation(
     retryLastTurn,
     decideProposal,
     manualSummarize,
+    registerFocusComposer,
+    focusComposer,
   }
 }

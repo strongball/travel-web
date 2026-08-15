@@ -22,6 +22,7 @@ export function ChatComposer({
   disabled,
   placeholder,
   sending,
+  inputRef,
 }: {
   text: string
   onChangeText: (value: string) => void
@@ -29,6 +30,7 @@ export function ChatComposer({
   disabled: boolean
   placeholder: string
   sending: boolean
+  inputRef?: React.Ref<HTMLInputElement | HTMLTextAreaElement>
 }) {
   return (
     <Stack
@@ -44,6 +46,7 @@ export function ChatComposer({
       }}
     >
       <TextField
+        inputRef={inputRef}
         fullWidth
         variant="outlined"
         multiline

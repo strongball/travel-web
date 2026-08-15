@@ -8,6 +8,7 @@ import {
 } from '@mui/material'
 import ReactMarkdown from 'react-markdown'
 import type { AssistantMessage } from '../types'
+import { formatAssistantText } from '../utils/formatAssistantText'
 
 const timeLabel = (value: string) =>
   new Intl.DateTimeFormat('zh-TW', {
@@ -143,7 +144,7 @@ export function MessageBubble({ message }: { message: AssistantMessage }) {
             },
           }}
         >
-          <ReactMarkdown>{message.content}</ReactMarkdown>
+          <ReactMarkdown>{formatAssistantText(message.content)}</ReactMarkdown>
         </Paper>
         <Typography
           variant="caption"
