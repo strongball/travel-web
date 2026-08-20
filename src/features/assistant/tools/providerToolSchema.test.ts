@@ -70,14 +70,10 @@ describe('active Gemini tool declarations', () => {
 })
 
 describe('LangChain runtime tool validation', () => {
-  it('validates actual tool input with the Zod schema', async () => {
-    const result = await proposeTodoListTool.invoke({
+  it('requires graph turn context before creating a proposal', async () => {
+    await expect(proposeTodoListTool.invoke({
       reply: '已準備待辦。',
       todos: [{ title: '購買交通卡' }],
-    }) as any
-
-    expect(result.update?.pendingProposal?.operations).toEqual([
-      { type: 'add_todo', title: '購買交通卡' },
-    ])
+    })).rejects.toThrow('Proposal tool requires a turn id')
   })
 })

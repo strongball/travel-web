@@ -1,14 +1,19 @@
 import {
   END,
+  Command,
   START,
   StateGraph,
+  isGraphInterrupt,
   type BaseCheckpointSaver,
 } from '@langchain/langgraph/web'
+import { AIMessage } from '@langchain/core/messages'
 import type {
   AssistantGraphDependencies,
   AssistantGraphRunner,
   AssistantGraphState,
   AssistantMessage,
+  AssistantPendingToolCall,
+  AssistantProposalReviewInterrupt,
   AssistantProgressListener,
   AssistantProgressPhase,
   AssistantTurnRequest,
@@ -25,11 +30,11 @@ import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { langchainAssistantTools } from '../tools'
 import { assistantGraphState } from './graphState'
 import { routeAfterRespond, routeAfterTools } from './routing'
-import { createApplyProposalNode } from './nodes/applyProposalNode'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
 import { createPrepareContextNode } from './nodes/prepareContextNode'
 import { createRespondNode } from './nodes/respondNode'
 import { createToolLimitNode } from './nodes/toolLimitNode'
+import { ensureLangGraphAsyncContext } from '../../../lib/langGraphAsyncContext'
 
 export {
   ASSISTANT_GRAPH_VERSION,
@@ -66,6 +71,7 @@ export const createAssistantGraph = (
   checkpointer: BaseCheckpointSaver,
   dependencies: AssistantGraphDependencies,
 ): AssistantGraphRunner => {
+  ensureLangGraphAsyncContext()
   const version = dependencies.graphVersion ?? ASSISTANT_GRAPH_VERSION
   const msgLimit = dependencies.summaryMessageThreshold ?? DEFAULT_SUMMARY_MESSAGE_THRESHOLD
   const charLimit = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
@@ -88,11 +94,12 @@ export const createAssistantGraph = (
       recentAssistantMessages,
     }))
     .addNode('respond', createRespondNode({ emitProgress }))
-    .addNode('execute_tools', (state, config) => toolNode.invoke({ ...state, messages: state.modelMessages }, config))
-    .addNode('apply_proposal', createApplyProposalNode({
-      proposals: dependencies.proposals,
-      emitProgress,
-    }))
+    .addNode('execute_tools', async (state, config) => {
+      const result = await toolNode.invoke({ ...state, messages: state.modelMessages }, config) as {
+        messages: typeof state.modelMessages
+      }
+      return { modelMessages: [...state.modelMessages, ...result.messages] }
+    })
     .addNode('finalize_response', createFinalizeResponseNode({ emitProgress }))
     .addNode('tool_limit', createToolLimitNode(maxToolRounds))
     .addEdge(START, 'prepare_context')
@@ -104,34 +111,65 @@ export const createAssistantGraph = (
     })
     .addConditionalEdges('execute_tools', (state) => routeAfterTools(state, maxToolRounds), {
       respond: 'respond',
-      apply_proposal: 'apply_proposal',
       tool_limit: 'tool_limit',
     })
-    .addEdge('apply_proposal', 'respond')
     .addEdge('finalize_response', END)
-    .compile({
-      checkpointer,
-      interruptBefore: ['apply_proposal'],
-    })
+    .compile({ checkpointer })
 
   const config = (threadId: string, req?: AssistantTurnRequest | null) => ({
     configurable: {
       thread_id: threadId,
       request: req,
-      savePending: dependencies.proposals.savePending,
+      applyProposal: dependencies.proposals.apply,
     },
     durability: 'exit' as const,
   })
   const inFlightTurns = new Map<string, Promise<AssistantGraphState>>()
 
+  const pendingToolCallFromSnapshot = (
+    snapshot: Awaited<ReturnType<typeof workflow.getState>>,
+  ): AssistantPendingToolCall | null => {
+    const interruptValue = snapshot.tasks
+      .flatMap((task) => task.interrupts ?? [])
+      .map((item) => item.value)
+      .find((value): value is AssistantProposalReviewInterrupt => (
+        Boolean(value) &&
+        typeof value === 'object' &&
+        (value as { type?: unknown }).type === 'proposal_review' &&
+        typeof (value as { toolCallId?: unknown }).toolCallId === 'string' &&
+        Boolean((value as { proposal?: unknown }).proposal)
+      ))
+    if (!interruptValue?.proposal) return null
+
+    const values = snapshot.values as AssistantGraphState
+    const lastAiMessage = values.modelMessages
+      .findLast((message) => AIMessage.isInstance(message))
+    const toolCall = lastAiMessage && AIMessage.isInstance(lastAiMessage)
+      ? (lastAiMessage.tool_calls ?? []).find((call) => call.id === interruptValue.toolCallId)
+      : undefined
+
+    return {
+      id: interruptValue.toolCallId,
+      name: toolCall?.name ?? 'proposal_review',
+      proposal: interruptValue.proposal,
+    }
+  }
+
+  const stateWithSnapshot = (
+    state: AssistantGraphState,
+    snapshot: Awaited<ReturnType<typeof workflow.getState>>,
+  ): AssistantGraphState => {
+    return {
+      ...state,
+      pendingToolCall: pendingToolCallFromSnapshot(snapshot),
+    }
+  }
+
   const getState = async (threadId: string): Promise<AssistantGraphState | null> => {
     const snapshot = await workflow.getState(config(threadId))
     if (!snapshot.config.configurable?.checkpoint_id) return null
     const values = snapshot.values as AssistantGraphState
-    return {
-      ...values,
-      pendingProposal: values.pendingProposal ?? values.assistantMessage?.proposal ?? null,
-    }
+    return stateWithSnapshot(values, snapshot)
   }
 
   const sendTurn = async (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => {
@@ -148,7 +186,8 @@ export const createAssistantGraph = (
 
         // Return cached assistant message if this turn was already completed
         const completed = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'assistant')
-        if (completed && previous && !previous.pendingProposal) return { ...previous, assistantMessage: completed }
+        if (completed && previous) return { ...previous, assistantMessage: completed }
+        if (previous?.pendingToolCall?.proposal.turnId === request.turnId) return previous
 
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??
           request.rehydratedMessages?.find((m) => m.turnId === request.turnId && m.role === 'user')
@@ -164,23 +203,23 @@ export const createAssistantGraph = (
         const baseMsgs = previous?.messages ?? request.rehydratedMessages ?? []
         const messages = existingUser ? baseMsgs : [...baseMsgs, userMessage]
 
-        const output = await workflow.invoke({
-          graphVersion: version,
-          summary: previous?.summary ?? request.rehydratedSummary ?? '',
-          messages,
-          request,
-          assistantMessage: null,
-          pendingProposal: null,
-          userDecision: null,
-          modelMessages: [],
-          toolRound: 0,
-        }, config(request.threadId))
-
-        const stateOutput = output as unknown as AssistantGraphState
-        return {
-          ...stateOutput,
-          pendingProposal: stateOutput.pendingProposal ?? stateOutput.assistantMessage?.proposal ?? null,
+        let output: unknown
+        try {
+          output = await workflow.invoke({
+            graphVersion: version,
+            summary: previous?.summary ?? request.rehydratedSummary ?? '',
+            messages,
+            request,
+            assistantMessage: null,
+            pendingToolCall: null,
+            modelMessages: [],
+            toolRound: 0,
+          }, config(request.threadId))
+        } catch (error) {
+          if (!isGraphInterrupt(error)) throw error
         }
+        const snapshot = await workflow.getState(config(request.threadId))
+        return stateWithSnapshot((output ?? snapshot.values) as AssistantGraphState, snapshot)
       } finally {
         progressListeners.delete(request.threadId)
       }
@@ -205,13 +244,14 @@ export const createAssistantGraph = (
     const run = (async () => {
       if (onProgress) progressListeners.set(threadId, onProgress)
       try {
-        await workflow.updateState(config(threadId), { userDecision: decision })
-        const output = await workflow.invoke(null, config(threadId))
-        const stateOutput = output as unknown as AssistantGraphState
-        return {
-          ...stateOutput,
-          pendingProposal: stateOutput.pendingProposal ?? stateOutput.assistantMessage?.proposal ?? null,
+        let output: unknown
+        try {
+          output = await workflow.invoke(new Command({ resume: decision }), config(threadId))
+        } catch (error) {
+          if (!isGraphInterrupt(error)) throw error
         }
+        const snapshot = await workflow.getState(config(threadId))
+        return stateWithSnapshot((output ?? snapshot.values) as AssistantGraphState, snapshot)
       } finally {
         progressListeners.delete(threadId)
       }

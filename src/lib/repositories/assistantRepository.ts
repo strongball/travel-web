@@ -1,4 +1,3 @@
-import type { TripDay } from '../../types/database'
 import type {
   AssistantMessage,
   ItineraryChangeProposal,
@@ -18,12 +17,7 @@ export type AssistantThread = {
   updatedAt: string
 }
 
-export type StoredAssistantProposal = ItineraryChangeProposal & {
-  beforeDays: TripDay[]
-  afterDays: TripDay[]
-  proposedTodos?: Array<{ title: string; category: string }>
-  proposedCategories?: string[]
-}
+export type StoredAssistantProposal = ItineraryChangeProposal
 
 type Row = Record<string, unknown>
 const text = (value: unknown) => typeof value === 'string' ? value : ''
@@ -77,13 +71,19 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
   const { data, error } = await supabase.from('assistant_messages').select('*')
     .eq('thread_id', threadId).order('created_at', { ascending: true })
   if (error) throw error
-  return (data as Row[]).map((row) => ({
-    id: text(row.id),
-    turnId: text(row.turn_id),
-    role: row.role === 'assistant' ? 'assistant' : 'user',
-    content: text(row.content),
-    createdAt: text(row.created_at),
-  }))
+  return (data as Row[]).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === 'object'
+      ? row.metadata as Record<string, unknown>
+      : {}
+    return {
+      id: text(row.id),
+      turnId: text(row.turn_id),
+      role: row.role === 'assistant' ? 'assistant' : 'user',
+      content: text(row.content),
+      createdAt: text(row.created_at),
+      proposal: metadata.proposal as ItineraryChangeProposal | undefined,
+    }
+  })
 }
 
 export async function saveAssistantMessage(threadId: string, message: AssistantMessage) {
@@ -93,85 +93,29 @@ export async function saveAssistantMessage(threadId: string, message: AssistantM
     turn_id: message.turnId,
     role: message.role,
     content: message.content,
+    metadata: message.proposal ? { proposal: message.proposal } : {},
     created_at: message.createdAt,
   }, { onConflict: 'thread_id,turn_id,role' })
   if (error) throw error
 }
 
-export async function saveAssistantProposal(
+export async function applyAssistantOperations(
+  threadId: string,
   proposal: ItineraryChangeProposal,
-  beforeDays: TripDay[],
-  afterDays: TripDay[],
-  proposedTodos?: Array<{ title: string; category: string }>,
-  proposedCategories?: string[],
 ) {
-  const expectedRevisionsWithMeta = {
-    ...proposal.expectedDayRevisions,
-    ...(proposedTodos?.length ? { __proposedTodos: proposedTodos } : {}),
-    ...(proposedCategories?.length ? { __proposedCategories: proposedCategories } : {}),
-  }
-  const { error } = await supabase.from('assistant_proposals').upsert({
-    id: proposal.id,
-    thread_id: proposal.threadId,
-    turn_id: proposal.turnId,
-    itinerary_id: proposal.itineraryId,
-    status: 'pending',
-    before_snapshot: beforeDays,
-    after_snapshot: afterDays,
-    expected_revisions: expectedRevisionsWithMeta,
-    change_summary: proposal.explanation || proposal.title,
-  }, {
-    onConflict: 'thread_id,turn_id',
-    // A replay after confirmation must never turn an applied/rejected proposal
-    // back into pending. The first canonical proposal wins for this turn.
-    ignoreDuplicates: true,
-  })
-  if (error) throw error
-}
-
-export async function listAssistantProposals(threadId: string): Promise<StoredAssistantProposal[]> {
-  const { data, error } = await supabase.from('assistant_proposals').select('*')
-    .eq('thread_id', threadId).order('created_at', { ascending: true })
-  if (error) throw error
-  return (data as Row[]).map((row) => {
-    const revisions = (row.expected_revisions ?? {}) as Record<string, unknown>
-    const proposedTodos = Array.isArray(revisions.__proposedTodos)
-      ? (revisions.__proposedTodos as Array<{ title: string; category: string }>)
-      : undefined
-    const proposedCategories = Array.isArray(revisions.__proposedCategories)
-      ? (revisions.__proposedCategories as string[])
-      : undefined
-
-    return {
-      id: text(row.id),
-      threadId: text(row.thread_id),
-      turnId: text(row.turn_id),
-      itineraryId: text(row.itinerary_id),
-      title: '行程修改提案',
-      explanation: text(row.change_summary),
-      expectedDayRevisions: Object.fromEntries(
-        Object.entries(revisions).filter(([key]) => !key.startsWith('__')) as [string, number][],
-      ),
-      operations: [],
-      status: text(row.status) as StoredAssistantProposal['status'],
-      createdAt: text(row.created_at),
-      beforeDays: (row.before_snapshot ?? []) as TripDay[],
-      afterDays: (row.after_snapshot ?? []) as TripDay[],
-      proposedTodos,
-      proposedCategories,
-    }
-  })
-}
-
-export async function applyStoredAssistantProposal(id: string, approved: boolean) {
-  const { data, error } = await supabase.rpc('apply_assistant_proposal', {
-    p_proposal_id: id,
-    p_approved: approved,
+  const { data, error } = await supabase.rpc('apply_assistant_operations', {
+    p_thread_id: threadId,
+    p_turn_id: proposal.turnId,
+    p_itinerary_id: proposal.itineraryId,
+    p_expected_revisions: proposal.expectedDayRevisions,
+    p_after_snapshot: proposal.afterDays,
+    p_proposed_todos: proposal.proposedTodos,
+    p_proposed_categories: proposal.proposedCategories,
   })
   if (error) throw error
   const status = (data as { status?: string } | null)?.status
-  if (status !== 'applied' && status !== 'expired' && status !== 'rejected') {
-    throw new Error('無法確認行程提案狀態')
+  if (status !== 'applied' && status !== 'expired') {
+    throw new Error('無法確認行程操作狀態')
   }
   return status
 }

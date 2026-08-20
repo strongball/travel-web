@@ -1,5 +1,5 @@
 import { MemorySaver } from '@langchain/langgraph/web'
-import { AIMessage, type BaseMessage } from '@langchain/core/messages'
+import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 
@@ -35,7 +35,7 @@ import {
 } from '../api'
 import type {
   AssistantMessage,
-  AssistantProposalPersistence,
+  AssistantProposalExecution,
   AssistantTurnRequest,
   ItineraryChangeProposal,
 } from '../types'
@@ -79,13 +79,9 @@ const request = (): AssistantTurnRequest => ({
   dayRevisions: { 'day-1': 3 },
 })
 
-const persistence = (): AssistantProposalPersistence & { saved: ItineraryChangeProposal[] } => {
-  const result = {
-    saved: [] as ItineraryChangeProposal[],
-    async savePending(proposal: ItineraryChangeProposal) { result.saved.push(proposal) },
-  }
-  return result
-}
+const persistence = (): AssistantProposalExecution => ({
+  async apply() { return 'applied' },
+})
 
 beforeEach(() => {
   assistantGraphMocks.invokeAssistantModel.mockReset()
@@ -149,7 +145,12 @@ describe('assistant graph helpers', () => {
 })
 
 describe('assistant graph routing', () => {
-  const stateWithAiMessage = (toolCalls: any[], toolRound: number, pendingProposal: any = null) => ({
+  const stateWithAiMessage = (toolCalls: any[], toolRound: number) => ({
+    graphVersion: 8,
+    summary: '',
+    messages: [],
+    request: null,
+    assistantMessage: null,
     modelMessages: [
       new AIMessage({
         content: '',
@@ -157,7 +158,6 @@ describe('assistant graph routing', () => {
       }),
     ],
     toolRound,
-    pendingProposal,
   } as AssistantGraphNodeState)
 
   it('routes continuing tool to execute_tools and stops at the round limit', () => {
@@ -167,8 +167,8 @@ describe('assistant graph routing', () => {
     expect(routeAfterTools(stateWithAiMessage([continuingCall], 4), 4)).toBe('tool_limit')
   })
 
-  it('routes to apply_proposal when pendingProposal is present', () => {
-    expect(routeAfterTools(stateWithAiMessage([], 1, { title: 'Proposal' }), 4)).toBe('apply_proposal')
+  it('returns to the model after every tool result', () => {
+    expect(routeAfterTools(stateWithAiMessage([], 1), 4)).toBe('respond')
   })
 
   it('finalizes direct text responses when no tool calls exist', () => {
@@ -277,13 +277,13 @@ describe('createAssistantGraph', () => {
 
     const currentGraph = createAssistantGraph(checkpointer, {
       proposals: persistence(),
-      graphVersion: 5,
+      graphVersion: 8,
     })
     await expect(currentGraph.sendTurn({
       ...firstTurn,
       turnId: crypto.randomUUID(),
       text: '下一個問題',
-    })).rejects.toThrow('version 3 cannot resume as version 5')
+    })).rejects.toThrow('version 3 cannot resume as version 8')
   })
 
   it('manually summarizes the saved thread and keeps the recent window', async () => {
@@ -300,7 +300,7 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.summary).toBe(summarized.summary)
   })
 
-  it('runs a proposal tool, pauses at apply_proposal breakpoint, and resumes on user decision', async () => {
+  it('runs a proposal tool, pauses inside the tool, and resumes on user decision', async () => {
     assistantGraphMocks.invokeAssistantModel
       .mockResolvedValueOnce(new AIMessage({
         tool_calls: [{
@@ -319,26 +319,68 @@ describe('createAssistantGraph', () => {
         content: '好的，已為您將第一天調整為十點出發！',
       }))
 
-    const proposals = persistence()
     let applied = false
     const graph = createAssistantGraph(new MemorySaver(), {
       proposals: {
-        ...proposals,
-        applyPending: async () => { applied = true },
+        apply: async () => { applied = true; return 'applied' },
       },
     })
 
     const req = request()
     const paused = await graph.sendTurn(req)
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(1)
-    expect(paused.pendingProposal?.status).toBe('pending')
-    expect(proposals.saved).toHaveLength(1)
-    expect(proposals.saved[0].expectedDayRevisions).toEqual({ 'day-1': 3 })
+    expect(paused.assistantMessage).toBeNull()
+    expect(paused.messages).toHaveLength(1)
+    expect(paused.messages[0]?.role).toBe('user')
+    expect(paused.pendingToolCall?.id).toBe('proposal-call')
+    expect(paused.pendingToolCall?.name).toBe('propose_itinerary_edit')
+    expect(paused.pendingToolCall?.proposal.status).toBe('pending')
+    expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
+    expect(paused.pendingToolCall?.proposal.expectedDayRevisions).toEqual({ 'day-1': 3 })
 
     const resumed = await graph.resumeTurn(req.threadId, { approved: true })
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(2)
     expect(applied).toBe(true)
+    const resumedModelMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
+    const toolMessage = resumedModelMessages.find((message) => ToolMessage.isInstance(message)) as ToolMessage
+    expect(JSON.parse(toolMessage.content as string).proposal).toBeUndefined()
+    expect((toolMessage.artifact as { proposal: ItineraryChangeProposal }).proposal.status).toBe('applied')
     expect(resumed.assistantMessage?.content).toBe('好的，已為您將第一天調整為十點出發！')
-    expect(resumed.pendingProposal).toBeNull()
+    expect(resumed.assistantMessage?.proposal?.status).toBe('applied')
+  })
+
+  it('resumes a proposal rejection through the graph', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({
+        tool_calls: [{
+          id: 'proposal-call',
+          name: 'propose_todo_list',
+          args: {
+            reply: '我準備列出行前待辦。',
+            title: '行前準備',
+            explanation: '整理行前準備清單',
+            todos: [{ title: '購買交通卡' }],
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({ content: '好的，我先不套用這份清單。' }))
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+
+    const req = request()
+    const paused = await graph.sendTurn({ ...req, text: '幫我列出待辦' })
+    expect(paused.assistantMessage).toBeNull()
+    expect(paused.messages).toHaveLength(1)
+    expect(paused.messages[0]?.role).toBe('user')
+    expect(paused.pendingToolCall?.id).toBe('proposal-call')
+    expect(paused.pendingToolCall?.name).toBe('propose_todo_list')
+    expect(paused.pendingToolCall?.proposal.status).toBe('pending')
+    expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
+    const resumed = await graph.resumeTurn(req.threadId, { approved: false, feedback: '我想自己整理' })
+    expect(resumed.assistantMessage?.proposal?.status).toBe('rejected')
+    expect(resumed.assistantMessage?.content).toBe('好的，我先不套用這份清單。')
   })
 })

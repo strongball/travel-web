@@ -7,7 +7,6 @@ export type AssistantGraphRoute =
   | 'finalize_response'
   | 'tool_limit'
   | 'respond'
-  | 'apply_proposal'
 
 export function getLatestAssistantToolCalls(state: AssistantGraphNodeState): ToolCall[] {
   const lastAiMessage = state.modelMessages.findLast((message) => AIMessage.isInstance(message)) as AIMessage | undefined
@@ -33,7 +32,6 @@ export function routeAfterTools(
   state: AssistantGraphNodeState,
   maxToolRounds: number,
 ): AssistantGraphRoute {
-  if (state.pendingProposal) return 'apply_proposal'
   if (state.toolRound >= maxToolRounds) return 'tool_limit'
   return 'respond'
 }

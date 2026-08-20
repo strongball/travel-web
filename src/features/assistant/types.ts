@@ -1,14 +1,13 @@
-import type { Itinerary, TodoItem } from '../../types/database'
+import type { Itinerary, TodoItem, TripDay } from '../../types/database'
 import type { BaseMessage } from '@langchain/core/messages'
 
-export const ASSISTANT_GRAPH_VERSION = 5
+export const ASSISTANT_GRAPH_VERSION = 8
 
 export type AssistantProgressPhase =
   | 'checking_context'
   | 'summarizing_context'
   | 'generating_response'
   | 'validating_response'
-  | 'saving_proposal'
   | 'applying_proposal'
   | 'saving_checkpoint'
   | 'saving_response'
@@ -24,6 +23,7 @@ export type AssistantMessage = {
   role: AssistantMessageRole
   content: string
   createdAt: string
+  /** Completed proposal result; pending proposals live on pendingToolCall. */
   proposal?: ItineraryChangeProposal | null
 }
 
@@ -77,6 +77,10 @@ export type ItineraryChangeProposal = BaseAssistantProposal & {
   itineraryId: string
   expectedDayRevisions: Record<string, number>
   operations: AssistantOperation[]
+  beforeDays: TripDay[]
+  afterDays: TripDay[]
+  proposedTodos: Array<{ title: string; category: string }>
+  proposedCategories: string[]
 }
 
 export type AssistantProposal = ItineraryChangeProposal
@@ -99,14 +103,29 @@ export type AssistantUserDecision = {
   feedback?: string
 }
 
-export type AssistantProposalPersistence = {
-  savePending: (proposal: ItineraryChangeProposal) => Promise<void>
-  applyPending?: (proposal: ItineraryChangeProposal) => Promise<void>
-  rejectPending?: (proposal: ItineraryChangeProposal) => Promise<void>
+export type AssistantProposalReviewInterrupt = {
+  type: 'proposal_review'
+  toolCallId: string
+  proposal: ItineraryChangeProposal
+}
+
+/**
+ * A proposal tool call that is paused at an interrupt and waiting for the
+ * user's decision. This is derived from the LangGraph checkpoint; it is not a
+ * canonical assistant message.
+ */
+export type AssistantPendingToolCall = {
+  id: string
+  name: string
+  proposal: ItineraryChangeProposal
+}
+
+export type AssistantProposalExecution = {
+  apply: (proposal: ItineraryChangeProposal) => Promise<AssistantProposalStatus | void>
 }
 
 export type AssistantGraphDependencies = {
-  proposals: AssistantProposalPersistence
+  proposals: AssistantProposalExecution
   graphVersion?: number
   summaryMessageThreshold?: number
   summaryCharacterThreshold?: number
@@ -120,8 +139,7 @@ export type AssistantGraphState = {
   messages: AssistantMessage[]
   request: AssistantTurnRequest | null
   assistantMessage: AssistantMessage | null
-  pendingProposal: ItineraryChangeProposal | null
-  userDecision: AssistantUserDecision | null
+  pendingToolCall: AssistantPendingToolCall | null
   modelMessages: BaseMessage[]
   toolRound: number
 }

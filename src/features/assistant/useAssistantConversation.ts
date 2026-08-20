@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { SupabaseAssistantCheckpointer } from '../../lib/assistantCheckpointer'
 import {
-  applyStoredAssistantProposal,
+  applyAssistantOperations,
   createAssistantThread,
   deleteAssistantThread,
   listAssistantMessages,
-  listAssistantProposals,
   listAssistantThreads,
   renameAssistantThread,
   saveAssistantMessage,
-  saveAssistantProposal,
   updateAssistantThreadSummary,
   type AssistantThread,
   type StoredAssistantProposal,
@@ -23,15 +21,11 @@ import {
   findIncompleteUserMessage,
 } from './graph'
 import {
-  applyItineraryOperations as applyAssistantOperations,
-  applyTodoProposal,
-  changedDays,
   enrichAppliedProposalPlaces,
-  extractProposedCategories,
-  extractProposedTodos,
 } from './tools'
 import type {
   AssistantMessage,
+  AssistantPendingToolCall,
   AssistantProgressPhase,
   AssistantTurnRequest,
   ItineraryChangeProposal,
@@ -42,7 +36,6 @@ const progressLabels: Record<AssistantProgressPhase, string> = {
   summarizing_context: '正在整理先前對話…',
   generating_response: '正在根據行程與對話產生回覆…',
   validating_response: '正在驗證回覆與時間安排…',
-  saving_proposal: '正在儲存待確認的行程提案…',
   applying_proposal: '正在套用行程修改…',
   saving_checkpoint: '正在儲存對話進度…',
   saving_response: '正在儲存助理回覆…',
@@ -51,7 +44,6 @@ const progressLabels: Record<AssistantProgressPhase, string> = {
 
 const hiddenProgressPhases = new Set<AssistantProgressPhase>([
   'checking_context',
-  'saving_proposal',
   'saving_checkpoint',
   'saving_response',
   'syncing_conversation',
@@ -124,7 +116,7 @@ export type AssistantConversationController = {
   threadId: string | null
   currentThread: AssistantThread | null
   messages: AssistantMessage[]
-  proposals: StoredAssistantProposal[]
+  pendingToolCall: AssistantPendingToolCall | null
   text: string
   loading: boolean
   conversationLoading: boolean
@@ -163,7 +155,7 @@ export function useAssistantConversation(
   const [threads, setThreads] = useState<AssistantThread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<AssistantMessage[]>([])
-  const [proposals, setProposals] = useState<StoredAssistantProposal[]>([])
+  const [pendingToolCall, setPendingToolCall] = useState<AssistantPendingToolCall | null>(null)
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
   const [conversationLoading, setConversationLoading] = useState(false)
@@ -198,7 +190,7 @@ export function useAssistantConversation(
   }, [])
 
   const currentThread = threads.find((thread) => thread.id === threadId) ?? null
-  const hasPendingProposal = proposals.some((proposal) => proposal.status === 'pending')
+  const hasPendingProposal = pendingToolCall !== null
   const onProgress = useCallback((phase: AssistantProgressPhase) => {
     setProgressLabel(visibleProgressLabel(phase))
   }, [])
@@ -207,7 +199,7 @@ export function useAssistantConversation(
     if (activeThreadRef.current !== nextThreadId) {
       conversationLoadRef.current += 1
       setMessages([])
-      setProposals([])
+      setPendingToolCall(null)
       setRetryRequest(null)
       setConversationLoading(true)
     }
@@ -221,7 +213,7 @@ export function useAssistantConversation(
     activeThreadRef.current = null
     setThreadId(null)
     setMessages([])
-    setProposals([])
+    setPendingToolCall(null)
     setRetryRequest(null)
     setConversationLoading(false)
     rememberThread(threadStorageKey, null)
@@ -242,7 +234,7 @@ export function useAssistantConversation(
     if (nextThreadId !== current) {
       conversationLoadRef.current += 1
       setMessages([])
-      setProposals([])
+      setPendingToolCall(null)
       setRetryRequest(null)
       setConversationLoading(nextThreadId !== null)
     }
@@ -263,22 +255,43 @@ export function useAssistantConversation(
     return () => { active = false }
   }, [refreshThreads])
 
+  const proposalExecution = useMemo(() => ({
+    apply: async (proposal: ItineraryChangeProposal) => {
+      const status = await applyAssistantOperations(proposal.threadId, proposal)
+      if (status === 'applied') {
+        if (proposal.afterDays.length > 0) {
+          const enrichment = await enrichAppliedProposalPlaces(proposal)
+          if (enrichment.failed > 0) {
+            setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+          }
+        }
+        await onItineraryApplied()
+      }
+      return status
+    },
+  }), [onItineraryApplied])
+
+  const checkpointer = useMemo(() => new SupabaseAssistantCheckpointer(supabase), [])
+  const runner = useMemo(() => createAssistantGraph(checkpointer, {
+    proposals: proposalExecution,
+  }), [checkpointer, proposalExecution])
+
   const refreshConversation = useCallback(async (id: string, showLoading = true) => {
     if (activeThreadRef.current !== id) return
     const loadId = ++conversationLoadRef.current
     if (showLoading) setConversationLoading(true)
     try {
-      const [nextMessages, nextProposals] = await Promise.all([
+      const [nextMessages, graphState] = await Promise.all([
         listAssistantMessages(id),
-        listAssistantProposals(id),
+        runner.getState(id),
       ])
       if (activeThreadRef.current !== id || loadId !== conversationLoadRef.current) return
       setMessages(nextMessages)
-      setProposals(nextProposals)
+      setPendingToolCall(graphState?.pendingToolCall ?? null)
 
       const incompleteMessage = findIncompleteUserMessage(nextMessages)
       const thread = threadsRef.current.find((item) => item.id === id)
-      if (!incompleteMessage || !thread) {
+      if (!incompleteMessage || !thread || graphState?.pendingToolCall) {
         setRetryRequest(null)
         return
       }
@@ -308,14 +321,14 @@ export function useAssistantConversation(
         setConversationLoading(false)
       }
     }
-  }, [])
+  }, [runner])
 
   useEffect(() => {
     activeThreadRef.current = threadId
     conversationLoadRef.current += 1
     setError(null)
     setMessages([])
-    setProposals([])
+    setPendingToolCall(null)
     setRetryRequest(null)
     if (!threadId) {
       setConversationLoading(false)
@@ -326,57 +339,6 @@ export function useAssistantConversation(
       setError(loadError instanceof Error ? loadError.message : '無法載入對話內容')
     })
   }, [refreshConversation, threadId])
-
-  const proposalPersistence = useMemo(() => ({
-    savePending: async (proposal: ItineraryChangeProposal) => {
-      const before = itinerary.days ?? []
-      const allAfter = applyAssistantOperations(itinerary, proposal.operations)
-      const after = changedDays(before, allAfter)
-      const affectedIds = new Set(after.map((day) => day.id))
-      const proposedTodos = extractProposedTodos(proposal.operations)
-      const proposedCategories = extractProposedCategories(proposal.operations)
-      await saveAssistantProposal(
-        proposal,
-        before.filter((day) => affectedIds.has(day.id)),
-        after,
-        proposedTodos.length ? proposedTodos : undefined,
-        proposedCategories.length ? proposedCategories : undefined,
-      )
-    },
-    applyPending: async (proposal: ItineraryChangeProposal) => {
-      const status = await applyStoredAssistantProposal(proposal.id, true)
-      if (status === 'applied') {
-        const stored: StoredAssistantProposal = {
-          ...proposal,
-          status: 'applied',
-          beforeDays: [],
-          afterDays: changedDays(itinerary.days ?? [], applyAssistantOperations(itinerary, proposal.operations)),
-          proposedTodos: extractProposedTodos(proposal.operations),
-          proposedCategories: extractProposedCategories(proposal.operations),
-        }
-        if (stored.afterDays.length > 0) {
-          const enrichment = await enrichAppliedProposalPlaces(stored)
-          if (enrichment.failed > 0) {
-            setNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
-          }
-        }
-        await applyTodoProposal(
-          itinerary,
-          stored.proposedTodos ?? [],
-          stored.proposedCategories ?? [],
-        )
-        await onItineraryApplied()
-      }
-    },
-    rejectPending: async (proposal: ItineraryChangeProposal) => {
-      await applyStoredAssistantProposal(proposal.id, false)
-    },
-  }), [itinerary, onItineraryApplied])
-
-  const checkpointer = useMemo(() => new SupabaseAssistantCheckpointer(supabase), [])
-  const runner = useMemo(() => createAssistantGraph(checkpointer, {
-    proposals: proposalPersistence,
-  }), [checkpointer, proposalPersistence])
 
   const createThreadRecord = useCallback(async () => {
     const { data } = await supabase.auth.getUser()
@@ -444,6 +406,10 @@ export function useAssistantConversation(
       state = await runner.sendTurn(input, onProgress)
     }
     setProgressLabel(null)
+    if (activeThreadRef.current === thread.id) {
+      setPendingToolCall(state.pendingToolCall)
+    }
+    if (state.pendingToolCall) return
     if (state.assistantMessage) {
       const assistantMessage = state.assistantMessage
       if (activeThreadRef.current === thread.id) {
@@ -528,56 +494,39 @@ export function useAssistantConversation(
     if (!online) return
     setError(null)
 
-    if (!approved) {
-      const nextStatus = 'rejected' as const
-      setProposals((current) => current.map((item) => item.id === proposal.id
-        ? { ...item, status: nextStatus }
-        : item))
-      setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
-        ? { ...item, proposal: { ...item.proposal, status: nextStatus } }
-        : item))
-
-      focusComposer()
-
-      try {
-        await applyStoredAssistantProposal(proposal.id, false)
-      } catch (decisionError) {
-        setError(friendlyError(decisionError, '無法拒絕行程提案'))
-      }
-      return
-    }
-
     setSending(true)
-    setProgressLabel(progressLabels.applying_proposal)
+    if (approved) setProgressLabel(progressLabels.applying_proposal)
 
-    const nextStatus = 'applied' as const
-    setProposals((current) => current.map((item) => item.id === proposal.id
-      ? { ...item, status: nextStatus }
-      : item))
-    setMessages((current) => current.map((item) => item.turnId === proposal.turnId && item.proposal
-      ? { ...item, proposal: { ...item.proposal, status: nextStatus } }
-      : item))
+    const nextStatus = approved ? 'approved' as const : 'rejected' as const
+    setPendingToolCall((current) => current?.proposal.id === proposal.id
+      ? { ...current, proposal: { ...current.proposal, status: nextStatus } }
+      : current)
 
     try {
-      const state = await runner.resumeTurn(proposal.threadId, { approved: true }, onProgress)
+      const state = await runner.resumeTurn(proposal.threadId, { approved }, onProgress)
+      setPendingToolCall(state.pendingToolCall)
+      if (state.pendingToolCall) return
       if (state.assistantMessage) {
         const assistantMessage = state.assistantMessage
         if (activeThreadRef.current === proposal.threadId) {
-          setMessages((current) => current.some((message) =>
-            message.turnId === assistantMessage.turnId && message.role === 'assistant' && message.id === assistantMessage.id)
-            ? current
-            : [...current, assistantMessage])
+          setMessages((current) => {
+            const existing = current.findIndex((message) =>
+              message.turnId === assistantMessage.turnId && message.role === 'assistant')
+            return existing < 0
+              ? [...current, assistantMessage]
+              : current.map((message, index) => index === existing ? assistantMessage : message)
+          })
         }
         await saveAssistantMessage(proposal.threadId, assistantMessage)
       }
-      if (state.summary) {
+      if (state.summary !== undefined) {
         await updateAssistantThreadSummary(proposal.threadId, state.summary)
       }
       await refreshConversation(proposal.threadId, false)
       await refreshThreads(proposal.threadId)
       focusComposer()
     } catch (decisionError) {
-      setError(friendlyError(decisionError, '無法套用行程提案'))
+      setError(friendlyError(decisionError, approved ? '無法套用行程提案' : '無法拒絕行程提案'))
       await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
       setSending(false)
@@ -608,7 +557,7 @@ export function useAssistantConversation(
     threadId,
     currentThread,
     messages,
-    proposals,
+    pendingToolCall,
     text,
     loading,
     conversationLoading,

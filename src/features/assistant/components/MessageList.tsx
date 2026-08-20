@@ -37,7 +37,7 @@ export function MessageList({
   const {
     threadId,
     messages,
-    proposals,
+    pendingToolCall,
     conversationLoading,
     online,
     sending,
@@ -85,7 +85,7 @@ export function MessageList({
         </Paper>
       ) : conversationLoading ? (
         <ConversationLoading />
-      ) : messages.length === 0 ? (
+      ) : messages.length === 0 && !pendingToolCall ? (
         <Paper
           elevation={0}
           sx={{
@@ -173,25 +173,35 @@ export function MessageList({
           </Stack>
         </Paper>
       ) : (
-        messages.map((message) => {
-          const messageProposal =
-            proposals.find((proposal) => proposal.turnId === message.turnId) ??
-            (message.proposal as StoredAssistantProposal | undefined)
-          return (
-            <Stack key={message.id} data-message-id={message.id} spacing={1.25}>
-              <MessageBubble message={message} />
-              {message.role === 'assistant' && messageProposal ? (
-                <ProposalCard
-                  key={messageProposal.id}
-                  proposal={messageProposal as StoredAssistantProposal}
-                  busy={sending || rejectingProposalId === messageProposal.id}
-                  online={online}
-                  onDecision={controller.decideProposal}
-                />
-              ) : null}
+        <>
+          {messages.map((message) => {
+            const messageProposal = message.proposal as StoredAssistantProposal | undefined
+            return (
+              <Stack key={message.id} data-message-id={message.id} spacing={1.25}>
+                <MessageBubble message={message} />
+                {message.role === 'assistant' && messageProposal ? (
+                  <ProposalCard
+                    key={messageProposal.id}
+                    proposal={messageProposal}
+                    busy={sending || rejectingProposalId === messageProposal.id}
+                    online={online}
+                    onDecision={controller.decideProposal}
+                  />
+                ) : null}
+              </Stack>
+            )
+          })}
+          {pendingToolCall ? (
+            <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+              <ProposalCard
+                proposal={pendingToolCall.proposal}
+                busy={sending || rejectingProposalId === pendingToolCall.proposal.id}
+                online={online}
+                onDecision={controller.decideProposal}
+              />
             </Stack>
-          )
-        })
+          ) : null}
+        </>
       )}
 
       {sending && (!messages.length || messages[messages.length - 1]?.role === 'user') ? (
