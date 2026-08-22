@@ -51,7 +51,7 @@ export const assistantCallableTools = [
 
 /** Gemini 原生內建工具（由 Google 伺服器端直接執行，例如聯網搜尋與程式碼沙盒執行） */
 export const assistantBuiltinTools = [
-  { googleSearch: {} },
+  // { googleSearch: {} },
   { codeExecution: {} },
 ]
 

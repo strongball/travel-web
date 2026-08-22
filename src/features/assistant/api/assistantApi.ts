@@ -27,6 +27,28 @@ export {
 
 const modelName = import.meta.env.VITE_GEMINI_MODEL
 
+export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+  override invocationParams(options?: this['ParsedCallOptions']) {
+    const params = super.invocationParams(options)
+    const tools = params.tools as Array<Record<string, unknown>> | undefined
+    if (tools && Array.isArray(tools)) {
+      const hasBuiltinTool = tools.some(
+        (t) => t && ('codeExecution' in t || 'googleSearch' in t || 'code_execution' in t || 'google_search' in t),
+      )
+      const hasFunctionCalling = tools.some(
+        (t) => t && ('functionDeclarations' in t || 'function_declarations' in t),
+      )
+      if (hasBuiltinTool && hasFunctionCalling) {
+        params.toolConfig = {
+          ...(params.toolConfig || {}),
+          includeServerSideToolInvocations: true,
+        } as unknown as typeof params.toolConfig
+      }
+    }
+    return params
+  }
+}
+
 export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI> {
   const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim() || 'proxy-mode'
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
@@ -45,7 +67,7 @@ export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI
     }
   }
 
-  return new ChatGoogleGenerativeAI({
+  return new AssistantChatGoogleGenerativeAI({
     model: modelName,
     apiKey,
     temperature: 0.2,
