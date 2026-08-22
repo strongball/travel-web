@@ -28,6 +28,7 @@ export function AssistantConversationView({
   const conversationScrollRef = useRef<HTMLDivElement>(null)
   const initializedThreadRef = useRef<string | null>(null)
   const previousMessageCountRef = useRef(0)
+  const previousStreamingLengthRef = useRef(0)
   const previousSendingRef = useRef(false)
   const nearBottomRef = useRef(true)
 
@@ -35,6 +36,7 @@ export function AssistantConversationView({
     threadId,
     currentThread,
     messages,
+    streamingMessage,
     text,
     loading,
     conversationLoading,
@@ -59,6 +61,7 @@ export function AssistantConversationView({
     if (!threadId) {
       initializedThreadRef.current = null
       previousMessageCountRef.current = 0
+      previousStreamingLengthRef.current = 0
       previousSendingRef.current = false
       nearBottomRef.current = true
       return
@@ -68,22 +71,29 @@ export function AssistantConversationView({
     if (initializedThreadRef.current !== threadId) {
       container.scrollTop = container.scrollHeight
       initializedThreadRef.current = threadId
+      previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
       nearBottomRef.current = true
     } else {
       const messageAdded = messages.length > previousMessageCountRef.current
+      const streamingLength = streamingMessage?.content.length ?? 0
+      const streamingContentAdded = streamingLength > previousStreamingLengthRef.current
       const lastMessage = messages.at(-1)
       const userJustSent = messageAdded && lastMessage?.role === 'user'
 
       if (userJustSent) {
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-      } else if (nearBottomRef.current && messageAdded) {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+      } else if (nearBottomRef.current && (messageAdded || streamingContentAdded)) {
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: streamingContentAdded ? 'auto' : 'smooth',
+        })
       }
     }
 
     previousMessageCountRef.current = messages.length
+    previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
     previousSendingRef.current = sending
-  }, [conversationLoading, messages, sending, threadId])
+  }, [conversationLoading, messages, sending, streamingMessage, threadId])
 
   const composerDisabled = conversationLoading || sending || hasPendingProposal || !online
 

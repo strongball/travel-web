@@ -32,15 +32,24 @@ export function validateAuthenticatedUser(authorization: string | null): void {
   }
 }
 
-export function validateProxyPath(pathname: string, allowedModel: string): string {
-  const marker = "/gemini-proxy/";
+export function validateProxyPath(pathname: string, search: string): string {
+  const marker = "/gemini-proxy";
   const index = pathname.indexOf(marker);
-  const path = index >= 0 ? pathname.slice(index + marker.length) : "";
-  const expected = `v1beta/models/${allowedModel}:generateContent`;
-  if (path !== expected) {
+  const rawPath = index >= 0 ? pathname.slice(index + marker.length) : pathname;
+  const path = rawPath.replace(/^\/+/, "");
+
+  const match = path.match(/^v1beta\/models\/([a-zA-Z0-9_.-]+):(generateContent|streamGenerateContent)$/);
+  if (!match) {
     throw new ProxyError("ENDPOINT_NOT_ALLOWED", "Gemini endpoint is not allowed", 403);
   }
-  return path;
+
+  const [, , action] = match;
+  const isGenerateRequest = action === "generateContent" && search === "";
+  const isStreamRequest = action === "streamGenerateContent" && search === "?alt=sse";
+  if (!isGenerateRequest && !isStreamRequest) {
+    throw new ProxyError("ENDPOINT_NOT_ALLOWED", "Gemini endpoint is not allowed", 403);
+  }
+  return `${path}${search}`;
 }
 
 export function validateBody(contentLength: string | null, body: string): void {

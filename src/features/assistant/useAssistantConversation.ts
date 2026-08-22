@@ -27,6 +27,7 @@ import type {
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantProgressPhase,
+  AssistantStreamEvent,
   AssistantTurnRequest,
   ItineraryChangeProposal,
 } from './types'
@@ -116,6 +117,7 @@ export type AssistantConversationController = {
   threadId: string | null
   currentThread: AssistantThread | null
   messages: AssistantMessage[]
+  streamingMessage: AssistantMessage | null
   pendingToolCall: AssistantPendingToolCall | null
   text: string
   loading: boolean
@@ -155,6 +157,7 @@ export function useAssistantConversation(
   const [threads, setThreads] = useState<AssistantThread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
   const [messages, setMessages] = useState<AssistantMessage[]>([])
+  const [streamingMessage, setStreamingMessage] = useState<AssistantMessage | null>(null)
   const [pendingToolCall, setPendingToolCall] = useState<AssistantPendingToolCall | null>(null)
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(true)
@@ -195,10 +198,27 @@ export function useAssistantConversation(
     setProgressLabel(visibleProgressLabel(phase))
   }, [])
 
+  const appendStreamingText = useCallback((threadId: string, event: AssistantStreamEvent) => {
+    if (activeThreadRef.current !== threadId || !event.text) return
+    setStreamingMessage((current) => {
+      if (current?.turnId === event.turnId) {
+        return { ...current, content: current.content + event.text }
+      }
+      return {
+        id: `streaming-${event.turnId}`,
+        turnId: event.turnId,
+        role: 'assistant',
+        content: event.text,
+        createdAt: new Date().toISOString(),
+      }
+    })
+  }, [])
+
   const selectThread = useCallback((nextThreadId: string) => {
     if (activeThreadRef.current !== nextThreadId) {
       conversationLoadRef.current += 1
       setMessages([])
+      setStreamingMessage(null)
       setPendingToolCall(null)
       setRetryRequest(null)
       setConversationLoading(true)
@@ -213,6 +233,7 @@ export function useAssistantConversation(
     activeThreadRef.current = null
     setThreadId(null)
     setMessages([])
+    setStreamingMessage(null)
     setPendingToolCall(null)
     setRetryRequest(null)
     setConversationLoading(false)
@@ -234,6 +255,7 @@ export function useAssistantConversation(
     if (nextThreadId !== current) {
       conversationLoadRef.current += 1
       setMessages([])
+      setStreamingMessage(null)
       setPendingToolCall(null)
       setRetryRequest(null)
       setConversationLoading(nextThreadId !== null)
@@ -287,6 +309,7 @@ export function useAssistantConversation(
       ])
       if (activeThreadRef.current !== id || loadId !== conversationLoadRef.current) return
       setMessages(nextMessages)
+      setStreamingMessage(null)
       setPendingToolCall(graphState?.pendingToolCall ?? null)
 
       const incompleteMessage = findIncompleteUserMessage(nextMessages)
@@ -328,6 +351,7 @@ export function useAssistantConversation(
     conversationLoadRef.current += 1
     setError(null)
     setMessages([])
+    setStreamingMessage(null)
     setPendingToolCall(null)
     setRetryRequest(null)
     if (!threadId) {
@@ -397,44 +421,56 @@ export function useAssistantConversation(
       rehydratedSummary: thread.summary,
       rehydratedMessages: messages,
     }
+    setStreamingMessage(null)
+    const onStream = (event: AssistantStreamEvent) => appendStreamingText(thread.id, event)
     let state: Awaited<ReturnType<typeof runner.sendTurn>>
     try {
-      state = await runner.sendTurn(input, onProgress)
-    } catch (graphError) {
-      if (!isRecoverableGraphStateError(graphError)) throw graphError
-      await checkpointer.deleteThread(thread.id)
-      state = await runner.sendTurn(input, onProgress)
-    }
-    setProgressLabel(null)
-    if (activeThreadRef.current === thread.id) {
-      setPendingToolCall(state.pendingToolCall)
-    }
-    if (state.pendingToolCall) return
-    if (state.assistantMessage) {
-      const assistantMessage = state.assistantMessage
-      if (activeThreadRef.current === thread.id) {
-        setMessages((current) => current.some((message) =>
-          message.turnId === assistantMessage.turnId && message.role === 'assistant')
-          ? current
-          : [...current, assistantMessage])
+      try {
+        state = await runner.sendTurn(input, onProgress, onStream)
+      } catch (graphError) {
+        if (!isRecoverableGraphStateError(graphError)) throw graphError
+        await checkpointer.deleteThread(thread.id)
+        state = await runner.sendTurn(input, onProgress, onStream)
       }
-      await saveAssistantMessage(thread.id, assistantMessage)
+      setProgressLabel(null)
+      if (activeThreadRef.current === thread.id) {
+        setPendingToolCall(state.pendingToolCall)
+      }
+      if (state.pendingToolCall) {
+        setStreamingMessage(null)
+        return
+      }
+      if (state.assistantMessage) {
+        const assistantMessage = state.assistantMessage
+        setStreamingMessage(null)
+        if (activeThreadRef.current === thread.id) {
+          setMessages((current) => current.some((message) =>
+            message.turnId === assistantMessage.turnId && message.role === 'assistant')
+            ? current
+            : [...current, assistantMessage])
+        }
+        await saveAssistantMessage(thread.id, assistantMessage)
+      }
+      if (state.summary !== thread.summary) {
+        await updateAssistantThreadSummary(thread.id, state.summary)
+      }
+      setProgressLabel(null)
+      await waitForUiSync(Promise.all([
+        refreshConversation(thread.id, false),
+        refreshThreads(thread.id),
+      ]))
+    } catch (error) {
+      setStreamingMessage(null)
+      throw error
     }
-    if (state.summary !== thread.summary) {
-      await updateAssistantThreadSummary(thread.id, state.summary)
-    }
-    setProgressLabel(null)
-    await waitForUiSync(Promise.all([
-      refreshConversation(thread.id, false),
-      refreshThreads(thread.id),
-    ]))
-  }, [checkpointer, messages, onProgress, refreshConversation, refreshThreads, runner])
+  }, [appendStreamingText, checkpointer, messages, onProgress, refreshConversation, refreshThreads, runner])
 
   const send = useCallback(async (event: FormEvent) => {
     event.preventDefault()
     const content = text.trim()
     if (!content || sending || sendingRef.current || hasPendingProposal || !online) return
     setProgressLabel(null)
+    setStreamingMessage(null)
     sendingRef.current = true
     setSending(true)
     setError(null)
@@ -465,6 +501,7 @@ export function useAssistantConversation(
       await runAssistantTurn(thread, request)
       setRetryRequest(null)
     } catch (sendError) {
+      setStreamingMessage(null)
       setError(friendlyError(sendError, '助理暫時無法回覆'))
       if (attempt) setRetryRequest(attempt)
     } finally {
@@ -476,6 +513,7 @@ export function useAssistantConversation(
   const retryLastTurn = useCallback(async () => {
     if (!retryRequest || sending || sendingRef.current || !online) return
     setProgressLabel(null)
+    setStreamingMessage(null)
     sendingRef.current = true
     setSending(true)
     setError(null)
@@ -483,6 +521,7 @@ export function useAssistantConversation(
       await runAssistantTurn(retryRequest.thread, retryRequest.request)
       setRetryRequest(null)
     } catch (retryError) {
+      setStreamingMessage(null)
       setError(friendlyError(retryError, '助理暫時無法回覆'))
     } finally {
       sendingRef.current = false
@@ -495,6 +534,7 @@ export function useAssistantConversation(
     setError(null)
 
     setSending(true)
+    setStreamingMessage(null)
     if (approved) setProgressLabel(progressLabels.applying_proposal)
 
     const nextStatus = approved ? 'approved' as const : 'rejected' as const
@@ -503,11 +543,20 @@ export function useAssistantConversation(
       : current)
 
     try {
-      const state = await runner.resumeTurn(proposal.threadId, { approved }, onProgress)
+      const state = await runner.resumeTurn(
+        proposal.threadId,
+        { approved },
+        onProgress,
+        (event) => appendStreamingText(proposal.threadId, event),
+      )
       setPendingToolCall(state.pendingToolCall)
-      if (state.pendingToolCall) return
+      if (state.pendingToolCall) {
+        setStreamingMessage(null)
+        return
+      }
       if (state.assistantMessage) {
         const assistantMessage = state.assistantMessage
+        setStreamingMessage(null)
         if (activeThreadRef.current === proposal.threadId) {
           setMessages((current) => {
             const existing = current.findIndex((message) =>
@@ -526,13 +575,14 @@ export function useAssistantConversation(
       await refreshThreads(proposal.threadId)
       focusComposer()
     } catch (decisionError) {
+      setStreamingMessage(null)
       setError(friendlyError(decisionError, approved ? '無法套用行程提案' : '無法拒絕行程提案'))
       await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
       setSending(false)
       setProgressLabel(null)
     }
-  }, [focusComposer, onProgress, online, refreshConversation, refreshThreads, runner])
+  }, [appendStreamingText, focusComposer, onProgress, online, refreshConversation, refreshThreads, runner])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || messages.length === 0 || sending || sendingRef.current || !online) return
@@ -557,6 +607,7 @@ export function useAssistantConversation(
     threadId,
     currentThread,
     messages,
+    streamingMessage,
     pendingToolCall,
     text,
     loading,

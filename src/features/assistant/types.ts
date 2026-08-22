@@ -15,6 +15,14 @@ export type AssistantProgressPhase =
 
 export type AssistantProgressListener = (phase: AssistantProgressPhase) => void
 
+export type AssistantStreamEvent = {
+  type: 'assistant_text_delta'
+  turnId: string
+  text: string
+}
+
+export type AssistantStreamListener = (event: AssistantStreamEvent) => void
+
 export type AssistantMessageRole = 'user' | 'assistant'
 
 export type AssistantMessage = {
@@ -145,8 +153,17 @@ export type AssistantGraphState = {
 }
 
 export type AssistantGraphRunner = {
-  sendTurn: (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => Promise<AssistantGraphState>
-  resumeTurn: (threadId: string, decision: AssistantUserDecision, onProgress?: AssistantProgressListener) => Promise<AssistantGraphState>
+  sendTurn: (
+    request: AssistantTurnRequest,
+    onProgress?: AssistantProgressListener,
+    onStream?: AssistantStreamListener,
+  ) => Promise<AssistantGraphState>
+  resumeTurn: (
+    threadId: string,
+    decision: AssistantUserDecision,
+    onProgress?: AssistantProgressListener,
+    onStream?: AssistantStreamListener,
+  ) => Promise<AssistantGraphState>
   summarizeThread: (threadId: string) => Promise<AssistantGraphState>
   getState: (threadId: string) => Promise<AssistantGraphState | null>
 }

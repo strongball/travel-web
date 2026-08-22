@@ -56,9 +56,8 @@ checkpointer. See [`docs/assistant-langgraph.md`](docs/assistant-langgraph.md)
 before changing its state, nodes, checkpoint schema, or proposal resume flow.
 
 1. Apply the additive receipt-items migration.
-2. Set `GEMINI_API_KEY` and optionally `GEMINI_MODEL` as Supabase secrets.
-3. Keep `VITE_GEMINI_MODEL` equal to `GEMINI_MODEL`, then deploy
-   `gemini-proxy` with JWT verification enabled.
+2. Set `GEMINI_API_KEY` as a Supabase secret, and configure `VITE_GEMINI_MODEL=gemini-3.7-flash` on the frontend.
+3. Deploy `gemini-proxy` with JWT verification enabled.
 4. Release the web client.
 5. Apply the private Storage migration only after every supported client can
    resolve canonical `storage://` references.

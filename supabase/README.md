@@ -6,17 +6,11 @@ receipt prompt/schema and no Database or Storage access. Gemini credentials
 stay on Supabase and must never use a `VITE_` prefix or be committed to GitHub.
 
 ```sh
-supabase secrets set GEMINI_API_KEY=... GEMINI_MODEL=gemini-3.5-flash-lite
+supabase secrets set GEMINI_API_KEY=...
 supabase functions deploy gemini-proxy
 ```
 
-`GEMINI_MODEL` is optional; the function defaults to
-`gemini-3.5-flash-lite`. JWT verification is explicitly enabled in
-`config.toml` and the function checks for the gateway-validated Bearer header
-as defense in depth. The proxy accepts only
-`v1beta/models/<GEMINI_MODEL>:generateContent`, rejects other models/actions,
-and caps JSON request bodies at 18 MiB. `VITE_GEMINI_MODEL` must match the
-server model name.
+The proxy dynamically forwards authenticated requests for standard Gemini models (such as `gemini-3.7-flash` or `gemini-3.5-flash-lite`) to `v1beta/models/<MODEL>:generateContent` and `v1beta/models/<MODEL>:streamGenerateContent?alt=sse`. You configure the desired model on the frontend via `VITE_GEMINI_MODEL` (defaults to `gemini-3.7-flash`). Setting `GEMINI_MODEL` as a Supabase secret is optional and only needed if you want to strictly lock the proxy to a single model.
 
 ## Migration order
 

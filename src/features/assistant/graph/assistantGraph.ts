@@ -16,6 +16,8 @@ import type {
   AssistantProposalReviewInterrupt,
   AssistantProgressListener,
   AssistantProgressPhase,
+  AssistantStreamEvent,
+  AssistantStreamListener,
   AssistantTurnRequest,
   AssistantUserDecision,
 } from '../types'
@@ -27,7 +29,7 @@ import {
   validateAssistantOperations,
 } from '../api'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
-import { langchainAssistantTools } from '../tools'
+import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'
 import { routeAfterRespond, routeAfterTools } from './routing'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
@@ -82,7 +84,7 @@ export const createAssistantGraph = (
     if (threadId && phase) progressListeners.get(threadId)?.(phase)
   }
 
-  const toolNode = new ToolNode(langchainAssistantTools, { handleToolErrors: false })
+  const toolNode = new ToolNode(assistantCallableTools, { handleToolErrors: false })
 
   const workflow = new StateGraph(assistantGraphState)
     .addNode('prepare_context', createPrepareContextNode({
@@ -125,6 +127,40 @@ export const createAssistantGraph = (
     durability: 'exit' as const,
   })
   const inFlightTurns = new Map<string, Promise<AssistantGraphState>>()
+
+  const isAssistantStreamEvent = (value: unknown): value is AssistantStreamEvent => {
+    if (!value || typeof value !== 'object') return false
+    const event = value as Partial<AssistantStreamEvent>
+    return event.type === 'assistant_text_delta' &&
+      typeof event.turnId === 'string' &&
+      typeof event.text === 'string' &&
+      event.text.length > 0
+  }
+
+  const runWorkflowStream = async (
+    input: unknown,
+    threadId: string,
+    request: AssistantTurnRequest | null,
+    onStream?: AssistantStreamListener,
+  ) => {
+    try {
+      const stream = await workflow.stream(input as never, {
+        ...config(threadId, request),
+        streamMode: ['custom', 'values'],
+      })
+      for await (const event of stream) {
+        const customEvent = Array.isArray(event) && event[0] === 'custom'
+          ? event[1]
+          : null
+        if (isAssistantStreamEvent(customEvent)) onStream?.(customEvent)
+      }
+    } catch (error) {
+      if (!isGraphInterrupt(error)) throw error
+    }
+
+    const snapshot = await workflow.getState(config(threadId))
+    return stateWithSnapshot(snapshot.values as AssistantGraphState, snapshot)
+  }
 
   const pendingToolCallFromSnapshot = (
     snapshot: Awaited<ReturnType<typeof workflow.getState>>,
@@ -172,7 +208,11 @@ export const createAssistantGraph = (
     return stateWithSnapshot(values, snapshot)
   }
 
-  const sendTurn = async (request: AssistantTurnRequest, onProgress?: AssistantProgressListener) => {
+  const sendTurn = async (
+    request: AssistantTurnRequest,
+    onProgress?: AssistantProgressListener,
+    onStream?: AssistantStreamListener,
+  ) => {
     const active = inFlightTurns.get(request.threadId)
     if (active) return active
 
@@ -203,23 +243,16 @@ export const createAssistantGraph = (
         const baseMsgs = previous?.messages ?? request.rehydratedMessages ?? []
         const messages = existingUser ? baseMsgs : [...baseMsgs, userMessage]
 
-        let output: unknown
-        try {
-          output = await workflow.invoke({
-            graphVersion: version,
-            summary: previous?.summary ?? request.rehydratedSummary ?? '',
-            messages,
-            request,
-            assistantMessage: null,
-            pendingToolCall: null,
-            modelMessages: [],
-            toolRound: 0,
-          }, config(request.threadId))
-        } catch (error) {
-          if (!isGraphInterrupt(error)) throw error
-        }
-        const snapshot = await workflow.getState(config(request.threadId))
-        return stateWithSnapshot((output ?? snapshot.values) as AssistantGraphState, snapshot)
+        return await runWorkflowStream({
+          graphVersion: version,
+          summary: previous?.summary ?? request.rehydratedSummary ?? '',
+          messages,
+          request,
+          assistantMessage: null,
+          pendingToolCall: null,
+          modelMessages: [],
+          toolRound: 0,
+        }, request.threadId, request, onStream)
       } finally {
         progressListeners.delete(request.threadId)
       }
@@ -237,6 +270,7 @@ export const createAssistantGraph = (
     threadId: string,
     decision: AssistantUserDecision,
     onProgress?: AssistantProgressListener,
+    onStream?: AssistantStreamListener,
   ): Promise<AssistantGraphState> => {
     const active = inFlightTurns.get(threadId)
     if (active) return active
@@ -244,14 +278,7 @@ export const createAssistantGraph = (
     const run = (async () => {
       if (onProgress) progressListeners.set(threadId, onProgress)
       try {
-        let output: unknown
-        try {
-          output = await workflow.invoke(new Command({ resume: decision }), config(threadId))
-        } catch (error) {
-          if (!isGraphInterrupt(error)) throw error
-        }
-        const snapshot = await workflow.getState(config(threadId))
-        return stateWithSnapshot((output ?? snapshot.values) as AssistantGraphState, snapshot)
+        return await runWorkflowStream(new Command({ resume: decision }), threadId, null, onStream)
       } finally {
         progressListeners.delete(threadId)
       }

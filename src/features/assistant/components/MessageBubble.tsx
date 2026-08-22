@@ -17,7 +17,13 @@ const timeLabel = (value: string) =>
     hour12: false,
   }).format(new Date(value))
 
-export function MessageBubble({ message }: { message: AssistantMessage }) {
+export function MessageBubble({
+  message,
+  streaming = false,
+}: {
+  message: AssistantMessage
+  streaming?: boolean
+}) {
   const user = message.role === 'user'
   return (
     <Stack direction={user ? 'row-reverse' : 'row'} spacing={1.25} sx={{ alignItems: 'flex-start' }}>
@@ -38,6 +44,8 @@ export function MessageBubble({ message }: { message: AssistantMessage }) {
       <Box sx={{ maxWidth: { xs: '88%', sm: '78%' } }}>
         <Paper
           elevation={0}
+          data-streaming={streaming ? 'true' : undefined}
+          aria-busy={streaming || undefined}
           sx={{
             px: { xs: 1.75, sm: 2 },
             py: 1.25,
@@ -142,9 +150,25 @@ export function MessageBubble({ message }: { message: AssistantMessage }) {
                 fontWeight: 600,
               },
             },
+            '& .assistant-typing-caret': {
+              display: 'inline-block',
+              ml: 0.25,
+              color: user ? '#99f6e4' : '#0d766e',
+              fontWeight: 800,
+              animation: 'assistant-caret-blink 1s steps(2, start) infinite',
+            },
+            '@keyframes assistant-caret-blink': {
+              '0%, 45%': { opacity: 1 },
+              '46%, 100%': { opacity: 0 },
+            },
           }}
         >
           <ReactMarkdown>{formatAssistantText(message.content)}</ReactMarkdown>
+          {streaming ? (
+            <Box component="span" className="assistant-typing-caret" aria-hidden="true">
+              ▍
+            </Box>
+          ) : null}
         </Paper>
         <Typography
           variant="caption"

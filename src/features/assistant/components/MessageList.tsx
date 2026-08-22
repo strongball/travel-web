@@ -37,6 +37,7 @@ export function MessageList({
   const {
     threadId,
     messages,
+    streamingMessage,
     pendingToolCall,
     conversationLoading,
     online,
@@ -85,7 +86,7 @@ export function MessageList({
         </Paper>
       ) : conversationLoading ? (
         <ConversationLoading />
-      ) : messages.length === 0 && !pendingToolCall ? (
+      ) : messages.length === 0 && !streamingMessage && !pendingToolCall ? (
         <Paper
           elevation={0}
           sx={{
@@ -186,11 +187,17 @@ export function MessageList({
                     busy={sending || rejectingProposalId === messageProposal.id}
                     online={online}
                     onDecision={controller.decideProposal}
+                    isHistory={true}
                   />
                 ) : null}
               </Stack>
             )
           })}
+          {streamingMessage ? (
+            <Stack data-message-id={streamingMessage.id} spacing={1.25}>
+              <MessageBubble message={streamingMessage} streaming />
+            </Stack>
+          ) : null}
           {pendingToolCall ? (
             <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
               <ProposalCard
@@ -198,13 +205,14 @@ export function MessageList({
                 busy={sending || rejectingProposalId === pendingToolCall.proposal.id}
                 online={online}
                 onDecision={controller.decideProposal}
+                isHistory={false}
               />
             </Stack>
           ) : null}
         </>
       )}
 
-      {sending && (!messages.length || messages[messages.length - 1]?.role === 'user') ? (
+      {sending && !streamingMessage && (!messages.length || messages[messages.length - 1]?.role === 'user') ? (
         <AssistantProgress label={progressLabel || '正在根據行程整理回覆…'} />
       ) : null}
 

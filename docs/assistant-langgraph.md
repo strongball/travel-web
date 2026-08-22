@@ -13,7 +13,7 @@
 - `src/features/assistant/tools/todo/`：待辦清單提案的 schema、操作套用與顯示。
 - `src/features/assistant/useAssistantConversation.ts`：thread/message/proposal 載入、canonical persistence、graph 執行與 `resumeTurn` 協調。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
-- `supabase/functions/gemini-proxy`：代理已驗證使用者對固定 Gemini model 的 `generateContent`；不執行 graph，也不讀寫產品資料。
+- `supabase/functions/gemini-proxy`：代理已驗證使用者對固定 Gemini model 的 `generateContent` 與 `streamGenerateContent?alt=sse`；不執行 graph，也不讀寫產品資料。
 
 LangGraph checkpoint 是 pending tool call 與可恢復執行的唯一來源。暫停中的 proposal card 不會寫成 `AssistantMessage`，前端從 checkpoint task 的 interrupt payload 與原本的 AI tool call 推導 `pendingToolCall`；只有工具完成、LLM 產生最後文字後，才會建立 `AssistantMessage`。完成後的 proposal 可附在 `assistant_messages.metadata.proposal`，讓歷史仍能顯示已套用/已拒絕結果；新流程不再讀寫 `assistant_proposals`。實際行程仍以 `days`、`attractions` 與 `todo_items` 為準。
 
@@ -51,55 +51,174 @@ const runner = createAssistantGraph(checkpointer, {
 
 Graph 不再使用 `pendingProposal` 或 `userDecision` state，也沒有 `apply_proposal` node 或 `interruptBefore`。
 
-## Graph 拓撲
+## Graph 拓撲 (Graph Flow)
 
-```text
-START -> prepare_context -> respond
-respond -> (tool calls > 0) -> execute_tools
-respond -> (tool calls == 0) -> finalize_response -> END
-execute_tools -> (proposal tool calls interrupt()) -> paused inside tool
-execute_tools -> (tool returns ToolMessage) -> respond
-execute_tools -> (toolRound >= maxToolRounds) -> tool_limit
+旅程助理的 LangGraph 狀態機採用以 ToolNode 與 Dynamic Interrupt 為核心的迴圈流程：
+
+```mermaid
+flowchart TD
+    Start(["START"]) --> PrepareContext["prepare_context<br/>(載入摘要、近期訊息、組合 Prompt Context)"]
+    PrepareContext --> Respond["respond<br/>(呼叫 Gemini 模型與 Tool Binding)"]
+
+    Respond --> RouteRespond{"routeAfterRespond<br/>(是否有 Tool Call / 超出上限?)"}
+
+    RouteRespond -->|"無 Tool Call (純文字回覆)"| Finalize["finalize_response<br/>(封裝 AssistantMessage、清除 Request)"]
+    RouteRespond -->|"有 Tool Call 且未達上限"| ExecuteTools["execute_tools (ToolNode)<br/>(執行註冊工具)"]
+    RouteRespond -->|"toolRound >= maxToolRounds"| ToolLimit["tool_limit<br/>(產生達到上限之提示)"]
+
+    ExecuteTools --> RouteTools{"routeAfterTools<br/>(工具執行結果)"}
+
+    subgraph ProposalHITL ["Proposal Human-In-The-Loop (HITL) 審查機制"]
+        Interrupt["reviewProposal() -> interrupt()<br/>暫停於 Tool 內部，保存 Checkpoint"]
+        ResumeAction["UI 點擊確認/拒絕 -> resumeTurn()<br/>恢復執行並呼叫 apply RPC"]
+        Interrupt -.->|"等待使用者審查 (UI 顯示大張待確認卡片)"| ResumeAction
+    end
+
+    ExecuteTools -.->|"觸發 Proposal Tool"| Interrupt
+    ResumeAction -.->|"套用/拒絕完成"| RouteTools
+
+    RouteTools -->|"toolRound < maxToolRounds (回傳 ToolMessage)"| Respond
+    RouteTools -->|"toolRound >= maxToolRounds"| ToolLimit
+
+    ToolLimit --> Finalize
+    Finalize --> EndNode(["END"])
+
+    classDef startEnd fill:#0d766e,stroke:#0f766e,color:#ffffff,stroke-width:2px;
+    classDef nodeStyle fill:#f0fdfa,stroke:#0d766e,color:#0f172a,stroke-width:1.5px;
+    classDef decisionStyle fill:#fef3c7,stroke:#d97706,color:#78350f,stroke-width:1.5px;
+    classDef hitlStyle fill:#f8fafc,stroke:#64748b,stroke-dasharray: 5 5,color:#334155;
+
+    class Start,EndNode startEnd;
+    class PrepareContext,Respond,ExecuteTools,Finalize,ToolLimit nodeStyle;
+    class RouteRespond,RouteTools decisionStyle;
+    class ProposalHITL hitlStyle;
 ```
 
-## Proposal HITL 流程
+---
 
-Todo 與 Itinerary proposal tools 只負責建立各自的 operations 與 proposal 文案，之後都呼叫共用的 `reviewProposal(proposal, runtime)`：
+## 時序圖 (Sequence Diagrams)
 
-1. Proposal ID 直接沿用 `request.turnId`，不另外產生 UUID。
-2. Tool 由 tool-call args 建立 operations、diff preview 與 Todo preview。
-3. Tool 內呼叫 `interrupt({ type: 'proposal_review', toolCallId, proposal })`。Checkpoint 保存 tool task、interrupt payload 與原本的 AI tool call；runner 將它們轉成 `pendingToolCall`，UI 只 render card，不建立 assistant message。
-4. 使用者同意或拒絕時，UI 一律呼叫 `runner.resumeTurn(threadId, decision)`。
-5. Runner 以 `workflow.invoke(new Command({ resume: decision }), config)` 恢復原 tool task。
-6. Tool 重新執行到同一個 `interrupt()`；同意時呼叫 `proposals.apply`，拒絕時不寫產品資料。
-7. Tool 將精簡執行結果放在 `ToolMessage.content`、completed proposal 放在 `ToolMessage.artifact`，避免把完整 diff 傳給模型。
-8. `ToolMessage` 回到 `respond` 交給 LLM 產生最後文字；`finalize_response` 最後才建立 `AssistantMessage`，並可把 completed proposal 附到 message metadata。
+### 1. 標準對話與查詢流程 (Standard Q&A & Query Tool Flow)
+
+當使用者進行一般對話、諮詢或觸發查詢工具（無須修改資料庫行程）時的時序流程：
 
 ```mermaid
 sequenceDiagram
+    autonumber
     actor User as 使用者
-    participant UI as React UI
-    participant Runner as Graph Runner
-    participant Tool as Proposal Tool
-    participant DB as Supabase
-    participant LLM as Gemini
+    participant UI as React UI (MessageList)
+    participant Hook as useAssistantConversation
+    participant Runner as Assistant Graph Runner
+    participant LLM as Gemini Model (Proxy)
+    participant DB as Supabase (Data API)
 
-    User->>UI: 提出修改需求
-    UI->>Runner: sendTurn(request)
-    Runner->>LLM: respond
-    LLM-->>Runner: proposal tool call
-    Runner->>Tool: ToolNode 執行工具
-    Tool->>Tool: interrupt(proposal review payload)
-    Tool-->>Runner: checkpoint 暫停
-    Runner-->>UI: pendingToolCall，顯示 proposal card
-    User->>UI: 同意或拒絕
-    UI->>Runner: resumeTurn(decision)
-    Runner->>Tool: Command({ resume: decision })
-    Tool->>DB: approved 時 apply_assistant_operations
-    Tool-->>Runner: tool result / ToolMessage
-    Runner->>LLM: respond with ToolMessage
-    LLM-->>Runner: final AIMessage
-    Runner-->>UI: AssistantMessage（可附 completed proposal）
+    User->>UI: 送出一般訊息 / 諮詢旅遊資訊
+    UI->>Hook: send(text)
+    Hook->>DB: 儲存 User Message (assistant_messages)
+    Hook->>Runner: sendTurn(request, onProgress, onStream)
+
+    rect rgb(240, 253, 250)
+        Note over Runner: 1. prepare_context
+        Runner->>Runner: 檢查對話長度、組合摘要與 Prompt Context
+    end
+
+    rect rgb(240, 249, 255)
+        Note over Runner,LLM: 2. respond
+        Runner->>LLM: workflow.stream (帶入 Tools 與對話紀錄)
+        LLM-->>Runner: assistant_text_delta (逐段文字)
+        Runner-->>Hook: assistant_text_delta
+        Hook-->>UI: 累加 streamingMessage、即時 Markdown 與閃爍游標
+        LLM-->>Runner: 完整 AIMessage (純文字回答，無 Tool Call)
+    end
+
+    rect rgb(254, 243, 199)
+        Note over Runner: 3. finalize_response
+        Runner->>Runner: 建立 AssistantMessage 物件並清除 Request
+    end
+
+    Runner-->>Hook: 回傳 AssistantGraphState (含 assistantMessage)
+    Hook->>DB: 儲存 Assistant Message (assistant_messages)
+    Hook->>UI: 更新對話清單，呈現助理文字回覆
+```
+
+---
+
+### 2. Proposal HITL 審查與套用流程 (Proposal Review & HITL Flow)
+
+Todo 與 Itinerary proposal tools 只負責建立各自的 operations 與 proposal 文案，之後都呼叫共用的 `reviewProposal(proposal, runtime)` 進行中斷審查與恢復套用：
+
+1. Proposal ID 直接沿用 `request.turnId`，不另外產生 UUID。
+2. Tool 由 tool-call args 建立 operations、diff preview 與 Todo preview。
+3. Tool 內呼叫 `interrupt({ type: 'proposal_review', toolCallId, proposal })`。Checkpoint 保存 tool task、interrupt payload 與原本的 AI tool call；runner 將它們轉成 `pendingToolCall`，UI 呈現大張展開的待確認卡片（詢問當下），此時不建立 assistant message。
+4. 使用者同意或拒絕時，UI 一律呼叫 `runner.resumeTurn(threadId, decision)`。
+5. Runner 以 `workflow.stream(new Command({ resume: decision }), { ...config, streamMode: ['custom', 'values'] })` 恢復原 tool task，並轉發最後回覆的 text delta。
+6. Tool 重新執行到同一個 `interrupt()`；同意時呼叫 `proposals.apply`（執行 `apply_assistant_operations` RPC），拒絕時不寫產品資料。
+7. Tool 將精簡執行結果放在 `ToolMessage.content`、completed proposal 放在 `ToolMessage.artifact`，避免把完整 diff 傳給模型。
+8. `ToolMessage` 回到 `respond` 交給 LLM 產生最後總結文字；`finalize_response` 最後才建立 `AssistantMessage`，並把 completed proposal 附到 message metadata。
+9. UI 收到完成訊息後，將歷史提案卡片預設顯示為**摺疊狀態**，可隨時點擊展開檢視。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as 使用者
+    participant UI as React UI (ProposalCard)
+    participant Hook as useAssistantConversation
+    participant Runner as Assistant Graph Runner
+    participant ToolNode as ToolNode / Proposal Tool
+    participant DB as Supabase (RPC / Checkpoint)
+    participant LLM as Gemini Model (Proxy)
+
+    User->>UI: 提出修改需求 (例如:「幫我第二天加淺草寺」)
+    UI->>Hook: send(text)
+    Hook->>DB: 儲存 User Message (assistant_messages)
+    Hook->>Runner: sendTurn(request, onProgress)
+
+    Note over Runner,LLM: 1. 模型分析並決定呼叫提案工具
+    Runner->>LLM: respond (Context + Tools)
+    LLM-->>Runner: AIMessage (tool_calls: propose_itinerary_changes)
+
+    Note over Runner,ToolNode: 2. 執行工具並觸發 Dynamic Interrupt
+    Runner->>ToolNode: execute_tools
+    ToolNode->>ToolNode: 建立 operations、diff preview 與 todo preview
+    ToolNode->>ToolNode: interrupt({ type: 'proposal_review', toolCallId, proposal })
+    ToolNode->>DB: CheckpointSaver 儲存中斷狀態 (tasks, interrupts)
+    ToolNode-->>Runner: Graph 中斷暫停
+
+    Runner-->>Hook: 回傳 state (含 pendingToolCall)
+    Hook-->>UI: pendingToolCall -> 顯示大張完整展開的待確認 ProposalCard (詢問當下)
+
+    Note over User,UI: 3. 使用者確認或拒絕
+    User->>UI: 點擊「確認儲存並套用」或「不套用，繼續討論」
+    UI->>Hook: decideProposal(proposal, approved)
+    Hook->>Runner: resumeTurn(proposal.threadId, { approved }, onStream)
+
+    Note over Runner,ToolNode: 4. 恢復執行工具 (Resume Replay)
+    Runner->>ToolNode: Command({ resume: { approved } })
+    ToolNode->>ToolNode: 重新執行到同一 interrupt() 並取得 decision
+
+    alt approved == true (確認套用)
+        ToolNode->>DB: apply_assistant_operations(RPC) 寫入產品資料表
+        DB-->>ToolNode: RPC 回傳 status = 'applied'
+    else approved == false (拒絕套用)
+        Note over ToolNode: 不呼叫 RPC，標記 status = 'rejected'
+    end
+
+    ToolNode-->>Runner: ToolMessage (content: 結果摘要, artifact: completed proposal)
+
+    Note over Runner,LLM: 5. 工具結果送回模型生成總結
+    Runner->>LLM: workflow.stream (帶入 ToolMessage)
+    LLM-->>Runner: assistant_text_delta (逐段文字)
+    Runner-->>Hook: assistant_text_delta -> UI 累加 streamingMessage
+    LLM-->>Runner: 完整 AIMessage (文字總結回覆)
+
+    Note over Runner: 6. finalize_response
+    Runner->>Runner: 建立 AssistantMessage (metadata 附上 completed proposal)
+    Runner->>DB: 儲存最終 Checkpoint
+    Runner-->>Hook: 回傳完整狀態 (pendingToolCall 清除, 含 assistantMessage)
+
+    Hook->>DB: 儲存 Assistant Message (含 proposal metadata)
+    Hook->>DB: onItineraryApplied() 重新同步行程與待辦資料
+    Hook-->>UI: 更新對話歷史 -> ProposalCard 轉為歷史「預設摺疊」卡片
 ```
 
 ### Replay 注意事項

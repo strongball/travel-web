@@ -1,3 +1,4 @@
+declare const Deno: any;
 import {
   MAX_BODY_BYTES,
   ProxyError,
@@ -25,11 +26,33 @@ Deno.test("accepts authenticated non-anonymous users", () => {
   assertThrows(() => validateAuthenticatedUser(`Bearer ${jwt({ sub: "anon", role: "authenticated", is_anonymous: true })}`), "UNAUTHENTICATED");
 });
 
-Deno.test("allows only configured model generateContent", () => {
-  const path = validateProxyPath("/functions/v1/gemini-proxy/v1beta/models/gemini-test:generateContent", "gemini-test");
-  if (path !== "v1beta/models/gemini-test:generateContent") throw new Error("Wrong path");
-  assertThrows(() => validateProxyPath("/functions/v1/gemini-proxy/v1beta/models/other:generateContent", "gemini-test"), "ENDPOINT_NOT_ALLOWED");
-  assertThrows(() => validateProxyPath("/functions/v1/gemini-proxy/v1beta/models/gemini-test:streamGenerateContent", "gemini-test"), "ENDPOINT_NOT_ALLOWED");
+Deno.test("allows dynamic model generateContent and SSE streaming", () => {
+  const path = validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:generateContent",
+    "",
+  );
+  if (path !== "v1beta/models/gemini-3.7-flash:generateContent") throw new Error("Wrong path");
+
+  const streamPath = validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:streamGenerateContent",
+    "?alt=sse",
+  );
+  if (streamPath !== "v1beta/models/gemini-3.7-flash:streamGenerateContent?alt=sse") {
+    throw new Error("Wrong streaming path");
+  }
+
+  assertThrows(() => validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:unknownAction",
+    "",
+  ), "ENDPOINT_NOT_ALLOWED");
+  assertThrows(() => validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:streamGenerateContent",
+    "",
+  ), "ENDPOINT_NOT_ALLOWED");
+  assertThrows(() => validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:streamGenerateContent",
+    "?alt=sse&extra=true",
+  ), "ENDPOINT_NOT_ALLOWED");
 });
 
 Deno.test("requires JSON object within body limit", () => {

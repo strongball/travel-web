@@ -1,4 +1,5 @@
 import { AIMessage, HumanMessage } from '@langchain/core/messages'
+import { getWriter, type LangGraphRunnableConfig } from '@langchain/langgraph/web'
 import { buildAssistantPrompt, invokeAssistantModel } from '../../api'
 import type { AssistantProgressPhase } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
@@ -8,7 +9,7 @@ type RespondNodeOptions = {
 }
 
 export function createRespondNode(options: RespondNodeOptions) {
-  return async (state: AssistantGraphNodeState) => {
+  return async (state: AssistantGraphNodeState, config: LangGraphRunnableConfig) => {
     const request = state.request
     if (!request) throw new Error('Assistant graph request is missing')
 
@@ -23,7 +24,14 @@ export function createRespondNode(options: RespondNodeOptions) {
         request.todos ?? [],
         request.todoCategories ?? [],
     ))]
-    const response = await invokeAssistantModel(modelMessages)
+    const writer = getWriter(config)
+    const response = await invokeAssistantModel(modelMessages, (text) => {
+      writer?.({
+        type: 'assistant_text_delta',
+        turnId: request.turnId,
+        text,
+      })
+    })
     const toolCalls = (response.tool_calls ?? []).map((call, index) => ({
       ...call,
       id: typeof call.id === 'string' && call.id ? call.id : `assistant-tool-${state.toolRound}-${index}`,

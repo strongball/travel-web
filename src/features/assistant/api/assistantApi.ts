@@ -1,5 +1,11 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
-import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages'
+import {
+  AIMessage,
+  AIMessageChunk,
+  HumanMessage,
+  SystemMessage,
+  type BaseMessage,
+} from '@langchain/core/messages'
 import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
@@ -17,7 +23,7 @@ export {
   langchainAssistantTools,
 }
 
-const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite'
+const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.7-flash'
 
 export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI> {
   const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim() || 'proxy-mode'
@@ -51,10 +57,37 @@ export function bindAssistantTools(model: ChatGoogleGenerativeAI) {
   return model.bindTools(langchainAssistantTools, { tool_choice: 'auto' })
 }
 
-export async function invokeAssistantModel(messages: BaseMessage[]): Promise<AIMessage> {
+export async function invokeAssistantModel(
+  messages: BaseMessage[],
+  onTextDelta?: (text: string) => void,
+): Promise<AIMessage> {
   const model = await createLangChainChatModel()
-  const response = await bindAssistantTools(model).invoke(messages)
-  return response as AIMessage
+  const assistantModel = bindAssistantTools(model)
+  if (!onTextDelta) {
+    const response = await assistantModel.invoke(messages)
+    return response as AIMessage
+  }
+
+  let response: AIMessageChunk | null = null
+  const stream = await assistantModel.stream(messages)
+  for await (const chunk of stream) {
+    const aiChunk = chunk as AIMessageChunk
+    const text = aiChunk.text
+    if (text) onTextDelta(text)
+    response = response ? response.concat(aiChunk) : aiChunk
+  }
+
+  if (!response) throw new Error('模型沒有回傳可完成的訊息')
+  return new AIMessage({
+    content: response.content,
+    id: response.id,
+    name: response.name,
+    additional_kwargs: response.additional_kwargs,
+    response_metadata: response.response_metadata,
+    tool_calls: response.tool_calls,
+    invalid_tool_calls: response.invalid_tool_calls,
+    usage_metadata: response.usage_metadata,
+  })
 }
 
 export function buildAssistantPrompt(
@@ -135,5 +168,4 @@ export async function summarizeWithGemini(currentSummary: string, messages: Assi
   ])
   return typeof response.content === 'string' ? response.content.trim() : ''
 }
-
 

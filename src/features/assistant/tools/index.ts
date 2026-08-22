@@ -43,15 +43,28 @@ export const assistantGeneralTools = [
   // 供未來擴充：例如 lookupWeatherTool, searchPlacesTool 等
 ] as const
 
-/** 供 ChatGoogleGenerativeAI.bindTools 使用的完整工具清單 */
-export const langchainAssistantTools = [
+/** 前端/本地可執行的工具集合（供 LangGraph ToolNode 使用） */
+export const assistantCallableTools = [
   ...assistantProposalTools,
   ...assistantGeneralTools,
 ]
 
-const allToolNames = new Set<string>(langchainAssistantTools.map((tool) => tool.name))
+/** Gemini 原生內建工具（由 Google 伺服器端直接執行，例如聯網搜尋與程式碼沙盒執行） */
+export const assistantBuiltinTools = [
+  { googleSearch: {} },
+  { codeExecution: {} },
+]
 
-/** 判斷是否為已註冊的助理工具名稱 */
+/** 供 ChatGoogleGenerativeAI.bindTools 使用的完整工具清單 */
+export const langchainAssistantTools = [
+  ...assistantCallableTools,
+  ...assistantBuiltinTools,
+]
+
+const allCallableToolNames = new Set<string>(assistantCallableTools.map((tool) => tool.name))
+
+/** 判斷是否為已註冊的本地助理工具名稱 */
 export function isAssistantToolName(name: string) {
-  return allToolNames.has(name)
+  return allCallableToolNames.has(name)
 }
+

@@ -118,7 +118,7 @@ export const scanReceipt = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
+      model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.7-flash',
       contents: [{
         role: 'user',
         parts: [

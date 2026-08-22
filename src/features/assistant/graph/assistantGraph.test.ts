@@ -189,6 +189,67 @@ describe('createAssistantGraph', () => {
     expect(result.toolRound).toBe(0)
   })
 
+  it('forwards streamed text deltas while preserving the completed message', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockImplementation(async (
+      _messages: BaseMessage[],
+      onTextDelta?: (text: string) => void,
+    ) => {
+      onTextDelta?.('第一段')
+      onTextDelta?.('第二段')
+      return new AIMessage({ content: '第一段第二段' })
+    })
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+    const events: Array<{ type: string; turnId: string; text: string }> = []
+    const turn = request()
+    const result = await graph.sendTurn(turn, undefined, (event) => events.push(event))
+
+    expect(events).toEqual([
+      { type: 'assistant_text_delta', turnId: turn.turnId, text: '第一段' },
+      { type: 'assistant_text_delta', turnId: turn.turnId, text: '第二段' },
+    ])
+    expect(result.assistantMessage?.content).toBe('第一段第二段')
+    expect((await graph.getState(turn.threadId))?.assistantMessage?.content).toBe('第一段第二段')
+  })
+
+  it('does not persist partial streamed text when the model stream fails and can retry', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockImplementationOnce(async (
+        _messages: BaseMessage[],
+        onTextDelta?: (text: string) => void,
+      ) => {
+        onTextDelta?.('半成品')
+        throw new Error('stream interrupted')
+      })
+      .mockImplementationOnce(async (
+        _messages: BaseMessage[],
+        onTextDelta?: (text: string) => void,
+      ) => {
+        onTextDelta?.('重試成功')
+        return new AIMessage({ content: '重試成功' })
+      })
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+    const turn = request()
+    const firstEvents: string[] = []
+
+    await expect(graph.sendTurn(turn, undefined, (event) => firstEvents.push(event.text)))
+      .rejects.toThrow('stream interrupted')
+    const failedState = await graph.getState(turn.threadId)
+    expect(firstEvents).toEqual(['半成品'])
+    expect(failedState?.messages.map((message) => message.role)).toEqual(['user'])
+    expect(failedState?.assistantMessage).toBeNull()
+
+    const retryEvents: string[] = []
+    const retried = await graph.sendTurn(turn, undefined, (event) => retryEvents.push(event.text))
+    expect(retryEvents).toEqual(['重試成功'])
+    expect(retried.assistantMessage?.content).toBe('重試成功')
+    expect(retried.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
+  })
+
   it('reports actual graph phases instead of rotating simulated messages', async () => {
     const graph = createAssistantGraph(new MemorySaver(), {
       proposals: persistence(),
@@ -315,9 +376,14 @@ describe('createAssistantGraph', () => {
           type: 'tool_call',
         }],
       }))
-      .mockResolvedValueOnce(new AIMessage({
-        content: '好的，已為您將第一天調整為十點出發！',
-      }))
+      .mockImplementationOnce(async (
+        _messages: BaseMessage[],
+        onTextDelta?: (text: string) => void,
+      ) => {
+        onTextDelta?.('好的，')
+        onTextDelta?.('已為您將第一天調整為十點出發！')
+        return new AIMessage({ content: '好的，已為您將第一天調整為十點出發！' })
+      })
 
     let applied = false
     const graph = createAssistantGraph(new MemorySaver(), {
@@ -327,8 +393,10 @@ describe('createAssistantGraph', () => {
     })
 
     const req = request()
-    const paused = await graph.sendTurn(req)
+    const proposalEvents: string[] = []
+    const paused = await graph.sendTurn(req, undefined, (event) => proposalEvents.push(event.text))
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(1)
+    expect(proposalEvents).toEqual([])
     expect(paused.assistantMessage).toBeNull()
     expect(paused.messages).toHaveLength(1)
     expect(paused.messages[0]?.role).toBe('user')
@@ -338,9 +406,16 @@ describe('createAssistantGraph', () => {
     expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
     expect(paused.pendingToolCall?.proposal.expectedDayRevisions).toEqual({ 'day-1': 3 })
 
-    const resumed = await graph.resumeTurn(req.threadId, { approved: true })
+    const resumeEvents: string[] = []
+    const resumed = await graph.resumeTurn(
+      req.threadId,
+      { approved: true },
+      undefined,
+      (event) => resumeEvents.push(event.text),
+    )
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(2)
     expect(applied).toBe(true)
+    expect(resumeEvents).toEqual(['好的，', '已為您將第一天調整為十點出發！'])
     const resumedModelMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
     const toolMessage = resumedModelMessages.find((message) => ToolMessage.isInstance(message)) as ToolMessage
     expect(JSON.parse(toolMessage.content as string).proposal).toBeUndefined()

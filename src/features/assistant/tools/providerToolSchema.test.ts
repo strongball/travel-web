@@ -2,6 +2,8 @@ import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { describe, expect, it, vi } from 'vitest'
 import { bindAssistantTools } from '../api/assistantApi'
 import {
+  assistantCallableTools,
+  assistantBuiltinTools,
   langchainAssistantTools,
   proposeTodoListTool,
 } from './index'
@@ -27,11 +29,16 @@ function collectKeys(value: unknown): string[] {
 
 describe('active Gemini tool declarations', () => {
   it('uses LangChain tools with provider-safe schemas', () => {
-    expect(langchainAssistantTools).toHaveLength(2)
-    expect(langchainAssistantTools.map((tool) => tool.name)).toEqual([
+    expect(assistantCallableTools).toHaveLength(2)
+    expect(assistantCallableTools.map((tool) => tool.name)).toEqual([
       'propose_itinerary_edit',
       'propose_todo_list',
     ])
+    expect(assistantBuiltinTools).toEqual([
+      { googleSearch: {} },
+      { codeExecution: {} },
+    ])
+    expect(langchainAssistantTools).toHaveLength(4)
   })
 
   it('passes the shared schemas through ChatGoogleGenerativeAI without a network call', () => {
