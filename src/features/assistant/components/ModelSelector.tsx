@@ -72,6 +72,11 @@ export function ModelSelector({
 
   const handleModelClick = (model: GeminiModelOption) => {
     onSelectModel(model.id)
+    if (!model.supportsThinking) {
+      onSelectReasoningEffort('off')
+      handleClose()
+      return
+    }
     setPendingModel(model)
     // 進入第二層：選擇思考強度
     setStep('effort')
@@ -139,43 +144,44 @@ export function ModelSelector({
         {variant === 'minimal' ? (
           <>
             <span>{currentModel.label}</span>
-            <Typography
-              component="span"
-              sx={{
-                color: currentEffort.id === 'off' ? 'text.disabled' : '#0d766e',
-                fontSize: '0.76rem',
-                fontWeight: 700,
-                ml: 0.25,
-              }}
-            >
-              {currentEffort.shortLabel}
-            </Typography>
+            {currentModel.supportsThinking && currentEffort.id !== 'off' ? (
+              <Typography
+                component="span"
+                sx={{
+                  color: '#0d766e',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  ml: 0.25,
+                }}
+              >
+                {currentEffort.shortLabel}
+              </Typography>
+            ) : null}
           </>
         ) : (
           <>
             <AutoAwesomeRoundedIcon sx={{ fontSize: size === 'small' ? 15 : 17 }} />
             <span>{currentModel.shortLabel}</span>
-            <Box
-              component="span"
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 0.3,
-                px: 0.7,
-                py: 0.1,
-                borderRadius: 1.5,
-                bgcolor:
-                  currentEffort.id === 'off'
-                    ? 'rgba(0, 0, 0, 0.06)'
-                    : 'rgba(99, 102, 241, 0.12)',
-                color: currentEffort.id === 'off' ? 'text.secondary' : '#4338ca',
-                fontSize: '0.72rem',
-                fontWeight: 800,
-              }}
-            >
-              <PsychologyRoundedIcon sx={{ fontSize: 13 }} />
-              {currentEffort.shortLabel}
-            </Box>
+            {currentModel.supportsThinking && currentEffort.id !== 'off' ? (
+              <Box
+                component="span"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.3,
+                  px: 0.7,
+                  py: 0.1,
+                  borderRadius: 1.5,
+                  bgcolor: 'rgba(99, 102, 241, 0.12)',
+                  color: '#4338ca',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                }}
+              >
+                <PsychologyRoundedIcon sx={{ fontSize: 13 }} />
+                {currentEffort.shortLabel}
+              </Box>
+            ) : null}
           </>
         )}
         <ExpandMoreRoundedIcon
@@ -195,8 +201,8 @@ export function ModelSelector({
           paper: {
             sx: {
               borderRadius: 3,
-              minWidth: 290,
-              maxWidth: 360,
+              width: { xs: 'min(340px, calc(100vw - 24px))', sm: 340 },
+              maxWidth: '100%',
               boxShadow: '0 12px 36px rgba(0,0,0,0.14)',
               p: 0.5,
             },
@@ -221,8 +227,8 @@ export function ModelSelector({
                   onClick={() => handleModelClick(model)}
                   selected={isSelected}
                   sx={{
-                    py: 1.1,
-                    px: 1.5,
+                    py: 1,
+                    px: 1.25,
                     borderRadius: 2,
                     mb: 0.5,
                     alignItems: 'flex-start',
@@ -230,20 +236,21 @@ export function ModelSelector({
                 >
                   <ListItemIcon
                     sx={{
-                      minWidth: 28,
+                      minWidth: 26,
                       mt: 0.3,
                       color: isSelected ? 'primary.main' : 'text.disabled',
                     }}
                   >
-                    {isSelected ? <CheckRoundedIcon fontSize="small" /> : <Box sx={{ width: 20 }} />}
+                    {isSelected ? <CheckRoundedIcon fontSize="small" /> : <Box sx={{ width: 18 }} />}
                   </ListItemIcon>
                   <ListItemText
+                    sx={{ my: 0, minWidth: 0, flex: 1 }}
                     primary={
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                         <Typography
                           sx={{
                             fontWeight: isSelected ? 800 : 600,
-                            fontSize: '0.88rem',
+                            fontSize: '0.86rem',
                           }}
                         >
                           {model.name}
@@ -252,8 +259,8 @@ export function ModelSelector({
                           <Chip
                             size="small"
                             label={model.badge}
-                            color={model.badge === '永遠最新' ? 'secondary' : 'primary'}
-                            sx={{ height: 20, fontSize: '0.68rem', fontWeight: 800 }}
+                            color={model.badge === '最新' ? 'secondary' : 'primary'}
+                            sx={{ height: 18, fontSize: '0.64rem', fontWeight: 800, px: 0.2 }}
                           />
                         ) : null}
                       </Stack>
@@ -262,15 +269,24 @@ export function ModelSelector({
                       <Typography
                         variant="caption"
                         color="text.secondary"
-                        sx={{ display: 'block', mt: 0.3 }}
+                        sx={{
+                          display: 'block',
+                          mt: 0.3,
+                          fontSize: '0.73rem',
+                          lineHeight: 1.35,
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                        }}
                       >
                         {model.description}
                       </Typography>
                     }
                   />
-                  <ChevronRightRoundedIcon
-                    sx={{ mt: 0.6, fontSize: 18, color: 'text.secondary', opacity: 0.7 }}
-                  />
+                  {model.supportsThinking ? (
+                    <ChevronRightRoundedIcon
+                      sx={{ mt: 0.5, fontSize: 18, color: 'text.secondary', opacity: 0.7, ml: 0.5 }}
+                    />
+                  ) : null}
                 </MenuItem>
               )
             })}
@@ -308,8 +324,8 @@ export function ModelSelector({
                   onClick={() => handleEffortClick(effort)}
                   selected={isSelected}
                   sx={{
-                    py: 1.1,
-                    px: 1.5,
+                    py: 1,
+                    px: 1.25,
                     borderRadius: 2,
                     mb: 0.5,
                     alignItems: 'flex-start',
@@ -317,20 +333,21 @@ export function ModelSelector({
                 >
                   <ListItemIcon
                     sx={{
-                      minWidth: 28,
+                      minWidth: 26,
                       mt: 0.3,
                       color: isSelected ? 'primary.main' : 'text.disabled',
                     }}
                   >
-                    {isSelected ? <CheckRoundedIcon fontSize="small" /> : <Box sx={{ width: 20 }} />}
+                    {isSelected ? <CheckRoundedIcon fontSize="small" /> : <Box sx={{ width: 18 }} />}
                   </ListItemIcon>
                   <ListItemText
+                    sx={{ my: 0, minWidth: 0, flex: 1 }}
                     primary={
-                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
                         <Typography
                           sx={{
                             fontWeight: isSelected ? 800 : 600,
-                            fontSize: '0.88rem',
+                            fontSize: '0.86rem',
                           }}
                         >
                           {effort.label}
@@ -340,7 +357,7 @@ export function ModelSelector({
                             size="small"
                             label="預設"
                             color="info"
-                            sx={{ height: 18, fontSize: '0.66rem', fontWeight: 800 }}
+                            sx={{ height: 18, fontSize: '0.64rem', fontWeight: 800, px: 0.2 }}
                           />
                         ) : null}
                       </Stack>
@@ -349,7 +366,14 @@ export function ModelSelector({
                       <Typography
                         variant="caption"
                         color="text.secondary"
-                        sx={{ display: 'block', mt: 0.3 }}
+                        sx={{
+                          display: 'block',
+                          mt: 0.3,
+                          fontSize: '0.73rem',
+                          lineHeight: 1.35,
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                        }}
                       >
                         {effort.description}
                       </Typography>

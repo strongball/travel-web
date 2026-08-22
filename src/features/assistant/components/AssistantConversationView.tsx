@@ -79,23 +79,25 @@ export function AssistantConversationView({
         !messageAdded && sending && !previousSendingRef.current && lastMessage?.role === 'user'
 
       if (userJustSent || retryingUserMessage) {
-        const messageElement = Array.from(
-          container.querySelectorAll<HTMLElement>('[data-message-id]'),
-        ).find((element) => element.dataset.messageId === lastMessage.id)
-        if (messageElement) {
-          const containerTop = container.getBoundingClientRect().top
-          const messageTop = messageElement.getBoundingClientRect().top
-          suppressScrollTrackingRef.current = true
-          const nextScrollTop = Math.max(0, container.scrollTop + messageTop - containerTop - 8)
-          if (typeof container.scrollTo === 'function') {
-            container.scrollTo({ top: nextScrollTop, behavior: 'smooth' })
-          } else {
-            container.scrollTop = nextScrollTop
+        requestAnimationFrame(() => {
+          const messageElement = Array.from(
+            container.querySelectorAll<HTMLElement>('[data-message-id]'),
+          ).find((element) => element.dataset.messageId === lastMessage.id)
+          if (messageElement) {
+            const containerTop = container.getBoundingClientRect().top
+            const messageTop = messageElement.getBoundingClientRect().top
+            suppressScrollTrackingRef.current = true
+            const nextScrollTop = Math.max(0, container.scrollTop + messageTop - containerTop - 12)
+            if (typeof container.scrollTo === 'function') {
+              container.scrollTo({ top: nextScrollTop, behavior: 'smooth' })
+            } else {
+              container.scrollTop = nextScrollTop
+            }
+            requestAnimationFrame(() => {
+              suppressScrollTrackingRef.current = false
+            })
           }
-          requestAnimationFrame(() => {
-            suppressScrollTrackingRef.current = false
-          })
-        }
+        })
       }
     }
 

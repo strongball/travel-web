@@ -213,7 +213,7 @@ export function MessageList({
 
       <Box
         sx={{
-          minHeight: messages.length > 0 ? 16 : { xs: 16, sm: 24 },
+          minHeight: sending ? 'calc(100% - 100px)' : (messages.length > 0 ? 16 : { xs: 16, sm: 24 }),
           flexShrink: 0,
         }}
       />

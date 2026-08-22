@@ -18,12 +18,14 @@ import type {
 import {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
+  assistantBuiltinTools,
   langchainAssistantTools,
 } from '../tools'
 
 export {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
+  assistantBuiltinTools,
   langchainAssistantTools,
 }
 
@@ -41,24 +43,38 @@ export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
 
   override invocationParams(options?: this['ParsedCallOptions']) {
     const params = super.invocationParams(options) as Record<string, unknown>
-    if (this.thinkingBudget !== undefined) {
-      params.thinkingConfig = {
-        thinkingBudget: this.thinkingBudget,
+    const modelStr = (typeof this.model === 'string' ? this.model : '').toLowerCase()
+    const isLiteModel = modelStr.includes('lite')
+
+    if (this.thinkingBudget && this.thinkingBudget > 0 && !isLiteModel) {
+      const isGemini3 = modelStr.startsWith('gemini-3') || modelStr.includes('latest')
+      if (isGemini3) {
+        const thinkingLevel =
+          this.thinkingBudget >= 8000
+            ? 'HIGH'
+            : this.thinkingBudget >= 2000
+              ? 'MEDIUM'
+              : 'LOW'
+        params.generationConfig = {
+          ...((params.generationConfig as Record<string, unknown>) || {}),
+          thinkingConfig: {
+            thinkingLevel,
+          },
+        }
+      } else {
+        params.generationConfig = {
+          ...((params.generationConfig as Record<string, unknown>) || {}),
+          thinkingConfig: {
+            thinkingBudget: this.thinkingBudget,
+          },
+        }
       }
     }
-    const tools = params.tools as Array<Record<string, unknown>> | undefined
-    if (tools && Array.isArray(tools)) {
-      const hasBuiltinTool = tools.some(
-        (t) => t && ('codeExecution' in t || 'googleSearch' in t || 'code_execution' in t || 'google_search' in t),
-      )
-      const hasFunctionCalling = tools.some(
-        (t) => t && ('functionDeclarations' in t || 'function_declarations' in t),
-      )
-      if (hasBuiltinTool && hasFunctionCalling) {
-        params.toolConfig = {
-          ...((params.toolConfig as Record<string, unknown>) || {}),
-          includeServerSideToolInvocations: true,
-        }
+
+    if (assistantBuiltinTools.length > 0 && params.toolConfig) {
+      params.toolConfig = {
+        ...((params.toolConfig as Record<string, unknown>) || {}),
+        includeServerSideToolInvocations: true,
       }
     }
     return params as ReturnType<ChatGoogleGenerativeAI['invocationParams']>
@@ -123,6 +139,30 @@ export function extractAssistantToolsMetadata(
       : []
     if (queries.length > 0 || sources.length > 0) {
       grounding = { webSearchQueries: queries, sources }
+    }
+  }
+
+  const rawAnnotations = responseMetadata?.annotations as
+    | Array<{ type?: string; title?: string; url?: string; uri?: string }>
+    | undefined
+  if (Array.isArray(rawAnnotations)) {
+    const extraSources = rawAnnotations
+      .filter((a) => a && (a.url || a.uri || a.title))
+      .map((a) => ({ title: a.title, uri: a.url || a.uri }))
+    if (extraSources.length > 0) {
+      if (!grounding) {
+        grounding = { webSearchQueries: [], sources: extraSources }
+      } else {
+        const currentSources = grounding.sources || []
+        const existingUris = new Set(currentSources.map((s) => s.uri))
+        for (const s of extraSources) {
+          if (s.uri && !existingUris.has(s.uri)) {
+            currentSources.push(s)
+            existingUris.add(s.uri)
+          }
+        }
+        grounding.sources = currentSources
+      }
     }
   }
 

@@ -49,10 +49,11 @@ export const assistantCallableTools = [
   ...assistantGeneralTools,
 ]
 
-/** Gemini 原生內建工具（由 Google 伺服器端直接執行，例如聯網搜尋與程式碼沙盒執行） */
+/** Gemini 原生內建工具（由 Google 伺服器端直接執行，例如網頁解析、聯網搜尋與程式碼沙盒執行） */
 export const assistantBuiltinTools = [
-  // { googleSearch: {} },
+  { urlContext: {} },
   { codeExecution: {} },
+  // { googleSearch: {} },
 ]
 
 /** 供 ChatGoogleGenerativeAI.bindTools 使用的完整工具清單 */

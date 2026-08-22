@@ -5,38 +5,43 @@ export interface GeminiModelOption {
   shortLabel: string
   description: string
   badge?: string
+  supportsThinking: boolean
 }
 
 export const GEMINI_MODELS: GeminiModelOption[] = [
   {
     id: 'gemini-3.5-flash-lite',
-    name: 'Gemini 3.5 Flash Lite',
-    label: 'Gemini 3.5 Lite (快速)',
+    name: 'Gemini 3.5 Lite',
+    label: 'Gemini 3.5 Lite',
     shortLabel: '3.5 Lite',
-    description: '快速、低延遲，適合日常查詢與打包清單整理',
-    badge: '預設推薦',
+    description: '極速回應，適合日常查詢與打包清單',
+    badge: '推薦',
+    supportsThinking: false,
   },
   {
     id: 'gemini-3.7-flash',
     name: 'Gemini 3.7 Flash',
-    label: 'Gemini 3.7 (均衡)',
+    label: 'Gemini 3.7 Flash',
     shortLabel: '3.7 Flash',
-    description: '速度與推理均衡，適合多步驟行程規劃',
+    description: '速度與推理均衡，支援思考設定',
+    supportsThinking: true,
   },
   {
     id: 'gemini-3.1-pro-preview',
     name: 'Gemini 3.1 Pro',
-    label: 'Gemini 3.1 Pro (深度推理)',
+    label: 'Gemini 3.1 Pro',
     shortLabel: '3.1 Pro',
-    description: '深度推理與高品質分析，適合複雜行程',
+    description: '深度推理，適合複雜行程排程',
+    supportsThinking: true,
   },
   {
     id: 'gemini-pro-latest',
-    name: 'Gemini Pro Latest (永遠最新)',
-    label: 'Gemini 最新旗艦 (自動更新)',
+    name: 'Gemini 最新旗艦',
+    label: 'Gemini 最新旗艦',
     shortLabel: '最新旗艦',
-    description: '自動指向 Google 官方釋出的最新 Pro 旗艦版本',
-    badge: '永遠最新',
+    description: '自動使用 Google 最新旗艦 Pro 版本',
+    badge: '最新',
+    supportsThinking: true,
   },
 ]
 
@@ -55,31 +60,31 @@ export interface ReasoningEffortOption {
 export const REASONING_EFFORTS: ReasoningEffortOption[] = [
   {
     id: 'off',
-    label: '關閉思考 (0 token / 最快)',
+    label: '關閉思考',
     shortLabel: '關閉',
     budget: 0,
-    description: '不消耗思考 token，回應最為即時',
+    description: '不消耗思考 token，回應最快',
   },
   {
     id: 'low',
-    label: '輕度思考 (~1k tokens)',
+    label: '輕度思考',
     shortLabel: '輕度',
     budget: 1024,
-    description: '使用少量思考 tokens 進行快速邏輯推導',
+    description: '快速邏輯推導 (~1k tokens)',
   },
   {
     id: 'medium',
-    label: '中度思考 (~4k tokens)',
+    label: '中度思考',
     shortLabel: '中度',
     budget: 4096,
-    description: '速度與推理品質均衡，推薦一般行程使用',
+    description: '速度與推理品質均衡 (~4k tokens)',
   },
   {
     id: 'high',
-    label: '深度思考 (~16k tokens)',
+    label: '深度思考',
     shortLabel: '深度',
     budget: 16384,
-    description: '使用高思考預算進行複雜多天行程與動線排程',
+    description: '複雜多天動線排程 (~16k tokens)',
   },
 ]
 

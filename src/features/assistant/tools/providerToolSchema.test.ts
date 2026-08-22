@@ -35,9 +35,10 @@ describe('active Gemini tool declarations', () => {
       'propose_todo_list',
     ])
     expect(assistantBuiltinTools).toEqual([
+      { urlContext: {} },
       { codeExecution: {} },
     ])
-    expect(langchainAssistantTools).toHaveLength(3)
+    expect(langchainAssistantTools).toHaveLength(4)
   })
 
   it('passes the shared schemas through ChatGoogleGenerativeAI without a network call', () => {
