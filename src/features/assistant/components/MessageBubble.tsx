@@ -9,6 +9,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import type { AssistantMessage } from '../types'
 import { formatAssistantText } from '../utils/formatAssistantText'
+import { AssistantToolExecutionBadge } from './AssistantToolExecutionBadge'
 
 const timeLabel = (value: string) =>
   new Intl.DateTimeFormat('zh-TW', {
@@ -42,6 +43,12 @@ export function MessageBubble({
         </Avatar>
       ) : null}
       <Box sx={{ maxWidth: { xs: '88%', sm: '78%' } }}>
+        {!user && (message.grounding || message.codeExecutions) ? (
+          <AssistantToolExecutionBadge
+            grounding={message.grounding}
+            codeExecutions={message.codeExecutions}
+          />
+        ) : null}
         <Paper
           elevation={0}
           data-streaming={streaming ? 'true' : undefined}

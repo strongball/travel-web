@@ -1,5 +1,5 @@
 import { tool } from '@langchain/core/tools'
-import type { ItineraryChangeProposal } from '../../types'
+import type { AssistantProposal } from '../../types'
 import {
   normalizeAssistantOperations,
   validateAssistantOperations,
@@ -28,7 +28,7 @@ export const proposeItineraryEditTool = tool(
       validateAssistantOperations(request.itinerary, operations)
     }
 
-    const proposal: ItineraryChangeProposal = {
+    const proposal: AssistantProposal = {
       id: proposalId,
       threadId: request?.threadId ?? '',
       turnId: request?.turnId ?? '',

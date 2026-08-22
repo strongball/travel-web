@@ -1,8 +1,10 @@
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
 import type {
+  AssistantCodeExecution,
+  AssistantGroundingMetadata,
   AssistantMessage,
   AssistantProgressPhase,
-  ItineraryChangeProposal,
+  AssistantProposal,
 } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
 
@@ -27,12 +29,40 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
     const proposalMessage = state.modelMessages
       .filter((message) => ToolMessage.isInstance(message))
       .findLast((message) => {
-        const artifact = message.artifact as { proposal?: ItineraryChangeProposal } | undefined
+        const artifact = message.artifact as { proposal?: AssistantProposal } | undefined
         return artifact?.proposal?.turnId === request.turnId
       })
     const completedProposal = (
-      proposalMessage?.artifact as { proposal?: ItineraryChangeProposal } | undefined
+      proposalMessage?.artifact as { proposal?: AssistantProposal } | undefined
     )?.proposal ?? null
+
+    const allGroundingQueries: string[] = []
+    const allGroundingSources: Array<{ title?: string; uri?: string }> = []
+    const allCodeExecutions: AssistantCodeExecution[] = []
+
+    for (const msg of state.modelMessages) {
+      if (AIMessage.isInstance(msg) && msg.response_metadata) {
+        const g = (msg.response_metadata as { assistantGrounding?: AssistantGroundingMetadata | null }).assistantGrounding
+        if (g) {
+          if (g.webSearchQueries) allGroundingQueries.push(...g.webSearchQueries)
+          if (g.sources) allGroundingSources.push(...g.sources)
+        }
+        const c = (msg.response_metadata as { assistantCodeExecutions?: AssistantCodeExecution[] | null }).assistantCodeExecutions
+        if (c) {
+          allCodeExecutions.push(...c)
+        }
+      }
+    }
+
+    const uniqueSources = allGroundingSources.filter((s, idx, arr) => (
+      s.uri ? arr.findIndex((x) => x.uri === s.uri) === idx : true
+    ))
+    const uniqueQueries = [...new Set(allGroundingQueries)]
+
+    const grounding: AssistantGroundingMetadata | null = (uniqueQueries.length > 0 || uniqueSources.length > 0)
+      ? { webSearchQueries: uniqueQueries, sources: uniqueSources }
+      : null
+    const codeExecutions: AssistantCodeExecution[] | null = allCodeExecutions.length > 0 ? allCodeExecutions : null
 
     const assistantMessage: AssistantMessage = {
       id: crypto.randomUUID(),
@@ -41,6 +71,8 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       content: reply,
       createdAt: new Date().toISOString(),
       proposal: completedProposal,
+      grounding,
+      codeExecutions,
     }
 
     if (request.threadId) options.emitProgress?.(request.threadId, 'saving_checkpoint')

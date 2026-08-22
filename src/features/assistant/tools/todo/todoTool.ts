@@ -1,5 +1,5 @@
 import { tool } from '@langchain/core/tools'
-import type { AssistantOperation, ItineraryChangeProposal } from '../../types'
+import type { AssistantOperation, AssistantProposal } from '../../types'
 import { todoToolInputSchema } from './todoToolSchema'
 import { extractProposedCategories, extractProposedTodos } from './todoOperations'
 import {
@@ -31,7 +31,7 @@ export const proposeTodoListTool = tool(
       })),
     ]
 
-    const proposal: ItineraryChangeProposal = {
+    const proposal: AssistantProposal = {
       id: proposalId,
       threadId: request?.threadId ?? '',
       turnId: request?.turnId ?? '',

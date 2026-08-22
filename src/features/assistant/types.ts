@@ -25,6 +25,23 @@ export type AssistantStreamListener = (event: AssistantStreamEvent) => void
 
 export type AssistantMessageRole = 'user' | 'assistant'
 
+export type AssistantGroundingSource = {
+  title?: string
+  uri?: string
+}
+
+export type AssistantGroundingMetadata = {
+  webSearchQueries?: string[]
+  sources?: AssistantGroundingSource[]
+}
+
+export type AssistantCodeExecution = {
+  language?: string
+  code?: string
+  outcome?: string
+  output?: string
+}
+
 export type AssistantMessage = {
   id: string
   turnId: string
@@ -32,7 +49,9 @@ export type AssistantMessage = {
   content: string
   createdAt: string
   /** Completed proposal result; pending proposals live on pendingToolCall. */
-  proposal?: ItineraryChangeProposal | null
+  proposal?: AssistantProposal | null
+  grounding?: AssistantGroundingMetadata | null
+  codeExecutions?: AssistantCodeExecution[] | null
 }
 
 export type AssistantAttractionDraft = {
@@ -81,7 +100,7 @@ export type BaseAssistantProposal = {
   createdAt: string
 }
 
-export type ItineraryChangeProposal = BaseAssistantProposal & {
+export type AssistantProposal = BaseAssistantProposal & {
   itineraryId: string
   expectedDayRevisions: Record<string, number>
   operations: AssistantOperation[]
@@ -91,7 +110,8 @@ export type ItineraryChangeProposal = BaseAssistantProposal & {
   proposedCategories: string[]
 }
 
-export type AssistantProposal = ItineraryChangeProposal
+/** 相容舊名稱別名 */
+export type ItineraryChangeProposal = AssistantProposal
 
 export type AssistantTurnRequest = {
   threadId: string
@@ -114,7 +134,7 @@ export type AssistantUserDecision = {
 export type AssistantProposalReviewInterrupt = {
   type: 'proposal_review'
   toolCallId: string
-  proposal: ItineraryChangeProposal
+  proposal: AssistantProposal
 }
 
 /**
@@ -125,11 +145,11 @@ export type AssistantProposalReviewInterrupt = {
 export type AssistantPendingToolCall = {
   id: string
   name: string
-  proposal: ItineraryChangeProposal
+  proposal: AssistantProposal
 }
 
 export type AssistantProposalExecution = {
-  apply: (proposal: ItineraryChangeProposal) => Promise<AssistantProposalStatus | void>
+  apply: (proposal: AssistantProposal) => Promise<AssistantProposalStatus | void>
 }
 
 export type AssistantGraphDependencies = {

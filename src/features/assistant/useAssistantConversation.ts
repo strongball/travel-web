@@ -27,9 +27,9 @@ import type {
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantProgressPhase,
+  AssistantProposal,
   AssistantStreamEvent,
   AssistantTurnRequest,
-  ItineraryChangeProposal,
 } from './types'
 
 const progressLabels: Record<AssistantProgressPhase, string> = {
@@ -278,7 +278,7 @@ export function useAssistantConversation(
   }, [refreshThreads])
 
   const proposalExecution = useMemo(() => ({
-    apply: async (proposal: ItineraryChangeProposal) => {
+    apply: async (proposal: AssistantProposal) => {
       const status = await applyAssistantOperations(proposal.threadId, proposal)
       if (status === 'applied') {
         if (proposal.afterDays.length > 0) {

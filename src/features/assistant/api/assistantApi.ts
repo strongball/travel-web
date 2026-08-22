@@ -9,6 +9,8 @@ import {
 import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
+  AssistantCodeExecution,
+  AssistantGroundingMetadata,
   AssistantMessage,
 } from '../types'
 import {
@@ -23,7 +25,7 @@ export {
   langchainAssistantTools,
 }
 
-const modelName = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.7-flash'
+const modelName = import.meta.env.VITE_GEMINI_MODEL
 
 export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI> {
   const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim() || 'proxy-mode'
@@ -57,6 +59,64 @@ export function bindAssistantTools(model: ChatGoogleGenerativeAI) {
   return model.bindTools(langchainAssistantTools, { tool_choice: 'auto' })
 }
 
+export function extractAssistantToolsMetadata(
+  content: unknown,
+  responseMetadata?: Record<string, unknown>,
+): {
+  grounding?: AssistantGroundingMetadata | null
+  codeExecutions?: AssistantCodeExecution[] | null
+} {
+  let grounding: AssistantGroundingMetadata | null = null
+  const rawGrounding = responseMetadata?.groundingMetadata as {
+    webSearchQueries?: string[]
+    groundingChunks?: Array<{ web?: { title?: string; uri?: string } }>
+  } | undefined
+
+  if (rawGrounding) {
+    const queries = Array.isArray(rawGrounding.webSearchQueries) ? rawGrounding.webSearchQueries : []
+    const sources = Array.isArray(rawGrounding.groundingChunks)
+      ? rawGrounding.groundingChunks
+          .map((chunk) => ({ title: chunk.web?.title, uri: chunk.web?.uri }))
+          .filter((s) => s.uri || s.title)
+      : []
+    if (queries.length > 0 || sources.length > 0) {
+      grounding = { webSearchQueries: queries, sources }
+    }
+  }
+
+  const codeExecutions: AssistantCodeExecution[] = []
+  if (Array.isArray(content)) {
+    for (const part of content) {
+      if (part && typeof part === 'object') {
+        if ('executableCode' in part && (part as { executableCode?: { language?: string; code?: string } }).executableCode) {
+          const exec = (part as { executableCode: { language?: string; code?: string } }).executableCode
+          codeExecutions.push({
+            language: exec.language,
+            code: exec.code,
+          })
+        } else if ('codeExecutionResult' in part && (part as { codeExecutionResult?: { outcome?: string; output?: string } }).codeExecutionResult) {
+          const res = (part as { codeExecutionResult: { outcome?: string; output?: string } }).codeExecutionResult
+          const last = codeExecutions[codeExecutions.length - 1]
+          if (last && !last.output) {
+            last.outcome = res.outcome
+            last.output = res.output
+          } else {
+            codeExecutions.push({
+              outcome: res.outcome,
+              output: res.output,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    grounding,
+    codeExecutions: codeExecutions.length > 0 ? codeExecutions : null,
+  }
+}
+
 export async function invokeAssistantModel(
   messages: BaseMessage[],
   onTextDelta?: (text: string) => void,
@@ -65,25 +125,58 @@ export async function invokeAssistantModel(
   const assistantModel = bindAssistantTools(model)
   if (!onTextDelta) {
     const response = await assistantModel.invoke(messages)
-    return response as AIMessage
+    const aiResp = response as AIMessage
+    const extracted = extractAssistantToolsMetadata(aiResp.content, aiResp.response_metadata)
+    return new AIMessage({
+      content: aiResp.content,
+      id: aiResp.id,
+      name: aiResp.name,
+      additional_kwargs: aiResp.additional_kwargs,
+      response_metadata: {
+        ...aiResp.response_metadata,
+        assistantGrounding: extracted.grounding,
+        assistantCodeExecutions: extracted.codeExecutions,
+      },
+      tool_calls: aiResp.tool_calls,
+      invalid_tool_calls: aiResp.invalid_tool_calls,
+      usage_metadata: aiResp.usage_metadata,
+    })
   }
 
   let response: AIMessageChunk | null = null
+  let mergedResponseMetadata: Record<string, unknown> = {}
+  const accumulatedParts: unknown[] = []
+
   const stream = await assistantModel.stream(messages)
   for await (const chunk of stream) {
     const aiChunk = chunk as AIMessageChunk
     const text = aiChunk.text
     if (text) onTextDelta(text)
+    if (aiChunk.response_metadata) {
+      mergedResponseMetadata = { ...mergedResponseMetadata, ...aiChunk.response_metadata }
+    }
+    if (Array.isArray(aiChunk.content)) {
+      accumulatedParts.push(...aiChunk.content)
+    }
     response = response ? response.concat(aiChunk) : aiChunk
   }
 
   if (!response) throw new Error('模型沒有回傳可完成的訊息')
+
+  const finalContent = accumulatedParts.length > 0 ? accumulatedParts : response.content
+  const finalMetadata = { ...response.response_metadata, ...mergedResponseMetadata }
+  const extracted = extractAssistantToolsMetadata(finalContent, finalMetadata)
+
   return new AIMessage({
     content: response.content,
     id: response.id,
     name: response.name,
     additional_kwargs: response.additional_kwargs,
-    response_metadata: response.response_metadata,
+    response_metadata: {
+      ...finalMetadata,
+      assistantGrounding: extracted.grounding,
+      assistantCodeExecutions: extracted.codeExecutions,
+    },
     tool_calls: response.tool_calls,
     invalid_tool_calls: response.invalid_tool_calls,
     usage_metadata: response.usage_metadata,

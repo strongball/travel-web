@@ -4,7 +4,7 @@ import type {
   AssistantProposalExecution,
   AssistantUserDecision,
   AssistantTurnRequest,
-  ItineraryChangeProposal,
+  AssistantProposal,
 } from '../types'
 import { interrupt } from '@langchain/langgraph/web'
 
@@ -35,7 +35,7 @@ export function proposalRuntimeContext(runtime: AssistantProposalToolRuntime) {
 }
 
 export function asProposalReviewInterrupt(
-  proposal: ItineraryChangeProposal,
+  proposal: AssistantProposal,
   runtime: AssistantProposalToolRuntime,
 ) {
   return {
@@ -46,7 +46,7 @@ export function asProposalReviewInterrupt(
 }
 
 export async function reviewProposal(
-  proposal: ItineraryChangeProposal,
+  proposal: AssistantProposal,
   runtime: AssistantProposalToolRuntime,
 ) {
   const decision = interrupt<ReturnType<typeof asProposalReviewInterrupt>, AssistantUserDecision>(

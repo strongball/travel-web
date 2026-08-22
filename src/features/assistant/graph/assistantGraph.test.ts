@@ -35,9 +35,9 @@ import {
 } from '../api'
 import type {
   AssistantMessage,
+  AssistantProposal,
   AssistantProposalExecution,
   AssistantTurnRequest,
-  ItineraryChangeProposal,
 } from '../types'
 
 const itinerary: Itinerary = {
@@ -419,7 +419,7 @@ describe('createAssistantGraph', () => {
     const resumedModelMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
     const toolMessage = resumedModelMessages.find((message) => ToolMessage.isInstance(message)) as ToolMessage
     expect(JSON.parse(toolMessage.content as string).proposal).toBeUndefined()
-    expect((toolMessage.artifact as { proposal: ItineraryChangeProposal }).proposal.status).toBe('applied')
+    expect((toolMessage.artifact as { proposal: AssistantProposal }).proposal.status).toBe('applied')
     expect(resumed.assistantMessage?.content).toBe('好的，已為您將第一天調整為十點出發！')
     expect(resumed.assistantMessage?.proposal?.status).toBe('applied')
   })
