@@ -113,7 +113,8 @@ export type BaseAssistantProposal = {
 export type AssistantProposal = BaseAssistantProposal & {
   itineraryId: string
   expectedDayRevisions: Record<string, number>
-  operations: AssistantOperation[]
+  /** Legacy payload field; new proposals persist the derived snapshots instead. */
+  operations?: AssistantOperation[]
   beforeDays: TripDay[]
   afterDays: TripDay[]
   proposedTodos: Array<{ title: string; category: string }>

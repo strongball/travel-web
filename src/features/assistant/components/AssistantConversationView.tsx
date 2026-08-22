@@ -43,18 +43,19 @@ export function AssistantConversationView({
     online,
     sending,
     hasPendingProposal,
+    registerFocusComposer,
   } = controller
 
   const composerInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
-    controller.registerFocusComposer(() => {
+    registerFocusComposer(() => {
       requestAnimationFrame(() => {
         composerInputRef.current?.focus()
       })
     })
-  }, [controller])
+  }, [registerFocusComposer])
 
   useLayoutEffect(() => {
     const container = conversationScrollRef.current

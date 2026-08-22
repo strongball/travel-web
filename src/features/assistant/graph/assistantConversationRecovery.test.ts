@@ -70,4 +70,10 @@ describe('findIncompleteUserMessage', () => {
     ]
     expect(findIncompleteUserMessage(messages)).toBe(orphan)
   })
+
+  it('treats checkpoint-completed turns as complete while canonical history catches up', () => {
+    const orphan = message('msg-1', 'user', 'turn-1')
+
+    expect(findIncompleteUserMessage([orphan], ['turn-1'])).toBeNull()
+  })
 })

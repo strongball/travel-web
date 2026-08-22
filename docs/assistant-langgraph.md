@@ -17,6 +17,8 @@
 
 LangGraph checkpoint 是 pending tool call 與可恢復執行的唯一來源。暫停中的 proposal card 不會寫成 `AssistantMessage`，前端從 checkpoint task 的 interrupt payload 與原本的 AI tool call 推導 `pendingToolCall`；只有工具完成、LLM 產生最後文字後，才會建立 `AssistantMessage`。完成後的 proposal 可附在 `assistant_messages.metadata.proposal`，讓歷史仍能顯示已套用/已拒絕結果；新流程不再讀寫 `assistant_proposals`。實際行程仍以 `days`、`attractions` 與 `todo_items` 為準。
 
+Proposal metadata 只保存穩定顯示與套用所需的 diff snapshots、受影響日期 revisions、Todo 與分類；可由這些資料推導且 UI/RPC 不使用的原始 `operations` 不再重複保存。
+
 建立 runtime：
 
 ```ts

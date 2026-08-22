@@ -362,6 +362,7 @@ describe('createAssistantGraph', () => {
     expect(paused.pendingToolCall?.proposal.status).toBe('pending')
     expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
     expect(paused.pendingToolCall?.proposal.expectedDayRevisions).toEqual({ 'day-1': 3 })
+    expect(paused.pendingToolCall?.proposal).not.toHaveProperty('operations')
 
     const resumeEvents: string[] = []
     const resumed = await graph.resumeTurn(
@@ -414,5 +415,32 @@ describe('createAssistantGraph', () => {
     const resumed = await graph.resumeTurn(req.threadId, { approved: false, feedback: '我想自己整理' })
     expect(resumed.assistantMessage?.proposal?.status).toBe('rejected')
     expect(resumed.assistantMessage?.content).toBe('好的，我先不套用這份清單。')
+  })
+
+  it('surfaces an empty post-approval model response instead of masking it', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({
+        content: '我準備調整第一天的開始時間。',
+        tool_calls: [{
+          id: 'proposal-call-empty-response',
+          name: 'propose_itinerary_edit',
+          args: {
+            title: '開始時間調整',
+            explanation: '將第一天改為 09:00 開始。',
+            operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '09:00' }],
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({ content: '' }))
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+    const req = request()
+
+    await graph.sendTurn(req)
+    await expect(graph.resumeTurn(req.threadId, { approved: true }))
+      .rejects.toThrow('模型回傳了空的文字內容')
   })
 })

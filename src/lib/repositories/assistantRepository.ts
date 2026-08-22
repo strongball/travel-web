@@ -9,13 +9,8 @@ import { supabase } from '../supabase'
 
 export type AssistantThread = {
   id: string
-  itineraryId: string
-  ownerId: string
   title: string
   summary: string
-  graphVersion: number
-  latestCheckpointId: string | null
-  createdAt: string
   updatedAt: string
 }
 
@@ -23,21 +18,17 @@ export type StoredAssistantProposal = AssistantProposal
 
 type Row = Record<string, unknown>
 const text = (value: unknown) => typeof value === 'string' ? value : ''
+const threadFields = 'id,title,summary,updated_at'
 
 const mapThread = (row: Row): AssistantThread => ({
   id: text(row.id),
-  itineraryId: text(row.itinerary_id),
-  ownerId: text(row.owner_id),
   title: text(row.title),
   summary: text(row.summary),
-  graphVersion: typeof row.graph_version === 'number' ? row.graph_version : ASSISTANT_GRAPH_VERSION,
-  latestCheckpointId: typeof row.latest_checkpoint_id === 'string' ? row.latest_checkpoint_id : null,
-  createdAt: text(row.created_at),
   updatedAt: text(row.updated_at),
 })
 
 export async function listAssistantThreads(itineraryId: string): Promise<AssistantThread[]> {
-  const { data, error } = await supabase.from('assistant_threads').select('*')
+  const { data, error } = await supabase.from('assistant_threads').select(threadFields)
     .eq('itinerary_id', itineraryId).order('updated_at', { ascending: false })
   if (error) throw error
   return (data as Row[]).map(mapThread)
@@ -49,37 +40,9 @@ export async function createAssistantThread(itineraryId: string, ownerId: string
     owner_id: ownerId,
     title: '新對話',
     graph_version: ASSISTANT_GRAPH_VERSION,
-  }).select('*').single()
+  }).select(threadFields).single()
   if (error) throw error
   return mapThread(data as Row)
-}
-
-export async function getAssistantThread(id: string): Promise<AssistantThread | null> {
-  const { data, error } = await supabase.from('assistant_threads').select('*')
-    .eq('id', id).maybeSingle()
-  if (error) throw error
-  return data ? mapThread(data as Row) : null
-}
-
-export async function saveAssistantThread(thread: {
-  id: string
-  itineraryId: string
-  ownerId: string
-  title: string
-  summary: string
-  latestCheckpointId?: string | null
-}) {
-  const { error } = await supabase.from('assistant_threads').upsert({
-    id: thread.id,
-    itinerary_id: thread.itineraryId,
-    owner_id: thread.ownerId,
-    title: thread.title,
-    summary: thread.summary,
-    graph_version: ASSISTANT_GRAPH_VERSION,
-    latest_checkpoint_id: thread.latestCheckpointId ?? null,
-    updated_at: new Date().toISOString(),
-  })
-  if (error) throw error
 }
 
 export async function renameAssistantThread(id: string, title: string) {
@@ -98,7 +61,8 @@ export async function deleteAssistantThread(id: string) {
 }
 
 export async function listAssistantMessages(threadId: string): Promise<AssistantMessage[]> {
-  const { data, error } = await supabase.from('assistant_messages').select('*')
+  const { data, error } = await supabase.from('assistant_messages')
+    .select('id,turn_id,role,content,metadata,created_at')
     .eq('thread_id', threadId).order('created_at', { ascending: true })
   if (error) throw error
   return (data as Row[]).map((row) => {

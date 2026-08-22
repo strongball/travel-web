@@ -28,6 +28,12 @@ export const proposeItineraryEditTool = tool(
       validateAssistantOperations(request.itinerary, operations)
     }
 
+    const allBeforeDays = request?.itinerary.days ?? []
+    const afterDays = request?.itinerary
+      ? changedDays(allBeforeDays, applyItineraryOperations(request.itinerary, operations))
+      : []
+    const affectedDayIds = new Set(afterDays.map((day) => day.id))
+
     const proposal: AssistantProposal = {
       id: proposalId,
       threadId: request?.threadId ?? '',
@@ -35,22 +41,16 @@ export const proposeItineraryEditTool = tool(
       itineraryId: request?.itinerary?.id ?? '',
       title: input.title || '行程修改提案',
       explanation: input.explanation || input.reply || '',
-      expectedDayRevisions: request?.dayRevisions ?? {},
-      operations,
-      beforeDays: [],
-      afterDays: [],
+      expectedDayRevisions: Object.fromEntries(afterDays.map((day) => [
+        day.id,
+        request?.dayRevisions[day.id] ?? day.revision,
+      ])),
+      beforeDays: allBeforeDays.filter((day) => affectedDayIds.has(day.id)),
+      afterDays,
       proposedTodos: [],
       proposedCategories: [],
       status: 'pending',
       createdAt: new Date().toISOString(),
-    }
-
-    if (request?.itinerary) {
-      const before = request.itinerary.days ?? []
-      const after = changedDays(before, applyItineraryOperations(request.itinerary, operations))
-      const affectedIds = new Set(after.map((day) => day.id))
-      proposal.beforeDays = before.filter((day) => affectedIds.has(day.id))
-      proposal.afterDays = after
     }
 
     return reviewProposal(proposal, runtime)

@@ -40,7 +40,6 @@ export function MessageList({
     conversationLoading,
     online,
     sending,
-    rejectingProposalId,
     progressLabel,
   } = controller
 
@@ -179,7 +178,7 @@ export function MessageList({
                   <ProposalCard
                     key={messageProposal.id}
                     proposal={messageProposal}
-                    busy={sending || rejectingProposalId === messageProposal.id}
+                    busy={sending}
                     online={online}
                     onDecision={controller.decideProposal}
                     isHistory={true}
@@ -197,7 +196,7 @@ export function MessageList({
             <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
               <ProposalCard
                 proposal={pendingToolCall.proposal}
-                busy={sending || rejectingProposalId === pendingToolCall.proposal.id}
+                busy={sending}
                 online={online}
                 onDecision={controller.decideProposal}
                 isHistory={false}

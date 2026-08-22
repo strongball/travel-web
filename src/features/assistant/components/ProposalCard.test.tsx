@@ -12,7 +12,6 @@ const sampleProposal: StoredAssistantProposal = {
   explanation: '建議在第二天增加淺草寺，並新增購票提醒待辦。',
   status: 'pending',
   createdAt: '2026-08-22T11:00:00Z',
-  operations: [],
   expectedDayRevisions: { 'day-1': 1 },
   afterDays: [
     {

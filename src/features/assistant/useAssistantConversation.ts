@@ -16,7 +16,6 @@ import { supabase } from '../../lib/supabase'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import type { Itinerary, TodoItem } from '../../types/database'
 import {
-  AssistantGraphVersionError,
   createAssistantGraph,
   findIncompleteUserMessage,
 } from './graph'
@@ -24,11 +23,19 @@ import {
   enrichAppliedProposalPlaces,
 } from './tools'
 import {
-  DEFAULT_GEMINI_MODEL,
-  DEFAULT_REASONING_EFFORT,
   getThinkingBudget,
   type ReasoningEffort,
 } from './models'
+import { useAssistantComposerState } from './hooks/useAssistantComposerState'
+import {
+  dayRevisions,
+  friendlyError,
+  isRecoverableGraphStateError,
+  progressLabels,
+  rememberedThread,
+  rememberThread,
+  visibleProgressLabel,
+} from './assistantConversationUtils'
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -39,76 +46,8 @@ import type {
   AssistantTurnRequest,
 } from './types'
 
-const progressLabels: Record<AssistantProgressPhase, string> = {
-  checking_context: '正在確認是否需要整理前文…',
-  summarizing_context: '正在整理先前對話…',
-  generating_response: '正在根據行程與對話產生回覆…',
-  validating_response: '正在驗證回覆與時間安排…',
-  applying_proposal: '正在套用行程修改…',
-  saving_checkpoint: '正在儲存對話進度…',
-  saving_response: '正在儲存助理回覆…',
-  syncing_conversation: '正在更新對話畫面…',
-}
-
-const hiddenProgressPhases = new Set<AssistantProgressPhase>([
-  'checking_context',
-  'saving_checkpoint',
-  'saving_response',
-  'syncing_conversation',
-])
-
-const visibleProgressLabel = (phase: AssistantProgressPhase) =>
-  hiddenProgressPhases.has(phase) ? null : progressLabels[phase]
-
-const friendlyError = (value: unknown, fallback: string) => {
-  const errorRecord = value && typeof value === 'object'
-    ? value as { code?: unknown; message?: unknown }
-    : null
-  if (errorRecord?.code === '40001') return '行程已被其他分頁或裝置修改，請重新載入後再產生提案。'
-  if (errorRecord?.code === 'P0002') return '這個行程提案已不存在，請重新產生提案。'
-  if (errorRecord?.code === '22023') return '行程提案包含不合法的景點資料，請重新描述要調整的景點。'
-  const raw = value instanceof Error
-    ? value.message
-    : typeof value === 'string'
-      ? value
-      : typeof errorRecord?.message === 'string'
-        ? errorRecord.message
-        : fallback
-  try {
-    const parsed = JSON.parse(raw) as { error?: { code?: number; message?: string } }
-    if (parsed.error?.code === 429) return 'AI 服務額度已用完，請補充 Gemini API 額度後再重試。這則訊息已保留，不會重複送出。'
-    if (parsed.error?.message) return parsed.error.message
-  } catch {
-    // The error is already plain text.
-  }
-  if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('prepayment credits')) {
-    return 'AI 服務額度已用完，請補充 Gemini API 額度後再重試。這則訊息已保留，不會重複送出。'
-  }
-  return raw || fallback
-}
-
-const isRecoverableGraphStateError = (value: unknown) =>
-  value instanceof AssistantGraphVersionError ||
-  (value instanceof Error && value.message.includes('Assistant turn request is missing'))
-
-const rememberedThread = (key: string) => {
-  try {
-    return sessionStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-const rememberThread = (key: string, threadId: string | null) => {
-  try {
-    if (threadId) sessionStorage.setItem(key, threadId)
-    else sessionStorage.removeItem(key)
-  } catch {
-    // Session persistence is only a convenience; private browsing may deny it.
-  }
-}
-
 type RetryRequest = { thread: AssistantThread; request: AssistantTurnRequest }
+type ThreadSelection = 'fallback' | 'none' | 'preserve'
 
 export type AssistantConversationController = {
   threads: AssistantThread[]
@@ -175,127 +114,26 @@ export function useAssistantConversation(
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [retryRequest, setRetryRequest] = useState<RetryRequest | null>(null)
-  const [selectedModel, setSelectedModelState] = useState<string>(() => {
-    try {
-      return localStorage.getItem('preferred_gemini_model') || DEFAULT_GEMINI_MODEL
-    } catch {
-      return DEFAULT_GEMINI_MODEL
-    }
-  })
-
-  const setSelectedModel = useCallback((modelId: string) => {
-    setSelectedModelState(modelId)
-    try {
-      localStorage.setItem('preferred_gemini_model', modelId)
-    } catch {
-      // ignore storage failure
-    }
-  }, [])
-
-  const [reasoningEffort, setReasoningEffortState] = useState<ReasoningEffort>(() => {
-    try {
-      return (
-        (localStorage.getItem('preferred_gemini_reasoning_effort') as ReasoningEffort) ||
-        DEFAULT_REASONING_EFFORT
-      )
-    } catch {
-      return DEFAULT_REASONING_EFFORT
-    }
-  })
-
-  const setReasoningEffort = useCallback((effort: ReasoningEffort) => {
-    setReasoningEffortState(effort)
-    try {
-      localStorage.setItem('preferred_gemini_reasoning_effort', effort)
-    } catch {
-      // ignore storage failure
-    }
-  }, [])
-
-  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
-
-  const addAttachments = useCallback(async (files: File[]) => {
-    const newAttachments: AssistantAttachment[] = []
-    for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) {
-        setError(`檔案「${file.name}」超過 10MB 大小限制`)
-        continue
-      }
-      const id = crypto.randomUUID()
-      if (file.type.startsWith('image/')) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        })
-        newAttachments.push({
-          id,
-          name: file.name,
-          mimeType: file.type || 'image/jpeg',
-          size: file.size,
-          dataUrl,
-        })
-      } else if (
-        file.type.startsWith('text/') ||
-        file.name.endsWith('.txt') ||
-        file.name.endsWith('.md') ||
-        file.name.endsWith('.csv') ||
-        file.name.endsWith('.json')
-      ) {
-        const textContent = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsText(file)
-        })
-        newAttachments.push({
-          id,
-          name: file.name,
-          mimeType: file.type || 'text/plain',
-          size: file.size,
-          textContent,
-        })
-      } else {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        })
-        newAttachments.push({
-          id,
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          size: file.size,
-          dataUrl,
-        })
-      }
-    }
-    if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments])
-    }
-  }, [])
-
-  const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => prev.filter((item) => item.id !== id))
-  }, [])
-
-  const clearAttachments = useCallback(() => {
-    setAttachments([])
-  }, [])
+  const {
+    selectedModel,
+    setSelectedModel,
+    reasoningEffort,
+    setReasoningEffort,
+    attachments,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
+  } = useAssistantComposerState(setError)
 
   const activeThreadRef = useRef<string | null>(null)
   const threadsRef = useRef<AssistantThread[]>([])
-  const itineraryRef = useRef(itinerary)
-  itineraryRef.current = itinerary
-  const todosRef = useRef(todos)
-  todosRef.current = todos
-  const todoCategoriesRef = useRef(todoCategories)
-  todoCategoriesRef.current = todoCategories
+  const contextRef = useRef({ itinerary, todos, todoCategories })
+  contextRef.current = { itinerary, todos, todoCategories }
   // Close the small window where two events can start before React rerenders.
   const sendingRef = useRef(false)
   const creatingThreadRef = useRef(false)
+  const deletingThreadRef = useRef<string | null>(null)
+  const threadsLoadRef = useRef(0)
   const conversationLoadRef = useRef(0)
   const online = useOnlineStatus()
   const focusComposerRef = useRef<(() => void) | null>(null)
@@ -310,8 +148,10 @@ export function useAssistantConversation(
 
   const currentThread = threads.find((thread) => thread.id === threadId) ?? null
   const hasPendingProposal = pendingToolCall !== null
-  const onProgress = useCallback((phase: AssistantProgressPhase) => {
-    setProgressLabel(visibleProgressLabel(phase))
+  const showProgress = useCallback((id: string, phase: AssistantProgressPhase) => {
+    if (activeThreadRef.current === id) {
+      setProgressLabel(visibleProgressLabel(phase))
+    }
   }, [])
 
   const appendStreamingText = useCallback((threadId: string, event: AssistantStreamEvent) => {
@@ -330,57 +170,62 @@ export function useAssistantConversation(
     })
   }, [])
 
-  const selectThread = useCallback((nextThreadId: string) => {
-    if (activeThreadRef.current !== nextThreadId) {
-      conversationLoadRef.current += 1
-      setMessages([])
-      setStreamingMessage(null)
-      setPendingToolCall(null)
-      setRetryRequest(null)
-      setConversationLoading(true)
-    }
-    activeThreadRef.current = nextThreadId
-    setThreadId(nextThreadId)
-    rememberThread(threadStorageKey, nextThreadId)
-  }, [threadStorageKey])
-
-  const showThreadList = useCallback(() => {
+  const resetConversationView = useCallback((nextThreadId: string | null) => {
     conversationLoadRef.current += 1
-    activeThreadRef.current = null
-    setThreadId(null)
     setMessages([])
     setStreamingMessage(null)
     setPendingToolCall(null)
     setRetryRequest(null)
-    setConversationLoading(false)
-    rememberThread(threadStorageKey, null)
-  }, [threadStorageKey])
+    setProgressLabel(null)
+    setConversationLoading(nextThreadId !== null)
+  }, [])
 
-  const refreshThreads = useCallback(async (preferredId?: string, selectFallback = true) => {
-    const next = await listAssistantThreads(itinerary.id)
+  const activateThread = useCallback((nextThreadId: string | null, forceReset = false) => {
+    if (forceReset || activeThreadRef.current !== nextThreadId) {
+      resetConversationView(nextThreadId)
+    }
+    activeThreadRef.current = nextThreadId
+    setThreadId(nextThreadId)
+    rememberThread(threadStorageKey, nextThreadId)
+  }, [resetConversationView, threadStorageKey])
+
+  const selectThread = useCallback((nextThreadId: string) => {
+    activateThread(nextThreadId)
+  }, [activateThread])
+
+  const showThreadList = useCallback(() => {
+    activateThread(null, true)
+  }, [activateThread])
+
+  const refreshThreads = useCallback(async (
+    preferredId?: string,
+    selection: ThreadSelection = 'fallback',
+  ) => {
+    const loadId = ++threadsLoadRef.current
+    let next: AssistantThread[]
+    try {
+      next = await listAssistantThreads(itinerary.id)
+    } catch (loadError) {
+      if (loadId !== threadsLoadRef.current) return threadsRef.current
+      throw loadError
+    }
+    if (loadId !== threadsLoadRef.current) return next
     const current = activeThreadRef.current
     const remembered = rememberedThread(threadStorageKey)
-    const nextThreadId = selectFallback
-      ? preferredId ??
+    let nextThreadId: string | null = null
+    if (selection === 'preserve') {
+      nextThreadId = current && next.some((item) => item.id === current) ? current : null
+    } else if (selection === 'fallback') {
+      nextThreadId = preferredId ??
         (current && next.some((item) => item.id === current) ? current : null) ??
         (remembered && next.some((item) => item.id === remembered) ? remembered : null) ??
         next[0]?.id ?? null
-      : null
+    }
     threadsRef.current = next
     setThreads(next)
-    if (nextThreadId !== current) {
-      conversationLoadRef.current += 1
-      setMessages([])
-      setStreamingMessage(null)
-      setPendingToolCall(null)
-      setRetryRequest(null)
-      setConversationLoading(nextThreadId !== null)
-    }
-    activeThreadRef.current = nextThreadId
-    rememberThread(threadStorageKey, nextThreadId)
-    setThreadId(nextThreadId)
+    activateThread(nextThreadId)
     return next
-  }, [itinerary.id, threadStorageKey])
+  }, [activateThread, itinerary.id, threadStorageKey])
 
   useEffect(() => {
     let active = true
@@ -424,33 +269,52 @@ export function useAssistantConversation(
         runner.getState(id),
       ])
       if (activeThreadRef.current !== id || loadId !== conversationLoadRef.current) return
-      setMessages(nextMessages)
+      const canonicalAssistantTurnIds = new Set(nextMessages
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.turnId))
+      const recoveredAssistantMessages = (graphState?.messages ?? []).filter((message) =>
+        message.role === 'assistant' && !canonicalAssistantTurnIds.has(message.turnId))
+      const visibleMessages = [...nextMessages, ...recoveredAssistantMessages]
+        .sort((first, second) => first.createdAt.localeCompare(second.createdAt))
+      setMessages(visibleMessages)
       setStreamingMessage(null)
       setPendingToolCall(graphState?.pendingToolCall ?? null)
 
-      const incompleteMessage = findIncompleteUserMessage(nextMessages)
+      const completedTurnIds = (graphState?.messages ?? [])
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.turnId)
+      const incompleteMessage = findIncompleteUserMessage(nextMessages, completedTurnIds)
       const thread = threadsRef.current.find((item) => item.id === id)
       if (!incompleteMessage || !thread || graphState?.pendingToolCall) {
         setRetryRequest(null)
-        return
+      } else {
+        const currentContext = contextRef.current
+        setRetryRequest({
+          thread,
+          request: {
+            threadId: id,
+            turnId: incompleteMessage.turnId,
+            text: incompleteMessage.content,
+            itinerary: currentContext.itinerary,
+            todos: currentContext.todos,
+            todoCategories: currentContext.todoCategories,
+            dayRevisions: dayRevisions(currentContext.itinerary),
+            createdAt: incompleteMessage.createdAt,
+            attachments: incompleteMessage.attachments ?? null,
+          },
+        })
       }
 
-      const currentItinerary = itineraryRef.current
-      setRetryRequest({
-        thread,
-        request: {
-          threadId: id,
-          turnId: incompleteMessage.turnId,
-          text: incompleteMessage.content,
-          itinerary: currentItinerary,
-          todos: todosRef.current,
-          todoCategories: todoCategoriesRef.current,
-          dayRevisions: Object.fromEntries(
-            (currentItinerary.days ?? []).map((day) => [day.id, day.revision]),
-          ),
-          createdAt: incompleteMessage.createdAt,
-        },
-      })
+      if (recoveredAssistantMessages.length > 0) {
+        try {
+          await Promise.all(recoveredAssistantMessages.map((message) =>
+            saveAssistantMessage(id, message)))
+        } catch {
+          if (activeThreadRef.current === id && loadId === conversationLoadRef.current) {
+            setNotice('已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。')
+          }
+        }
+      }
     } catch (loadError) {
       if (activeThreadRef.current === id && loadId === conversationLoadRef.current) {
         throw loadError
@@ -463,20 +327,12 @@ export function useAssistantConversation(
   }, [runner])
 
   useEffect(() => {
-    activeThreadRef.current = threadId
-    conversationLoadRef.current += 1
     setError(null)
-    setMessages([])
-    setStreamingMessage(null)
-    setPendingToolCall(null)
-    setRetryRequest(null)
-    if (!threadId) {
-      setConversationLoading(false)
-      return
-    }
-    setConversationLoading(true)
+    if (!threadId) return
     void refreshConversation(threadId).catch((loadError) => {
-      setError(loadError instanceof Error ? loadError.message : '無法載入對話內容')
+      if (activeThreadRef.current === threadId) {
+        setError(loadError instanceof Error ? loadError.message : '無法載入對話內容')
+      }
     })
   }, [refreshConversation, threadId])
 
@@ -507,26 +363,53 @@ export function useAssistantConversation(
     setError(null)
     try {
       await renameAssistantThread(id, title)
-      const activeId = activeThreadRef.current
-      await refreshThreads(activeId ?? undefined, activeId !== null)
+      await refreshThreads(undefined, 'preserve')
     } catch (value) {
       setError(friendlyError(value, '無法重新命名對話'))
     }
   }, [refreshThreads])
 
   const deleteThread = useCallback(async (id: string) => {
-    if (deletingThreadId) return
+    if (deletingThreadRef.current) return
+    deletingThreadRef.current = id
     setDeletingThreadId(id)
     setError(null)
     try {
       await deleteAssistantThread(id)
-      await refreshThreads(undefined, false)
+      await refreshThreads(undefined, 'none')
     } catch (value) {
       setError(friendlyError(value, '無法刪除對話'))
     } finally {
+      deletingThreadRef.current = null
       setDeletingThreadId(null)
     }
-  }, [deletingThreadId, refreshThreads])
+  }, [refreshThreads])
+
+  const saveCompletedMessage = useCallback(async (
+    targetThreadId: string,
+    assistantMessage: AssistantMessage,
+  ) => {
+    if (activeThreadRef.current === targetThreadId) {
+      setStreamingMessage(null)
+      setMessages((current) => {
+        const existing = current.findIndex((message) =>
+          message.turnId === assistantMessage.turnId && message.role === 'assistant')
+        return existing < 0
+          ? [...current, assistantMessage]
+          : current.map((message, index) => index === existing ? assistantMessage : message)
+      })
+    }
+    await saveAssistantMessage(targetThreadId, assistantMessage)
+  }, [])
+
+  const updateThreadSummaryCache = useCallback((targetThreadId: string, summary: string) => {
+    const existing = threadsRef.current.find((thread) => thread.id === targetThreadId)
+    if (existing?.summary === summary) return
+    const nextThreads = threadsRef.current.map((thread) =>
+      thread.id === targetThreadId ? { ...thread, summary } : thread)
+    threadsRef.current = nextThreads
+    setThreads(nextThreads)
+  }, [])
 
   const runAssistantTurn = useCallback(async (
     thread: AssistantThread,
@@ -537,7 +420,8 @@ export function useAssistantConversation(
       rehydratedSummary: thread.summary,
       rehydratedMessages: messages,
     }
-    setStreamingMessage(null)
+    if (activeThreadRef.current === thread.id) setStreamingMessage(null)
+    const onProgress = (phase: AssistantProgressPhase) => showProgress(thread.id, phase)
     const onStream = (event: AssistantStreamEvent) => appendStreamingText(thread.id, event)
     let state: Awaited<ReturnType<typeof runner.sendTurn>>
     try {
@@ -548,39 +432,31 @@ export function useAssistantConversation(
         await checkpointer.deleteThread(thread.id)
         state = await runner.sendTurn(input, onProgress, onStream)
       }
-      setProgressLabel(null)
       if (activeThreadRef.current === thread.id) {
+        setProgressLabel(null)
         setPendingToolCall(state.pendingToolCall)
       }
       if (state.pendingToolCall) {
-        setStreamingMessage(null)
+        if (activeThreadRef.current === thread.id) setStreamingMessage(null)
         return
       }
       if (state.assistantMessage) {
-        const assistantMessage = state.assistantMessage
-        setStreamingMessage(null)
-        if (activeThreadRef.current === thread.id) {
-          setMessages((current) => current.some((message) =>
-            message.turnId === assistantMessage.turnId && message.role === 'assistant')
-            ? current
-            : [...current, assistantMessage])
-        }
-        await saveAssistantMessage(thread.id, assistantMessage)
+        await saveCompletedMessage(thread.id, state.assistantMessage)
       }
       if (state.summary !== thread.summary) {
-        const nextSummary = state.summary
-        thread.summary = nextSummary
-        setThreads((current) => current.map((item) =>
-          item.id === thread.id ? { ...item, summary: nextSummary } : item
-        ))
-        void updateAssistantThreadSummary(thread.id, nextSummary)
+        updateThreadSummaryCache(thread.id, state.summary)
+        thread.summary = state.summary
+        void updateAssistantThreadSummary(thread.id, state.summary).catch(() => {
+          if (activeThreadRef.current === thread.id) {
+            setNotice('回覆已儲存，但對話摘要暫時無法同步。')
+          }
+        })
       }
-      setProgressLabel(null)
     } catch (error) {
-      setStreamingMessage(null)
+      if (activeThreadRef.current === thread.id) setStreamingMessage(null)
       throw error
     }
-  }, [appendStreamingText, checkpointer, messages, onProgress, runner])
+  }, [appendStreamingText, checkpointer, messages, runner, saveCompletedMessage, showProgress, updateThreadSummaryCache])
 
   const send = useCallback(async (event: FormEvent) => {
     event.preventDefault()
@@ -593,9 +469,11 @@ export function useAssistantConversation(
     setError(null)
     setNotice(null)
     let attempt: RetryRequest | null = null
+    let targetThreadId = currentThread?.id ?? null
     const currentAttachments = [...attachments]
     try {
       const thread = currentThread ?? await createThreadRecord()
+      targetThreadId = thread.id
       const turnId = crypto.randomUUID()
       const userMessage: AssistantMessage = {
         id: crypto.randomUUID(),
@@ -605,9 +483,11 @@ export function useAssistantConversation(
         createdAt: new Date().toISOString(),
         attachments: currentAttachments.length > 0 ? currentAttachments : null,
       }
-      setText('')
-      setAttachments([])
-      setMessages((current) => [...current, userMessage])
+      if (activeThreadRef.current === thread.id) {
+        setText('')
+        clearAttachments()
+        setMessages((current) => [...current, userMessage])
+      }
       await saveAssistantMessage(thread.id, userMessage)
       const request: AssistantTurnRequest = {
         threadId: thread.id,
@@ -616,7 +496,7 @@ export function useAssistantConversation(
         itinerary,
         todos,
         todoCategories,
-        dayRevisions: Object.fromEntries((itinerary.days ?? []).map((day) => [day.id, day.revision])),
+        dayRevisions: dayRevisions(itinerary),
         createdAt: userMessage.createdAt,
         selectedModel,
         reasoningEffort,
@@ -628,49 +508,61 @@ export function useAssistantConversation(
         const titleSource = content || currentAttachments[0]?.name || '新對話'
         const nextTitle = titleSource.slice(0, 36)
         thread.title = nextTitle
-        setThreads((current) => current.map((item) =>
-          item.id === thread.id ? { ...item, title: nextTitle } : item
-        ))
+        const nextThreads = threadsRef.current.map((item) =>
+          item.id === thread.id ? { ...item, title: nextTitle } : item)
+        threadsRef.current = nextThreads
+        setThreads(nextThreads)
         void renameAssistantThread(thread.id, nextTitle)
       }
       await runAssistantTurn(thread, request)
-      setRetryRequest(null)
+      if (activeThreadRef.current === thread.id) setRetryRequest(null)
     } catch (sendError) {
-      setStreamingMessage(null)
-      setError(friendlyError(sendError, '助理暫時無法回覆'))
-      if (attempt) setRetryRequest(attempt)
+      if (activeThreadRef.current === targetThreadId) {
+        setStreamingMessage(null)
+        setError(friendlyError(sendError, '助理暫時無法回覆'))
+        if (attempt) setRetryRequest(attempt)
+      }
     } finally {
       sendingRef.current = false
       setSending(false)
     }
-  }, [attachments, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
+  }, [attachments, clearAttachments, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
 
   const retryLastTurn = useCallback(async () => {
-    if (!retryRequest || sending || sendingRef.current || !online) return
+    if (!retryRequest || retryRequest.thread.id !== activeThreadRef.current ||
+      sending || sendingRef.current || !online) return
     setProgressLabel(null)
     setStreamingMessage(null)
     sendingRef.current = true
     setSending(true)
     setError(null)
     try {
-      await runAssistantTurn(retryRequest.thread, {
-        ...retryRequest.request,
+      const retry = retryRequest
+      await runAssistantTurn(retry.thread, {
+        ...retry.request,
         selectedModel,
         reasoningEffort,
         thinkingBudget: getThinkingBudget(reasoningEffort),
       })
-      setRetryRequest(null)
+      await refreshConversation(retry.thread.id, false)
+      setRetryRequest((current) => current?.thread.id === retry.thread.id &&
+        current.request.turnId === retry.request.turnId
+        ? null
+        : current)
     } catch (retryError) {
-      setStreamingMessage(null)
-      setError(friendlyError(retryError, '助理暫時無法回覆'))
+      if (activeThreadRef.current === retryRequest.thread.id) {
+        setStreamingMessage(null)
+        setError(friendlyError(retryError, '助理暫時無法回覆'))
+      }
     } finally {
       sendingRef.current = false
       setSending(false)
     }
-  }, [online, reasoningEffort, retryRequest, runAssistantTurn, selectedModel, sending])
+  }, [online, reasoningEffort, refreshConversation, retryRequest, runAssistantTurn, selectedModel, sending])
 
   const decideProposal = useCallback(async (proposal: StoredAssistantProposal, approved: boolean) => {
-    if (!online) return
+    if (!online || sendingRef.current || activeThreadRef.current !== proposal.threadId) return
+    sendingRef.current = true
     setError(null)
 
     setSending(true)
@@ -682,47 +574,52 @@ export function useAssistantConversation(
       ? { ...current, proposal: { ...current.proposal, status: nextStatus } }
       : current)
 
+    let completedTurnId: string | null = null
     try {
       const state = await runner.resumeTurn(
         proposal.threadId,
         { approved },
-        onProgress,
+        (phase) => showProgress(proposal.threadId, phase),
         (event) => appendStreamingText(proposal.threadId, event),
       )
-      setPendingToolCall(state.pendingToolCall)
+      if (activeThreadRef.current === proposal.threadId) {
+        setPendingToolCall(state.pendingToolCall)
+      }
       if (state.pendingToolCall) {
-        setStreamingMessage(null)
+        if (activeThreadRef.current === proposal.threadId) setStreamingMessage(null)
         return
       }
       if (state.assistantMessage) {
         const assistantMessage = state.assistantMessage
-        setStreamingMessage(null)
-        if (activeThreadRef.current === proposal.threadId) {
-          setMessages((current) => {
-            const existing = current.findIndex((message) =>
-              message.turnId === assistantMessage.turnId && message.role === 'assistant')
-            return existing < 0
-              ? [...current, assistantMessage]
-              : current.map((message, index) => index === existing ? assistantMessage : message)
-          })
-        }
-        await saveAssistantMessage(proposal.threadId, assistantMessage)
+        completedTurnId = assistantMessage.turnId
+        await saveCompletedMessage(proposal.threadId, assistantMessage)
       }
-      if (state.summary !== undefined) {
+      const storedSummary = threadsRef.current.find((thread) => thread.id === proposal.threadId)?.summary
+      if (storedSummary !== state.summary) {
         await updateAssistantThreadSummary(proposal.threadId, state.summary)
+        updateThreadSummaryCache(proposal.threadId, state.summary)
       }
       await refreshConversation(proposal.threadId, false)
-      await refreshThreads(proposal.threadId)
-      focusComposer()
+      await refreshThreads(undefined, 'preserve')
+      if (completedTurnId) {
+        setRetryRequest((current) => current?.thread.id === proposal.threadId &&
+          current.request.turnId === completedTurnId
+          ? null
+          : current)
+      }
+      if (activeThreadRef.current === proposal.threadId) focusComposer()
     } catch (decisionError) {
-      setStreamingMessage(null)
-      setError(friendlyError(decisionError, approved ? '無法套用行程提案' : '無法拒絕行程提案'))
+      if (activeThreadRef.current === proposal.threadId) {
+        setStreamingMessage(null)
+        setError(friendlyError(decisionError, approved ? '無法套用行程提案' : '無法拒絕行程提案'))
+      }
       await refreshConversation(proposal.threadId, false).catch(() => {})
     } finally {
+      sendingRef.current = false
       setSending(false)
-      setProgressLabel(null)
+      if (activeThreadRef.current === proposal.threadId) setProgressLabel(null)
     }
-  }, [appendStreamingText, focusComposer, onProgress, online, refreshConversation, refreshThreads, runner])
+  }, [appendStreamingText, focusComposer, online, refreshConversation, refreshThreads, runner, saveCompletedMessage, showProgress, updateThreadSummaryCache])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || messages.length === 0 || sending || sendingRef.current || !online) return
@@ -730,17 +627,25 @@ export function useAssistantConversation(
     setProgressLabel('正在壓縮較早的對話內容…')
     setSending(true)
     setError(null)
+    const targetThreadId = threadId
     try {
-      const state = await runner.summarizeThread(threadId)
-      await updateAssistantThreadSummary(threadId, state.summary)
-      await refreshThreads(threadId)
+      const state = await runner.summarizeThread(targetThreadId)
+      const storedSummary = threadsRef.current.find((thread) => thread.id === targetThreadId)?.summary
+      if (storedSummary !== state.summary) {
+        await updateAssistantThreadSummary(targetThreadId, state.summary)
+        updateThreadSummaryCache(targetThreadId, state.summary)
+      }
+      await refreshThreads(undefined, 'preserve')
     } catch (summaryError) {
-      setError(friendlyError(summaryError, '無法壓縮對話'))
+      if (activeThreadRef.current === targetThreadId) {
+        setError(friendlyError(summaryError, '無法壓縮對話'))
+      }
     } finally {
       sendingRef.current = false
       setSending(false)
+      if (activeThreadRef.current === targetThreadId) setProgressLabel(null)
     }
-  }, [messages.length, online, refreshThreads, runner, sending, threadId])
+  }, [messages.length, online, refreshThreads, runner, sending, threadId, updateThreadSummaryCache])
 
   return {
     threads,

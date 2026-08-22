@@ -401,4 +401,3 @@ export async function summarizeWithGemini(
   ])
   return extractMessageText(response.content)
 }
-

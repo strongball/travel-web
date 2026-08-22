@@ -34,17 +34,7 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       proposalMessage?.artifact as { proposal?: AssistantProposal } | undefined
     )?.proposal ?? null
 
-    const rawReply = extractMessageText(lastAiMessage.content)
-    const reply =
-      rawReply ||
-      (completedProposal
-        ? completedProposal.status === 'applied'
-          ? '已成功套用行程調整。'
-          : completedProposal.status === 'rejected'
-            ? '已取消套用此行程調整。'
-            : '已完成處理。'
-        : '')
-
+    const reply = extractMessageText(lastAiMessage.content)
     if (!reply) throw new Error('模型回傳了空的文字內容')
 
     const allGroundingQueries: string[] = []
