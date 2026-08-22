@@ -14,7 +14,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import type { StoredAssistantProposal } from '../../../lib/repositories/assistantRepository'
+import type { AssistantProposal } from '../types'
 import { ItineraryProposalView, TodoProposalView } from '../tools'
 import { formatAssistantText } from '../utils/formatAssistantText'
 
@@ -25,10 +25,10 @@ export function ProposalCard({
   onDecision,
   isHistory,
 }: {
-  proposal: StoredAssistantProposal
+  proposal: AssistantProposal
   busy: boolean
   online: boolean
-  onDecision: (proposal: StoredAssistantProposal, approved: boolean) => void
+  onDecision: (proposal: AssistantProposal, approved: boolean) => void
   isHistory?: boolean
 }) {
   const isHistorical = isHistory ?? (proposal.status !== 'pending')
@@ -310,4 +310,3 @@ export function ProposalCard({
     </Card>
   )
 }
-

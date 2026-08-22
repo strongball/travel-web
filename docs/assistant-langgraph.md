@@ -11,7 +11,16 @@
 - `src/features/assistant/tools/proposalToolRuntime.ts`：Todo 與 Itinerary 共用的 `interrupt()`、resume decision 與 ToolMessage payload 處理。
 - `src/features/assistant/tools/itinerary/`：行程修改提案的 schema、操作驗證、套用與顯示。
 - `src/features/assistant/tools/todo/`：待辦清單提案的 schema、操作套用與顯示。
-- `src/features/assistant/useAssistantConversation.ts`：thread/message/proposal 載入、canonical persistence、graph 執行與 `resumeTurn` 協調。
+- `src/features/assistant/useAssistantConversation.ts`：組裝控制面 controller(`itineraryId / threadId / threads / selectionStatus / composer / actions / feedback`)。對話資料不由 controller 轉發,元件透過 `assistantViewHooks.ts` 自行訂閱 River(graph → river → component)。
+- `src/features/assistant/assistantViewHooks.ts`：元件讀取資料的唯一縫——`useAssistantConversationView(threadId)`(訊息、turn overlay、loading、sending)與 `useAssistantThreadsCollection(itineraryId)`。
+- `src/features/assistant/assistantTurnFlow.ts`：回合流程的純函數(訊息/請求建構、checkpoint 恢復推導、retry 清除條件、自動命名),不依賴 React 與 River。
+- `src/features/assistant/hooks/useAssistantTurnEngine.ts`：回合控制面(薄 service)。命令進、狀態出:send/retryLastTurn/decideProposal/manualSummarize 共用同一份執行迴圈(上鎖、事件接線、可恢復錯誤重試、commit、摘要同步),所有視圖更新直接寫進 keyed 的對話 provider;不做 React state 管理。
+- `src/features/assistant/hooks/useAssistantThreads.ts`：thread collection(River)與選取狀態;`ensureActiveThread()` 供送出流程確保 thread 存在並套用自動命名。
+- `src/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接 immutable 更新 cache，`refresh()` 只作明確的重新驗證。
+- `src/providers/assistantConversationsProvider.ts`：單一 thread 的「對話 provider」= canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)與跨回合的 `retryRequest`。`commitTurn()` 在有最終訊息時原子完成:訊息進 canonical、overlay 歸 null;`build()` 重載保留處理中的 turn。切換 thread 不清除其他 key 的快照(殘留語意)。
+- `src/providers/assistantEngineStateProvider.ts`：全域鎖的 UI 投影(`sending`);互斥判斷仍以 service 內 refs 同步執行。
+- thread collection 是跨元件共享的資料，選取中的 `threadId`、輸入框等短生命週期 UI 狀態留在 hooks/controller。
+- 過期事件防護由 keyed provider 天然隔離取代:寫入只落在目標 thread 自己的 snapshot 上。回合錯誤屬於該 thread 的 snapshot(切走再回來仍看得到);thread CRUD/載入失敗則走 controller `feedback.error`。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
 - `supabase/functions/gemini-proxy`：代理已驗證使用者對固定 Gemini model 的 `generateContent` 與 `streamGenerateContent?alt=sse`；不執行 graph，也不讀寫產品資料。
 

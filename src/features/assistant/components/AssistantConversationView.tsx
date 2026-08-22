@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
@@ -10,6 +11,8 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
+import { assistantConversationsProvider, assistantThreadsProvider } from '../../../providers'
 import type { AssistantConversationController } from '../useAssistantConversation'
 import { ConversationList } from './ConversationList'
 import { MessageList } from './MessageList'
@@ -25,26 +28,46 @@ export function AssistantConversationView({
   controller: AssistantConversationController
   fullPage: boolean
 }) {
+  const {
+    itineraryId,
+    threadId,
+    threads: threadActions,
+    selectionStatus,
+    composer,
+    actions,
+    feedback,
+  } = controller
+  const riverRef = useRiverRef()
+  const conversationState = useRiverWatch(assistantConversationsProvider(threadId ?? ''))
+  const snapshot = conversationState.data
+  const messages = snapshot?.messages ?? []
+  const messageCount = messages.length
+  const lastMessage = messages.at(-1)
+  const turn = snapshot?.turn ?? null
+  const conversationLoading = conversationState.isLoading && !conversationState.hasData
+  const sending = Boolean(turn)
+  const online = useOnlineStatus()
+  const dismissFailure = () => {
+    if (threadId) riverRef.read(assistantConversationsProvider(threadId).notifier).dismissFailure()
+  }
+
+  const streamingMessage = turn?.streaming ?? null
+  const hasPendingProposal = !!turn?.pendingToolCall
+
+  const threadState = useRiverWatch(assistantThreadsProvider(itineraryId))
+  const threads = threadState.data ?? []
+  const collectionLoading = threadState.isLoading && threads.length === 0
+  const currentThread = threads.find((thread) => thread.id === threadId) ?? null
+  const { showThreadList, deleteThread } = threadActions
+  const deletingThreadId = selectionStatus.deletingThreadId
+  const { registerFocusComposer } = actions
+
   const conversationScrollRef = useRef<HTMLDivElement>(null)
   const initializedThreadRef = useRef<string | null>(null)
   const previousMessageCountRef = useRef(0)
   const previousStreamingLengthRef = useRef(0)
   const previousSendingRef = useRef(false)
   const suppressScrollTrackingRef = useRef(false)
-
-  const {
-    threadId,
-    currentThread,
-    messages,
-    streamingMessage,
-    text,
-    loading,
-    conversationLoading,
-    online,
-    sending,
-    hasPendingProposal,
-    registerFocusComposer,
-  } = controller
 
   const composerInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const prevSendingRef = useRef(sending)
@@ -73,8 +96,7 @@ export function AssistantConversationView({
       initializedThreadRef.current = threadId
       previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
     } else {
-      const messageAdded = messages.length > previousMessageCountRef.current
-      const lastMessage = messages.at(-1)
+      const messageAdded = messageCount > previousMessageCountRef.current
       const userJustSent = messageAdded && lastMessage?.role === 'user'
       const retryingUserMessage =
         !messageAdded && sending && !previousSendingRef.current && lastMessage?.role === 'user'
@@ -102,10 +124,10 @@ export function AssistantConversationView({
       }
     }
 
-    previousMessageCountRef.current = messages.length
+    previousMessageCountRef.current = messageCount
     previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
     previousSendingRef.current = sending
-  }, [conversationLoading, messages, sending, streamingMessage, threadId])
+  }, [conversationLoading, lastMessage?.id, lastMessage?.role, messageCount, sending, streamingMessage, threadId])
 
   const composerDisabled = conversationLoading || sending || hasPendingProposal || !online
 
@@ -118,7 +140,7 @@ export function AssistantConversationView({
     prevSendingRef.current = sending
   }, [composerDisabled, sending])
 
-  if (loading) {
+  if (collectionLoading) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 260 }}>
         <CircularProgress />
@@ -151,7 +173,15 @@ export function AssistantConversationView({
           bgcolor: 'background.paper',
         }}
       >
-        <ConversationList controller={controller} />
+        <ConversationList
+          threads={threads}
+          threadId={threadId}
+          creatingThread={selectionStatus.creatingThread}
+          onSelectThread={threadActions.selectThread}
+          onCreateThread={() => void threadActions.createThread()}
+          onRenameThread={(id, title) => void threadActions.renameThread(id, title)}
+          onDeleteThread={(id) => void deleteThread(id)}
+        />
 
         <Stack
           sx={{
@@ -184,7 +214,7 @@ export function AssistantConversationView({
                   bgcolor: 'rgba(13, 118, 110, 0.06)',
                   '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.12)' },
                 }}
-                onClick={controller.showThreadList}
+                onClick={showThreadList}
               >
                 <ArrowBackRoundedIcon fontSize="small" />
               </IconButton>
@@ -208,47 +238,54 @@ export function AssistantConversationView({
                 </Typography>
               </Box>
               <AssistantAppBarActions
-                thread={controller.currentThread}
-                deletingThreadId={controller.deletingThreadId}
-                sending={controller.sending}
-                messageCount={controller.messages.length}
-                online={controller.online}
-                onConversationList={controller.showThreadList}
-                onSummarize={() => void controller.manualSummarize()}
-                onDelete={(tId) => void controller.deleteThread(tId)}
+                thread={currentThread}
+                deletingThreadId={deletingThreadId}
+                sending={sending}
+                messageCount={messages.length}
+                online={online}
+                onConversationList={showThreadList}
+                onSummarize={() => void actions.manualSummarize()}
+                onDelete={(tId) => void deleteThread(tId)}
                 showConversationList={false}
               />
             </Stack>
           ) : null}
 
           <MessageList
-            controller={controller}
+            threadId={threadId}
+            messages={messages}
+            turn={turn}
+            loading={conversationLoading}
+            sending={sending}
+            composer={composer}
+            onDecision={actions.decideProposal}
             scrollRef={conversationScrollRef}
           />
 
           {threadId ? (
             <ChatComposer
               inputRef={composerInputRef}
-              text={text}
-              onChangeText={controller.setText}
-              onSubmit={controller.send}
+              text={composer.text}
+              onChangeText={composer.setText}
+              onSubmit={actions.send}
               disabled={composerDisabled}
               placeholder={composerPlaceholder}
               sending={sending}
-              selectedModel={controller.selectedModel}
-              onSelectModel={controller.setSelectedModel}
-              reasoningEffort={controller.reasoningEffort}
-              onSelectReasoningEffort={controller.setReasoningEffort}
-              attachments={controller.attachments}
-              onAddAttachments={controller.addAttachments}
-              onRemoveAttachment={controller.removeAttachment}
-              error={controller.error}
-              onClearError={controller.clearError}
-              notice={controller.notice}
-              onClearNotice={controller.clearNotice}
-              canRetry={controller.canRetry}
-              onRetry={() => void controller.retryLastTurn()}
-              online={controller.online}
+              selectedModel={composer.selectedModel}
+              onSelectModel={composer.setSelectedModel}
+              reasoningEffort={composer.reasoningEffort}
+              onSelectReasoningEffort={composer.setReasoningEffort}
+              attachments={composer.attachments}
+              onAddAttachments={composer.addAttachments}
+              onRemoveAttachment={composer.removeAttachment}
+              error={turn?.error ?? feedback.error}
+              onClearError={() => {
+                dismissFailure()
+                feedback.clearError()
+              }}
+              notice={feedback.notice}
+              onClearNotice={feedback.clearNotice}
+              online={online}
             />
           ) : null}
         </Stack>

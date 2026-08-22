@@ -1,9 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { RiverScope, useRiverWatch } from '@stball/react-river'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import type { Itinerary } from '../../types/database'
 import type { AssistantGraphState, AssistantMessage, AssistantProposal } from './types'
 import type { AssistantThread } from '../../lib/repositories/assistantRepository'
+import { userIdProvider } from '../../providers/authProviders'
+import { assistantConversationsProvider, assistantThreadsProvider } from '../../providers'
 
 const mocks = vi.hoisted(() => ({
   applyAssistantOperations: vi.fn(),
@@ -97,6 +100,30 @@ const graphState = (overrides: Partial<AssistantGraphState> = {}): AssistantGrap
 
 const submitEvent = () => ({ preventDefault: vi.fn() }) as unknown as FormEvent
 
+function RiverTestScope({ children }: { children: ReactNode }) {
+  return (
+    <RiverScope overrides={[{ original: userIdProvider, create: () => 'user-1' }]}>
+      {children}
+    </RiverScope>
+  )
+}
+
+const renderConversationHook = (onItineraryApplied: () => void | Promise<void>) =>
+  renderHook(() => {
+    const controller = useAssistantConversation(itinerary, onItineraryApplied)
+    const conversation = useRiverWatch(assistantConversationsProvider(controller.threadId ?? ''))
+    const threadState = useRiverWatch(assistantThreadsProvider(controller.itineraryId))
+    const view = {
+      messages: conversation.data?.messages ?? [],
+      turn: conversation.data?.turn ?? null,
+      loading: conversation.isLoading && !conversation.hasData,
+    }
+    const threads = threadState.data ?? []
+    return { controller, view, threads }
+  }, {
+    wrapper: RiverTestScope,
+  })
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (reason: unknown) => void
@@ -136,51 +163,14 @@ describe('useAssistantConversation', () => {
     }))
 
     const onItineraryApplied = vi.fn()
-    const { result } = renderHook(() => useAssistantConversation(itinerary, onItineraryApplied))
+    const { result } = renderConversationHook(onItineraryApplied)
 
-    await waitFor(() => expect(result.current.messages).toContainEqual(recovered))
-    expect(result.current.canRetry).toBe(false)
+    await waitFor(() => expect(result.current.view.messages).toContainEqual(recovered))
+    expect(result.current.view.turn).toBeNull()
     expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', recovered)
   })
 
-  it('keeps canonical attachments when rebuilding an incomplete retry request', async () => {
-    const attachment = {
-      id: 'attachment-1',
-      name: 'plan.txt',
-      mimeType: 'text/plain',
-      size: 4,
-      textContent: 'plan',
-    }
-    const incomplete = userMessage('thread-1', [attachment])
-    const completed: AssistantMessage = {
-      id: 'assistant-1',
-      turnId: incomplete.turnId,
-      role: 'assistant',
-      content: '完成',
-      createdAt: '2026-08-22T00:01:00.000Z',
-    }
-    mocks.listAssistantMessages.mockResolvedValue([incomplete])
-    mocks.sendTurn.mockResolvedValue(graphState({
-      messages: [incomplete, completed],
-      assistantMessage: completed,
-    }))
-
-    const onItineraryApplied = vi.fn()
-    const { result } = renderHook(() => useAssistantConversation(itinerary, onItineraryApplied))
-    await waitFor(() => expect(result.current.canRetry).toBe(true))
-
-    await act(async () => {
-      await result.current.retryLastTurn()
-    })
-
-    expect(mocks.sendTurn).toHaveBeenCalledWith(
-      expect.objectContaining({ attachments: [attachment] }),
-      expect.any(Function),
-      expect.any(Function),
-    )
-  })
-
-  it('synchronously rejects a duplicate proposal decision', async () => {
+  it('serializes proposal decisions and blocks deletion during a turn', async () => {
     const proposal: AssistantProposal = {
       id: 'turn-thread-1',
       threadId: 'thread-1',
@@ -204,14 +194,17 @@ describe('useAssistantConversation', () => {
     mocks.resumeTurn.mockReturnValue(resume.promise)
 
     const onItineraryApplied = vi.fn()
-    const { result } = renderHook(() => useAssistantConversation(itinerary, onItineraryApplied))
-    await waitFor(() => expect(result.current.pendingToolCall?.proposal.id).toBe(proposal.id))
+    const { result } = renderConversationHook(onItineraryApplied)
+    await waitFor(() => expect(result.current.view.turn?.pendingToolCall?.proposal.id).toBe(proposal.id))
 
     let first!: Promise<void>
     let second!: Promise<void>
     act(() => {
-      first = result.current.decideProposal(proposal, true)
-      second = result.current.decideProposal(proposal, true)
+      first = result.current.controller.actions.decideProposal(proposal, true)
+      second = result.current.controller.actions.decideProposal(proposal, true)
+    })
+    await act(async () => {
+      await result.current.controller.threads.deleteThread(proposal.threadId)
     })
     resume.resolve(pendingState)
     await act(async () => {
@@ -219,6 +212,22 @@ describe('useAssistantConversation', () => {
     })
 
     expect(mocks.resumeTurn).toHaveBeenCalledTimes(1)
+    expect(mocks.deleteAssistantThread).not.toHaveBeenCalled()
+
+    const deletion = deferred<void>()
+    mocks.deleteAssistantThread.mockReturnValue(deletion.promise)
+    let deletePromise!: Promise<void>
+    act(() => {
+      deletePromise = result.current.controller.threads.deleteThread(proposal.threadId)
+    })
+    await act(async () => {
+      await result.current.controller.actions.decideProposal(proposal, true)
+    })
+    expect(mocks.resumeTurn).toHaveBeenCalledTimes(1)
+    deletion.resolve()
+    await act(async () => {
+      await deletePromise
+    })
   })
 
   it('does not surface a failed turn after the user switches threads', async () => {
@@ -231,50 +240,43 @@ describe('useAssistantConversation', () => {
     mocks.sendTurn.mockReturnValue(turn.promise)
 
     const onItineraryApplied = vi.fn()
-    const { result } = renderHook(() => useAssistantConversation(itinerary, onItineraryApplied))
-    await waitFor(() => expect(result.current.threadId).toBe(firstThread.id))
-    await waitFor(() => expect(result.current.conversationLoading).toBe(false))
+    const { result } = renderConversationHook(onItineraryApplied)
+    await waitFor(() => expect(result.current.controller.threadId).toBe(firstThread.id))
+    await waitFor(() => expect(result.current.view.loading).toBe(false))
 
-    act(() => result.current.setText('新的問題'))
+    act(() => result.current.controller.composer.setText('新的問題'))
     let sendPromise!: Promise<void>
     act(() => {
-      sendPromise = result.current.send(submitEvent())
+      sendPromise = result.current.controller.actions.send(submitEvent())
     })
     await waitFor(() => expect(mocks.sendTurn).toHaveBeenCalledTimes(1))
 
-    act(() => result.current.selectThread(secondThread.id))
-    await waitFor(() => expect(result.current.threadId).toBe(secondThread.id))
+    act(() => result.current.controller.threads.selectThread(secondThread.id))
+    await waitFor(() => expect(result.current.controller.threadId).toBe(secondThread.id))
     turn.reject(new Error('舊對話失敗'))
     await act(async () => {
       await sendPromise
     })
 
-    expect(result.current.error).toBeNull()
+    expect(result.current.controller.feedback.error).toBeNull()
   })
 
-  it('preserves a newer thread selection while a thread refresh is in flight', async () => {
+  it('updates renamed thread cache without refetching the collection', async () => {
     const firstThread = thread('thread-1')
     const secondThread = thread('thread-2')
-    const refreshedThreads = deferred<AssistantThread[]>()
-    mocks.listAssistantThreads
-      .mockResolvedValueOnce([firstThread, secondThread])
-      .mockReturnValueOnce(refreshedThreads.promise)
+    mocks.listAssistantThreads.mockResolvedValueOnce([firstThread, secondThread])
 
     const onItineraryApplied = vi.fn()
-    const { result } = renderHook(() => useAssistantConversation(itinerary, onItineraryApplied))
-    await waitFor(() => expect(result.current.threadId).toBe(firstThread.id))
+    const { result } = renderConversationHook(onItineraryApplied)
+    await waitFor(() => expect(result.current.controller.threadId).toBe(firstThread.id))
 
-    let renamePromise!: Promise<void>
-    act(() => {
-      renamePromise = result.current.renameThread(firstThread.id, '新標題')
-    })
-    await waitFor(() => expect(mocks.listAssistantThreads).toHaveBeenCalledTimes(2))
-    act(() => result.current.selectThread(secondThread.id))
-    refreshedThreads.resolve([firstThread, secondThread])
     await act(async () => {
-      await renamePromise
+      await result.current.controller.threads.renameThread(firstThread.id, '新標題')
     })
+    act(() => result.current.controller.threads.selectThread(secondThread.id))
 
-    expect(result.current.threadId).toBe(secondThread.id)
+    expect(result.current.controller.threadId).toBe(secondThread.id)
+    expect(result.current.threads.find((item) => item.id === firstThread.id)?.title).toBe('新標題')
+    expect(mocks.listAssistantThreads).toHaveBeenCalledTimes(1)
   })
 })

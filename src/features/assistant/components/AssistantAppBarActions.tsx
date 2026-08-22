@@ -14,7 +14,7 @@ import {
   Stack,
   Tooltip,
 } from '@mui/material'
-import type { AssistantConversationController } from '../useAssistantConversation'
+import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
 
 export function AssistantAppBarActions({
   thread,
@@ -27,7 +27,7 @@ export function AssistantAppBarActions({
   onDelete,
   showConversationList = true,
 }: {
-  thread: AssistantConversationController['currentThread']
+  thread: AssistantThread | null
   deletingThreadId: string | null
   sending: boolean
   messageCount: number

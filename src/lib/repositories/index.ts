@@ -33,5 +33,4 @@ export {
   saveAssistantMessage,
   updateAssistantThreadSummary,
   type AssistantThread,
-  type StoredAssistantProposal,
 } from './assistantRepository'

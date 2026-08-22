@@ -52,6 +52,7 @@ const isTextFile = (file: File) => {
 export function useAssistantComposerState(
   setError: Dispatch<SetStateAction<string | null>>,
 ) {
+  const [text, setText] = useState('')
   const [selectedModel, setSelectedModel] = useStoredPreference<string>(
     'preferred_gemini_model',
     DEFAULT_GEMINI_MODEL,
@@ -105,6 +106,8 @@ export function useAssistantComposerState(
   }, [])
 
   return {
+    text,
+    setText,
     selectedModel,
     setSelectedModel,
     reasoningEffort,
@@ -115,3 +118,5 @@ export function useAssistantComposerState(
     clearAttachments,
   }
 }
+
+export type AssistantComposerState = ReturnType<typeof useAssistantComposerState>

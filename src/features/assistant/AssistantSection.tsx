@@ -1,4 +1,7 @@
 import { useEffect, type ReactNode } from 'react'
+import { useRiverWatch } from '@stball/react-river'
+import { useOnlineStatus } from '../../hooks/useOnlineStatus'
+import { assistantConversationsProvider, assistantThreadsProvider } from '../../providers'
 import type { Itinerary, TodoItem } from '../../types/database'
 import { AssistantAppBarActions, AssistantConversationView } from './components'
 import { useAssistantConversation } from './useAssistantConversation'
@@ -20,15 +23,18 @@ export function AssistantSection({
 }) {
   const conversation = useAssistantConversation(itinerary, onItineraryApplied, todos, todoCategories)
   const {
-    currentThread,
-    deleteThread,
-    deletingThreadId,
-    manualSummarize,
-    messages,
-    online,
-    sending,
-    showThreadList,
+    itineraryId,
+    threadId,
+    threads: { deleteThread, showThreadList },
+    selectionStatus: { deletingThreadId },
+    actions: { manualSummarize },
   } = conversation
+  const conversationState = useRiverWatch(assistantConversationsProvider(threadId ?? ''))
+  const messages = conversationState.data?.messages ?? []
+  const sending = Boolean(conversationState.data?.turn)
+  const online = useOnlineStatus()
+  const threadState = useRiverWatch(assistantThreadsProvider(itineraryId))
+  const currentThread = threadState.data?.find((thread) => thread.id === threadId) ?? null
   useEffect(() => {
     if (!fullPage || !onAssistantToolbarChange) return
     onAssistantToolbarChange(

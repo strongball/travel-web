@@ -10,8 +10,9 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import type { StoredAssistantProposal } from '../../../lib/repositories/assistantRepository'
-import type { AssistantConversationController } from '../useAssistantConversation'
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
+import type { AssistantConversationSnapshot } from '../../../providers/assistantConversationsProvider'
+import type { AssistantMessage, AssistantProposal } from '../types'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { AssistantProgress, ConversationLoading } from './AssistantProgress'
@@ -24,24 +25,32 @@ const quickPrompts = [
 ]
 
 export function MessageList({
-  controller,
+  threadId,
+  messages,
+  turn,
+  loading: conversationLoading,
+  sending,
+  composer,
+  onDecision,
   scrollRef,
   onScroll,
 }: {
-  controller: AssistantConversationController
+  /** 目標對話;資料由元件自行訂閱(graph → river → component)。 */
+  threadId: string | null
+  messages: AssistantMessage[]
+  turn: AssistantConversationSnapshot['turn']
+  loading: boolean
+  sending: boolean
+  /** 快捷提問寫入輸入框用。 */
+  composer: { setText: (text: string) => void }
+  onDecision: (proposal: AssistantProposal, approved: boolean) => void
   scrollRef: RefObject<HTMLDivElement | null>
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void
 }) {
-  const {
-    threadId,
-    messages,
-    streamingMessage,
-    pendingToolCall,
-    conversationLoading,
-    online,
-    sending,
-    progressLabel,
-  } = controller
+  const streamingMessage = turn?.streaming ?? null
+  const pendingToolCall = turn?.pendingToolCall ?? null
+  const progressLabel = turn?.progressLabel ?? null
+  const online = useOnlineStatus()
 
   return (
     <Stack
@@ -143,7 +152,7 @@ export function MessageList({
               <Chip
                 key={prompt}
                 label={prompt}
-                onClick={() => controller.setText(prompt)}
+                onClick={() => composer.setText(prompt)}
                 sx={{
                   py: 2.2,
                   px: 1,
@@ -170,7 +179,7 @@ export function MessageList({
       ) : (
         <>
           {messages.map((message) => {
-            const messageProposal = message.proposal as StoredAssistantProposal | undefined
+            const messageProposal = message.proposal
             return (
               <Stack key={message.id} data-message-id={message.id} spacing={1.25}>
                 <MessageBubble message={message} />
@@ -180,7 +189,7 @@ export function MessageList({
                     proposal={messageProposal}
                     busy={sending}
                     online={online}
-                    onDecision={controller.decideProposal}
+                    onDecision={onDecision}
                     isHistory={true}
                   />
                 ) : null}
@@ -198,7 +207,7 @@ export function MessageList({
                 proposal={pendingToolCall.proposal}
                 busy={sending}
                 online={online}
-                onDecision={controller.decideProposal}
+                onDecision={onDecision}
                 isHistory={false}
               />
             </Stack>

@@ -21,7 +21,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { AssistantConversationController } from '../useAssistantConversation'
+import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
 
 const timeLabel = (value: string) =>
   new Intl.DateTimeFormat('zh-TW', {
@@ -45,11 +45,26 @@ const threadTimeLabel = (value: string) => {
   }).format(date)
 }
 
-export function ConversationList({ controller }: { controller: AssistantConversationController }) {
-  const { threads, threadId, creatingThread } = controller
+export function ConversationList({
+  threads,
+  threadId,
+  creatingThread,
+  onSelectThread,
+  onCreateThread,
+  onRenameThread,
+  onDeleteThread,
+}: {
+  threads: AssistantThread[]
+  threadId: string | null
+  creatingThread: boolean
+  onSelectThread: (threadId: string) => void
+  onCreateThread: () => void
+  onRenameThread: (threadId: string, title: string) => void
+  onDeleteThread: (threadId: string) => void
+}) {
   const [menu, setMenu] = useState<{
     anchorEl: HTMLElement
-    thread: AssistantConversationController['threads'][number]
+    thread: AssistantThread
   } | null>(null)
 
   return (
@@ -103,7 +118,7 @@ export function ConversationList({ controller }: { controller: AssistantConversa
             color="primary"
             aria-label="建立新對話"
             disabled={creatingThread}
-            onClick={() => void controller.createThread()}
+            onClick={() => onCreateThread()}
             sx={{
               width: 38,
               height: 38,
@@ -151,7 +166,7 @@ export function ConversationList({ controller }: { controller: AssistantConversa
             >
               <ListItemButton
                 selected={isSelected}
-                onClick={() => controller.selectThread(thread.id)}
+                onClick={() => onSelectThread(thread.id)}
                 sx={{
                   p: 1.25,
                   pr: 6,
@@ -220,7 +235,7 @@ export function ConversationList({ controller }: { controller: AssistantConversa
             setMenu(null)
             if (!thread) return
             const title = window.prompt('重新命名對話', thread.title)
-            if (title?.trim()) void controller.renameThread(thread.id, title.trim())
+            if (title?.trim()) onRenameThread(thread.id, title.trim())
           }}
         >
           <ListItemIcon>
@@ -233,7 +248,7 @@ export function ConversationList({ controller }: { controller: AssistantConversa
             const thread = menu?.thread
             setMenu(null)
             if (thread && window.confirm(`刪除「${thread.title}」及所有訊息？`)) {
-              void controller.deleteThread(thread.id)
+              onDeleteThread(thread.id)
             }
           }}
         >

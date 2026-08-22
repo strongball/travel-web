@@ -6,7 +6,6 @@ import MicRoundedIcon from '@mui/icons-material/MicRounded'
 import StopRoundedIcon from '@mui/icons-material/StopRounded'
 import {
   Alert,
-  Button,
   IconButton,
   InputBase,
   Paper,
@@ -46,8 +45,6 @@ export function ChatComposer({
   onClearError,
   notice,
   onClearNotice,
-  canRetry,
-  onRetry,
   online = true,
 }: {
   text: string
@@ -68,8 +65,6 @@ export function ChatComposer({
   onClearError?: () => void
   notice?: string | null
   onClearNotice?: () => void
-  canRetry?: boolean
-  onRetry?: () => void
   online?: boolean
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -127,47 +122,15 @@ export function ChatComposer({
         </Alert>
       ) : null}
 
-      {/* 錯誤訊息提示與重試按鈕 (輸入框上方) */}
+      {/* 錯誤訊息提示 (輸入框上方) */}
       {error ? (
         <Alert
           severity="error"
           variant="outlined"
           onClose={onClearError}
-          action={
-            canRetry && onRetry ? (
-              <Button
-                color="inherit"
-                size="small"
-                disabled={disabled || sending}
-                onClick={onRetry}
-                sx={{ fontWeight: 700 }}
-              >
-                重試
-              </Button>
-            ) : undefined
-          }
           sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
         >
           {error}
-        </Alert>
-      ) : canRetry && onRetry ? (
-        <Alert
-          severity="warning"
-          variant="outlined"
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              disabled={disabled || sending}
-              onClick={onRetry}
-              sx={{ fontWeight: 700 }}
-            >
-              重試
-            </Button>
-          }
-          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
-        >
-          上次回覆未完成，這個回合可以安全重試。
         </Alert>
       ) : null}
 

@@ -5,4 +5,5 @@ export * from './todosProvider'
 export * from './receiptProviders'
 export * from './uiProviders'
 export * from './currencyProviders'
-
+export * from './assistantThreadsProvider'
+export * from './assistantConversationsProvider'

@@ -14,8 +14,6 @@ export type AssistantThread = {
   updatedAt: string
 }
 
-export type StoredAssistantProposal = AssistantProposal
-
 type Row = Record<string, unknown>
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 const threadFields = 'id,title,summary,updated_at'

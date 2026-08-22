@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { ProposalCard } from './ProposalCard'
-import type { StoredAssistantProposal } from '../../../lib/repositories/assistantRepository'
+import type { AssistantProposal } from '../types'
 
-const sampleProposal: StoredAssistantProposal = {
+const sampleProposal: AssistantProposal = {
   id: 'proposal-1',
   turnId: 'turn-1',
   threadId: 'thread-1',
@@ -92,7 +92,7 @@ describe('ProposalCard', () => {
 
   it('renders collapsed in history mode and expands on toggle click', () => {
     const onDecision = vi.fn()
-    const appliedProposal: StoredAssistantProposal = {
+    const appliedProposal: AssistantProposal = {
       ...sampleProposal,
       status: 'applied',
     }
@@ -135,7 +135,7 @@ describe('ProposalCard', () => {
   })
 
   it('defaults isHistorical to true when proposal.status is not pending', () => {
-    const rejectedProposal: StoredAssistantProposal = {
+    const rejectedProposal: AssistantProposal = {
       ...sampleProposal,
       status: 'rejected',
     }

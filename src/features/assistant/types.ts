@@ -121,9 +121,6 @@ export type AssistantProposal = BaseAssistantProposal & {
   proposedCategories: string[]
 }
 
-/** 相容舊名稱別名 */
-export type ItineraryChangeProposal = AssistantProposal
-
 export type AssistantTurnRequest = {
   threadId: string
   turnId: string
