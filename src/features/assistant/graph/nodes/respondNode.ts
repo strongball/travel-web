@@ -25,13 +25,18 @@ export function createRespondNode(options: RespondNodeOptions) {
         request.todoCategories ?? [],
     ))]
     const writer = getWriter(config)
-    const response = await invokeAssistantModel(modelMessages, (text) => {
-      writer?.({
-        type: 'assistant_text_delta',
-        turnId: request.turnId,
-        text,
-      })
-    })
+    const response = await invokeAssistantModel(
+      modelMessages,
+      (text) => {
+        writer?.({
+          type: 'assistant_text_delta',
+          turnId: request.turnId,
+          text,
+        })
+      },
+      request.selectedModel,
+      request.thinkingBudget,
+    )
     const toolCalls = (response.tool_calls ?? []).map((call, index) => ({
       ...call,
       id: typeof call.id === 'string' && call.id ? call.id : `assistant-tool-${state.toolRound}-${index}`,

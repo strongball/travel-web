@@ -131,6 +131,7 @@ export const scanReceipt = async (
       }],
       config: {
         responseMimeType: 'application/json',
+        temperature: 0,
       },
     })
     if (!response.text) {

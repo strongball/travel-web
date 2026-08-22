@@ -23,6 +23,12 @@ import {
 import {
   enrichAppliedProposalPlaces,
 } from './tools'
+import {
+  DEFAULT_GEMINI_MODEL,
+  DEFAULT_REASONING_EFFORT,
+  getThinkingBudget,
+  type ReasoningEffort,
+} from './models'
 import type {
   AssistantMessage,
   AssistantPendingToolCall,
@@ -132,6 +138,10 @@ export type AssistantConversationController = {
   notice: string | null
   hasPendingProposal: boolean
   canRetry: boolean
+  selectedModel: string
+  setSelectedModel: (modelId: string) => void
+  reasoningEffort: ReasoningEffort
+  setReasoningEffort: (effort: ReasoningEffort) => void
   setText: (text: string) => void
   clearError: () => void
   clearNotice: () => void
@@ -169,6 +179,43 @@ export function useAssistantConversation(
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [retryRequest, setRetryRequest] = useState<RetryRequest | null>(null)
+  const [selectedModel, setSelectedModelState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('preferred_gemini_model') || DEFAULT_GEMINI_MODEL
+    } catch {
+      return DEFAULT_GEMINI_MODEL
+    }
+  })
+
+  const setSelectedModel = useCallback((modelId: string) => {
+    setSelectedModelState(modelId)
+    try {
+      localStorage.setItem('preferred_gemini_model', modelId)
+    } catch {
+      // ignore storage failure
+    }
+  }, [])
+
+  const [reasoningEffort, setReasoningEffortState] = useState<ReasoningEffort>(() => {
+    try {
+      return (
+        (localStorage.getItem('preferred_gemini_reasoning_effort') as ReasoningEffort) ||
+        DEFAULT_REASONING_EFFORT
+      )
+    } catch {
+      return DEFAULT_REASONING_EFFORT
+    }
+  })
+
+  const setReasoningEffort = useCallback((effort: ReasoningEffort) => {
+    setReasoningEffortState(effort)
+    try {
+      localStorage.setItem('preferred_gemini_reasoning_effort', effort)
+    } catch {
+      // ignore storage failure
+    }
+  }, [])
+
   const activeThreadRef = useRef<string | null>(null)
   const threadsRef = useRef<AssistantThread[]>([])
   const itineraryRef = useRef(itinerary)
@@ -494,6 +541,9 @@ export function useAssistantConversation(
         todoCategories,
         dayRevisions: Object.fromEntries((itinerary.days ?? []).map((day) => [day.id, day.revision])),
         createdAt: userMessage.createdAt,
+        selectedModel,
+        reasoningEffort,
+        thinkingBudget: getThinkingBudget(reasoningEffort),
       }
       attempt = { thread, request }
       if (thread.title === '新對話') await renameAssistantThread(thread.id, content.slice(0, 36))
@@ -508,7 +558,7 @@ export function useAssistantConversation(
       sendingRef.current = false
       setSending(false)
     }
-  }, [checkpointer, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, runAssistantTurn, sending, text, todoCategories, todos])
+  }, [checkpointer, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
 
   const retryLastTurn = useCallback(async () => {
     if (!retryRequest || sending || sendingRef.current || !online) return
@@ -518,7 +568,12 @@ export function useAssistantConversation(
     setSending(true)
     setError(null)
     try {
-      await runAssistantTurn(retryRequest.thread, retryRequest.request)
+      await runAssistantTurn(retryRequest.thread, {
+        ...retryRequest.request,
+        selectedModel,
+        reasoningEffort,
+        thinkingBudget: getThinkingBudget(reasoningEffort),
+      })
       setRetryRequest(null)
     } catch (retryError) {
       setStreamingMessage(null)
@@ -527,7 +582,7 @@ export function useAssistantConversation(
       sendingRef.current = false
       setSending(false)
     }
-  }, [online, retryRequest, runAssistantTurn, sending])
+  }, [online, reasoningEffort, retryRequest, runAssistantTurn, selectedModel, sending])
 
   const decideProposal = useCallback(async (proposal: StoredAssistantProposal, approved: boolean) => {
     if (!online) return
@@ -622,6 +677,10 @@ export function useAssistantConversation(
     notice,
     hasPendingProposal,
     canRetry: retryRequest?.thread.id === threadId,
+    selectedModel,
+    setSelectedModel,
+    reasoningEffort,
+    setReasoningEffort,
     setText,
     clearError: () => setError(null),
     clearNotice: () => setNotice(null),

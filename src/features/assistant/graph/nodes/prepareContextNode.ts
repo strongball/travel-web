@@ -38,7 +38,12 @@ export function createPrepareContextNode(options: PrepareContextNodeOptions) {
 
     options.emitProgress(request.threadId, 'summarizing_context')
     const currentTurnMessages = state.messages.filter((message) => message.turnId === request.turnId)
-    const summary = await summarizeWithGemini(state.summary, previousMessages)
+    const summary = await summarizeWithGemini(
+      state.summary,
+      previousMessages,
+      request.selectedModel,
+      request.thinkingBudget,
+    )
     return {
       summary,
       messages: [

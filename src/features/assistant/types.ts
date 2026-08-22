@@ -124,6 +124,9 @@ export type AssistantTurnRequest = {
   createdAt?: string
   rehydratedSummary?: string
   rehydratedMessages?: AssistantMessage[]
+  selectedModel?: string
+  reasoningEffort?: string
+  thinkingBudget?: number
 }
 
 export type AssistantUserDecision = {

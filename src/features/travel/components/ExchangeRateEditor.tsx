@@ -1,9 +1,6 @@
 import { useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import SwapHorizRoundedIcon from '@mui/icons-material/SwapHorizRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import {
   Alert,
@@ -13,20 +10,12 @@ import {
   Chip,
   CircularProgress,
   Collapse,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   FormControl,
-  IconButton,
-  InputAdornment,
   MenuItem,
   Paper,
   Select,
   Snackbar,
   Stack,
-  TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import { useRiverRef } from '@stball/react-river'
@@ -37,6 +26,8 @@ import {
 } from '../../../lib/currencies'
 import { liveExchangeRatesFamily } from '../../../providers/currencyProviders'
 import type { Itinerary } from '../../../types/database'
+import { ExchangeRateRow } from './currency/ExchangeRateRow'
+import { InverseRateCalculatorDialog } from './currency/InverseRateCalculatorDialog'
 
 interface ExchangeRateEditorProps {
   itinerary: Itinerary
@@ -126,12 +117,10 @@ export function ExchangeRateEditor({
         setFeedbackMessage(`已新增 ${info.flag} ${curr} (${info.name}) 並填入最新即時匯率`)
       }
     } catch {
-      // If offline or fetch failed, currency is still added for manual input
       const info = getCurrencyInfo(curr)
       setFeedbackMessage(`已新增 ${info.flag} ${curr} (${info.name})，請輸入匯率`)
     }
   }
-
 
   // Open inverse calculator modal
   const openInverseCalculator = (curr: string) => {
@@ -260,173 +249,21 @@ export function ExchangeRateEditor({
 
       {/* Foreign Currencies List */}
       <Stack spacing={1.5}>
-        {foreignCurrencies.map((currency) => {
-          const info = getCurrencyInfo(currency)
-          const rate = getExchangeRate(currency, baseCurrency, itinerary.exchangeRates)
-          const isMissing = missingCurrencies.includes(currency)
-          const isSingleFetching = fetchingCurrency === currency
-
-          // Calculate inverse and demo preview
-          const hasValidRate = typeof rate === 'number' && rate > 0
-          const inverseRate = hasValidRate ? Number((1 / rate).toPrecision(5)) : null
-          const sampleForeignAmount = currency === 'JPY' || currency === 'KRW' || currency === 'VND' ? 1000 : 100
-          const sampleConverted = hasValidRate ? Number((sampleForeignAmount * rate).toFixed(2)) : null
-
-          return (
-            <Paper
-              key={currency}
-              variant="outlined"
-              sx={{
-                p: { xs: 1.5, sm: 2 },
-                borderColor: isMissing ? 'warning.main' : undefined,
-                bgcolor: isMissing ? 'warning.lighter' : undefined,
-              }}
-            >
-              {/* Row 1: Currency info + Status badges + Actions */}
-              <Stack
-                direction="row"
-                spacing={1}
-                sx={{
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  mb: 1.25,
-                }}
-              >
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                  <Typography sx={{ fontSize: '1.3rem' }}>
-                    {info.flag}
-                  </Typography>
-                  <Typography sx={{ fontWeight: 800 }}>
-                    {currency}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {info.name}
-                  </Typography>
-                  {isMissing ? (
-                    <Chip
-                      size="small"
-                      label="記帳使用中，需設定"
-                      color="warning"
-                    />
-                  ) : null}
-                </Stack>
-
-                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                  <Tooltip title="抓取此幣別即時匯率">
-                    <span>
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        disabled={saving || isSingleFetching}
-                        onClick={() => void handleFetchSingleRate(currency)}
-                        aria-label={`更新 ${currency} 即時匯率`}
-                      >
-                        {isSingleFetching ? (
-                          <CircularProgress size={14} color="inherit" />
-                        ) : (
-                          <RefreshRoundedIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-
-                  <Tooltip title="反向換算小幫手 (以主要幣別輸入)">
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={() => openInverseCalculator(currency)}
-                      aria-label={`反向計算 ${currency} 匯率`}
-                    >
-                      <SwapHorizRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-
-                  <Tooltip title={`移除 ${currency}`}>
-                    <IconButton
-                      color="error"
-                      size="small"
-                      aria-label={`移除 ${currency} 匯率`}
-                      onClick={() => onRemoveRateCurrency(currency)}
-                    >
-                      <DeleteOutlineRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-              </Stack>
-
-              {/* Row 2: Direct Rate Input */}
-              <Box sx={{ mb: 1 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label={`${currency} 匯率`}
-                  value={rate?.toString() ?? ''}
-                  disabled={saving}
-                  placeholder="請輸入匯率 (例如 0.214)"
-                  slotProps={{
-                    htmlInput: {
-                      min: 0.000001,
-                      step: 'any',
-                      inputMode: 'decimal',
-                    },
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <Typography
-                            variant="body2"
-                            color="primary.main"
-                            sx={{ fontWeight: 800, mr: 0.5 }}
-                          >
-                            1 {currency} =
-                          </Typography>
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ fontWeight: 700 }}
-                          >
-                            {baseCurrency}
-                          </Typography>
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                  onChange={(event) => onRateChange(currency, event.target.value)}
-                />
-              </Box>
-
-              {/* Row 3: Bidirectional Hints & Live Conversion Preview */}
-              {hasValidRate ? (
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  spacing={1}
-                  sx={{
-                    justifyContent: 'space-between',
-                    alignItems: { xs: 'flex-start', sm: 'center' },
-                    pt: 0.5,
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary">
-                    💡 反向對照：1 {baseCurrency} ≈ <strong>{inverseRate}</strong> {currency}
-                  </Typography>
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={`試算：${info.symbol} ${sampleForeignAmount.toLocaleString()} ≈ ${baseInfo.symbol} ${sampleConverted?.toLocaleString()} ${baseCurrency}`}
-                  />
-                </Stack>
-              ) : (
-                <Typography variant="caption" color="error">
-                  ⚠️ 尚未輸入有效匯率，請輸入數值或點擊「抓取即時匯率」
-                </Typography>
-              )}
-            </Paper>
-          )
-        })}
+        {foreignCurrencies.map((currency) => (
+          <ExchangeRateRow
+            key={currency}
+            currency={currency}
+            baseCurrency={baseCurrency}
+            rate={getExchangeRate(currency, baseCurrency, itinerary.exchangeRates)}
+            isMissing={missingCurrencies.includes(currency)}
+            saving={saving}
+            isSingleFetching={fetchingCurrency === currency}
+            onRateChange={onRateChange}
+            onFetchSingleRate={(curr) => void handleFetchSingleRate(curr)}
+            onOpenInverseCalculator={openInverseCalculator}
+            onRemoveRateCurrency={onRemoveRateCurrency}
+          />
+        ))}
       </Stack>
 
       {/* Quick Add Popular Currencies Chips */}
@@ -512,55 +349,15 @@ export function ExchangeRateEditor({
       ) : null}
 
       {/* Inverse Rate Helper Dialog */}
-      <Dialog
+      <InverseRateCalculatorDialog
         open={Boolean(inverseModalCurrency)}
+        baseCurrency={baseCurrency}
+        targetCurrency={inverseModalCurrency}
+        inputValue={inverseInputValue}
+        onInputChange={setInverseInputValue}
         onClose={() => setInverseModalCurrency(null)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle sx={{ fontWeight: 800, pb: 1 }}>
-          反向匯率小幫手
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            若您習慣以「1 {baseCurrency} 可以換多少 {inverseModalCurrency}」來思考（例如 1 TWD = 4.67 JPY），請在此輸入：
-          </Typography>
-          <TextField
-            autoFocus
-            fullWidth
-            type="number"
-            label={`1 ${baseCurrency} 等於多少 ${inverseModalCurrency}`}
-            placeholder="例如：4.67"
-            value={inverseInputValue}
-            slotProps={{
-              htmlInput: { min: 0.000001, step: 'any', inputMode: 'decimal' },
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    {inverseModalCurrency}
-                  </InputAdornment>
-                ),
-              },
-            }}
-            onChange={(e) => setInverseInputValue(e.target.value)}
-          />
-          {Number(inverseInputValue) > 0 ? (
-            <Typography variant="caption" color="primary" sx={{ mt: 1.5, display: 'block', fontWeight: 700 }}>
-              💡 自動換算：1 {inverseModalCurrency} ≈ {Number((1 / Number(inverseInputValue)).toPrecision(6))} {baseCurrency}
-            </Typography>
-          ) : null}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setInverseModalCurrency(null)}>取消</Button>
-          <Button
-            variant="contained"
-            disabled={!Number(inverseInputValue) || Number(inverseInputValue) <= 0}
-            onClick={handleApplyInverseRate}
-          >
-            套用換算
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onApply={handleApplyInverseRate}
+      />
 
       {/* Snackbar feedback */}
       <Snackbar

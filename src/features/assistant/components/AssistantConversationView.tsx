@@ -30,7 +30,7 @@ export function AssistantConversationView({
   const previousMessageCountRef = useRef(0)
   const previousStreamingLengthRef = useRef(0)
   const previousSendingRef = useRef(false)
-  const nearBottomRef = useRef(true)
+  const suppressScrollTrackingRef = useRef(false)
 
   const {
     threadId,
@@ -63,7 +63,6 @@ export function AssistantConversationView({
       previousMessageCountRef.current = 0
       previousStreamingLengthRef.current = 0
       previousSendingRef.current = false
-      nearBottomRef.current = true
       return
     }
     if (!container || conversationLoading) return
@@ -72,21 +71,31 @@ export function AssistantConversationView({
       container.scrollTop = container.scrollHeight
       initializedThreadRef.current = threadId
       previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
-      nearBottomRef.current = true
     } else {
       const messageAdded = messages.length > previousMessageCountRef.current
-      const streamingLength = streamingMessage?.content.length ?? 0
-      const streamingContentAdded = streamingLength > previousStreamingLengthRef.current
       const lastMessage = messages.at(-1)
       const userJustSent = messageAdded && lastMessage?.role === 'user'
+      const retryingUserMessage =
+        !messageAdded && sending && !previousSendingRef.current && lastMessage?.role === 'user'
 
-      if (userJustSent) {
-        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-      } else if (nearBottomRef.current && (messageAdded || streamingContentAdded)) {
-        container.scrollTo({
-          top: container.scrollHeight,
-          behavior: streamingContentAdded ? 'auto' : 'smooth',
-        })
+      if (userJustSent || retryingUserMessage) {
+        const messageElement = Array.from(
+          container.querySelectorAll<HTMLElement>('[data-message-id]'),
+        ).find((element) => element.dataset.messageId === lastMessage.id)
+        if (messageElement) {
+          const containerTop = container.getBoundingClientRect().top
+          const messageTop = messageElement.getBoundingClientRect().top
+          suppressScrollTrackingRef.current = true
+          const nextScrollTop = Math.max(0, container.scrollTop + messageTop - containerTop - 8)
+          if (typeof container.scrollTo === 'function') {
+            container.scrollTo({ top: nextScrollTop, behavior: 'smooth' })
+          } else {
+            container.scrollTop = nextScrollTop
+          }
+          requestAnimationFrame(() => {
+            suppressScrollTrackingRef.current = false
+          })
+        }
       }
     }
 
@@ -212,11 +221,6 @@ export function AssistantConversationView({
           <MessageList
             controller={controller}
             scrollRef={conversationScrollRef}
-            onScroll={(event) => {
-              const container = event.currentTarget
-              nearBottomRef.current =
-                container.scrollHeight - container.scrollTop - container.clientHeight < 80
-            }}
           />
 
           {threadId ? (
@@ -228,6 +232,10 @@ export function AssistantConversationView({
               disabled={composerDisabled}
               placeholder={composerPlaceholder}
               sending={sending}
+              selectedModel={controller.selectedModel}
+              onSelectModel={controller.setSelectedModel}
+              reasoningEffort={controller.reasoningEffort}
+              onSelectReasoningEffort={controller.setReasoningEffort}
             />
           ) : null}
         </Stack>

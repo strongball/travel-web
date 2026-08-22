@@ -26,11 +26,25 @@ export {
   langchainAssistantTools,
 }
 
-const modelName = config.gemini.model
-
 export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
+  thinkingBudget?: number
+
+  constructor(
+    fields: ConstructorParameters<typeof ChatGoogleGenerativeAI>[0] & {
+      thinkingBudget?: number
+    },
+  ) {
+    super(fields)
+    this.thinkingBudget = fields.thinkingBudget
+  }
+
   override invocationParams(options?: this['ParsedCallOptions']) {
-    const params = super.invocationParams(options)
+    const params = super.invocationParams(options) as Record<string, unknown>
+    if (this.thinkingBudget !== undefined) {
+      params.thinkingConfig = {
+        thinkingBudget: this.thinkingBudget,
+      }
+    }
     const tools = params.tools as Array<Record<string, unknown>> | undefined
     if (tools && Array.isArray(tools)) {
       const hasBuiltinTool = tools.some(
@@ -41,16 +55,20 @@ export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
       )
       if (hasBuiltinTool && hasFunctionCalling) {
         params.toolConfig = {
-          ...(params.toolConfig || {}),
+          ...((params.toolConfig as Record<string, unknown>) || {}),
           includeServerSideToolInvocations: true,
-        } as unknown as typeof params.toolConfig
+        }
       }
     }
-    return params
+    return params as ReturnType<ChatGoogleGenerativeAI['invocationParams']>
   }
 }
 
-export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI> {
+export async function createLangChainChatModel(
+  modelName?: string,
+  thinkingBudget?: number,
+): Promise<ChatGoogleGenerativeAI> {
+  const targetModel = modelName || config.gemini.model
   const supabaseUrl = config.supabase.url
   const publishableKey = config.supabase.publishableKey
 
@@ -68,9 +86,10 @@ export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI
   }
 
   return new AssistantChatGoogleGenerativeAI({
-    model: modelName,
+    model: targetModel,
     apiKey: 'proxied-by-edge-function',
-    temperature: 0.2,
+    temperature: 0,
+    thinkingBudget,
     ...(baseUrl ? { baseUrl } : {}),
     ...(customHeaders ? { customHeaders } : {}),
   })
@@ -142,8 +161,10 @@ export function extractAssistantToolsMetadata(
 export async function invokeAssistantModel(
   messages: BaseMessage[],
   onTextDelta?: (text: string) => void,
+  modelName?: string,
+  thinkingBudget?: number,
 ): Promise<AIMessage> {
-  const model = await createLangChainChatModel()
+  const model = await createLangChainChatModel(modelName, thinkingBudget)
   const assistantModel = bindAssistantTools(model)
   if (!onTextDelta) {
     const response = await assistantModel.invoke(messages)
@@ -267,8 +288,13 @@ export function buildAssistantPrompt(
   return promptParts.join('\n')
 }
 
-export async function summarizeWithGemini(currentSummary: string, messages: AssistantMessage[]) {
-  const model = await createLangChainChatModel()
+export async function summarizeWithGemini(
+  currentSummary: string,
+  messages: AssistantMessage[],
+  modelName?: string,
+  thinkingBudget?: number,
+) {
+  const model = await createLangChainChatModel(modelName, thinkingBudget)
   const response = await model.invoke([
     new SystemMessage('請將以下旅遊規劃對話整理成精簡摘要。重點保留：使用者偏好、已討論的景點與尚未決定的事項。請使用對話中最主要的語言進行摘要。'),
     new HumanMessage(

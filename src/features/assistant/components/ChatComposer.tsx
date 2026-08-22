@@ -6,6 +6,8 @@ import {
   TextField,
 } from '@mui/material'
 import type { FormEvent, KeyboardEvent } from 'react'
+import { ModelSelector } from './ModelSelector'
+import type { ReasoningEffort } from '../models'
 
 const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
   if (event.nativeEvent.isComposing || event.keyCode === 229) return
@@ -23,6 +25,10 @@ export function ChatComposer({
   placeholder,
   sending,
   inputRef,
+  selectedModel,
+  onSelectModel,
+  reasoningEffort,
+  onSelectReasoningEffort,
 }: {
   text: string
   onChangeText: (value: string) => void
@@ -31,6 +37,10 @@ export function ChatComposer({
   placeholder: string
   sending: boolean
   inputRef?: React.Ref<HTMLInputElement | HTMLTextAreaElement>
+  selectedModel?: string
+  onSelectModel?: (modelId: string) => void
+  reasoningEffort?: ReasoningEffort
+  onSelectReasoningEffort?: (effort: ReasoningEffort) => void
 }) {
   return (
     <Stack
@@ -45,6 +55,19 @@ export function ChatComposer({
         zIndex: 3,
       }}
     >
+      {selectedModel && onSelectModel ? (
+        <Stack direction="row" spacing={1} sx={{ mb: 1, alignItems: 'center' }}>
+          <ModelSelector
+            selectedModel={selectedModel}
+            onSelectModel={onSelectModel}
+            reasoningEffort={reasoningEffort ?? 'low'}
+            onSelectReasoningEffort={onSelectReasoningEffort ?? (() => {})}
+            disabled={disabled || sending}
+            size="small"
+          />
+        </Stack>
+      ) : null}
+
       <TextField
         inputRef={inputRef}
         fullWidth

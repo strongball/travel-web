@@ -35,7 +35,7 @@ export const config: Config = {
     isConfigured: Boolean(supabaseUrl && supabasePublishableKey),
   },
   gemini: {
-    model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash',
+    model: import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.5-flash-lite',
   },
   googleMaps: {
     apiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || '',

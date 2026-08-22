@@ -32,7 +32,7 @@ export function MessageList({
 }: {
   controller: AssistantConversationController
   scrollRef: RefObject<HTMLDivElement | null>
-  onScroll: (event: React.UIEvent<HTMLDivElement>) => void
+  onScroll?: (event: React.UIEvent<HTMLDivElement>) => void
 }) {
   const {
     threadId,
@@ -261,7 +261,12 @@ export function MessageList({
         </Alert>
       ) : null}
 
-      <Box sx={{ minHeight: { xs: 16, sm: 24 }, flexShrink: 0 }} />
+      <Box
+        sx={{
+          minHeight: messages.length > 0 ? 'calc(100% - 80px)' : { xs: 16, sm: 24 },
+          flexShrink: 0,
+        }}
+      />
     </Stack>
   )
 }

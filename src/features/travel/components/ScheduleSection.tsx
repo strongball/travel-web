@@ -1,17 +1,25 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
-import { Alert, Avatar, Box, Button, Card, CardContent, Chip, Divider, IconButton, Paper, Stack, TextField, Tooltip, Typography } from '@mui/material'
+import {
+  Alert,
+  Avatar,
+  Box,
+  Button,
+  Card,
+  Divider,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from '@mui/material'
 import type { Attraction, TripDay } from '../../../types/database'
-import { googlePlaceUrl } from '../googleMaps'
-import { attractionMapPoint, formatAmount, formatDate, recalculateDayTimes } from '../travelWorkspaceUtils'
+import { formatDate, recalculateDayTimes } from '../travelWorkspaceUtils'
 import { AttractionSortDialog } from './AttractionSortDialog'
-import { TravelInfoCard } from './TravelInfo'
+import { DaySelectorTabs } from './schedule/DaySelectorTabs'
+import { AttractionTimelineItem } from './schedule/AttractionTimelineItem'
 
 const GoogleItineraryMapDialog = lazy(() => import('../GoogleItineraryMapDialog'))
 
@@ -84,71 +92,11 @@ export function ScheduleSection({
   return (
     <Stack spacing={2}>
       {/* Day Selector Tabs */}
-      <Box
-        sx={{
-          pb: 0.5,
-          overflowX: 'auto',
-          '::-webkit-scrollbar': { display: 'none' },
-          scrollbarWidth: 'none',
-        }}
-      >
-        <Stack direction="row" spacing={1.25} sx={{ minWidth: 'max-content', py: 0.5 }}>
-          {days.map((day, index) => {
-            const isSelected = index === activeDayIndex
-            return (
-              <Paper
-                key={day.id}
-                elevation={0}
-                onClick={() => setActiveDayIndex(index)}
-                sx={{
-                  cursor: 'pointer',
-                  py: 1,
-                  px: 2,
-                  borderRadius: 3,
-                  border: isSelected
-                    ? '1.5px solid #0d766e'
-                    : '1px solid rgba(13, 118, 110, 0.12)',
-                  bgcolor: isSelected ? 'rgba(13, 118, 110, 0.08)' : '#ffffff',
-                  boxShadow: isSelected
-                    ? '0 4px 14px rgba(13, 118, 110, 0.12)'
-                    : '0 2px 6px rgba(0, 0, 0, 0.02)',
-                  textAlign: 'center',
-                  transition: 'all 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  minWidth: { xs: 84, sm: 96 },
-                  '&:hover': {
-                    bgcolor: isSelected ? 'rgba(13, 118, 110, 0.12)' : 'rgba(13, 118, 110, 0.04)',
-                    transform: 'translateY(-1px)',
-                  },
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    display: 'block',
-                    fontWeight: 900,
-                    fontSize: '0.78rem',
-                    color: isSelected ? '#0d766e' : 'text.secondary',
-                    letterSpacing: '0.02em',
-                  }}
-                >
-                  DAY {index + 1}
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: isSelected ? 800 : 600,
-                    color: isSelected ? '#075c57' : 'text.primary',
-                    fontSize: '0.88rem',
-                    mt: 0.2,
-                  }}
-                >
-                  {day.date.slice(5, 10).replace('-', '/')}
-                </Typography>
-              </Paper>
-            )
-          })}
-        </Stack>
-      </Box>
+      <DaySelectorTabs
+        days={days}
+        activeDayIndex={activeDayIndex}
+        onSelectDay={setActiveDayIndex}
+      />
 
       {/* Active Day Card & Timeline */}
       <Card sx={{ p: { xs: 1.5, sm: 2.25 } }}>
@@ -210,171 +158,18 @@ export function ScheduleSection({
         ) : (
           <Stack spacing={1.5}>
             {activeDay.attractions.map((attraction, attractionIndex) => (
-              <Box key={attraction.id}>
-                {attractionIndex === 0 ? (
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
-                      ml: { xs: '46px', sm: '60px' },
-                      mb: 1.25,
-                      p: 1,
-                      bgcolor: 'action.hover',
-                    }}
-                  >
-                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                      <Box
-                        sx={{
-                          width: 26,
-                          height: 26,
-                          display: 'grid',
-                          placeItems: 'center',
-                          borderRadius: '50%',
-                          bgcolor: 'primary.main',
-                          color: 'common.white',
-                          flexShrink: 0,
-                        }}
-                      >
-                        <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
-                      </Box>
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography
-                          variant="caption"
-                          color="primary.main"
-                          sx={{ display: 'block', fontWeight: 900 }}
-                        >
-                          出發時間
-                        </Typography>
-                      </Box>
-                      <TextField
-                        size="small"
-                        type="time"
-                        value={activeDay.startTime?.slice(11, 16) ?? '09:00'}
-                        slotProps={{ htmlInput: { step: 300, 'aria-label': '每日開始時間' } }}
-                        onChange={(event) => onStartTimeChange(activeDay.id, event.target.value)}
-                        sx={{ width: { xs: 130, sm: 150 } }}
-                      />
-                    </Stack>
-                  </Paper>
-                ) : null}
-
-                {attractionIndex > 0 ? (
-                  <TravelInfoCard
-                    origin={activeDay.attractions[attractionIndex - 1]}
-                    attraction={attraction}
-                    onEdit={() => onEditTravelInfo(activeDay.attractions[attractionIndex - 1], attraction)}
-                  />
-                ) : null}
-
-                <Stack direction="row" spacing={1.25} sx={{ alignItems: 'stretch' }}>
-                  <Box sx={{ width: { xs: 38, sm: 52 }, pt: 1, textAlign: 'right', flexShrink: 0 }}>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ fontWeight: 750 }}
-                    >
-                      {attraction.startTime
-                        ? attraction.startTime.slice(11, 16)
-                        : `${9 + attractionIndex}:00`}
-                    </Typography>
-                  </Box>
-                  <Box
-                    sx={{
-                      width: 2,
-                      bgcolor: 'primary.main',
-                      opacity: 0.3,
-                      borderRadius: 1,
-                      my: 0.5,
-                    }}
-                  />
-                  <Card
-                    variant="outlined"
-                    sx={{
-                      flex: 1,
-                      '&:hover': {
-                        borderColor: 'primary.main',
-                      },
-                    }}
-                  >
-                    <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                      <Stack
-                        direction="row"
-                        spacing={1}
-                        sx={{ justifyContent: 'space-between', alignItems: 'flex-start' }}
-                      >
-                        <Box sx={{ minWidth: 0, flex: 1 }}>
-                          <Typography
-                            sx={{
-                              fontWeight: 850,
-                              overflowWrap: 'anywhere',
-                            }}
-                          >
-                            {attraction.name}
-                          </Typography>
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{
-                              overflowWrap: 'anywhere',
-                              mt: 0.2,
-                            }}
-                          >
-                            {attraction.locationName ||
-                              attraction.description ||
-                              `停留約 ${attraction.duration} 分鐘`}
-                          </Typography>
-                        </Box>
-                        <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
-                          {attractionMapPoint(attraction) ? (
-                            <Tooltip title="在 Google 地圖查看景點">
-                              <IconButton
-                                component="a"
-                                size="small"
-                                href={googlePlaceUrl(attractionMapPoint(attraction), attraction.placeId)}
-                                target="_blank"
-                                rel="noreferrer"
-                                color="primary"
-                                aria-label={`在 Google 地圖查看 ${attraction.name}`}
-                              >
-                                <PlaceRoundedIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          ) : null}
-                          <IconButton
-                            size="small"
-                            aria-label={`編輯 ${attraction.name}`}
-                            onClick={() => onEditAttraction(activeDay, attraction)}
-                          >
-                            <EditRoundedIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            aria-label={`刪除 ${attraction.name}`}
-                            onClick={() => onDeleteAttraction(activeDay, attraction.id)}
-                          >
-                            <DeleteOutlineRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                      </Stack>
-                      <Stack direction="row" spacing={0.75} sx={{ mt: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
-                        <Chip
-                          size="small"
-                          label={`${attraction.duration} 分鐘`}
-                        />
-                        {attraction.cost > 0 ? (
-                          <Chip
-                            size="small"
-                            color="primary"
-                            variant="outlined"
-                            label={formatAmount(attraction.cost, currency)}
-                          />
-                        ) : null}
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                </Stack>
-              </Box>
+              <AttractionTimelineItem
+                key={attraction.id}
+                day={activeDay}
+                attraction={attraction}
+                index={attractionIndex}
+                previousAttraction={attractionIndex > 0 ? activeDay.attractions[attractionIndex - 1] : undefined}
+                currency={currency}
+                onEditAttraction={onEditAttraction}
+                onEditTravelInfo={onEditTravelInfo}
+                onDeleteAttraction={onDeleteAttraction}
+                onStartTimeChange={onStartTimeChange}
+              />
             ))}
           </Stack>
         )}
@@ -403,5 +198,3 @@ export function ScheduleSection({
     </Stack>
   )
 }
-
-
