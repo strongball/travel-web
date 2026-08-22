@@ -1,4 +1,5 @@
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
+import { extractMessageText } from '../../api'
 import type {
   AssistantCodeExecution,
   AssistantGroundingMetadata,
@@ -23,9 +24,6 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       throw new Error('模型沒有回傳可完成的訊息')
     }
 
-    const reply = typeof lastAiMessage.content === 'string' ? lastAiMessage.content.trim() : ''
-    if (!reply) throw new Error('模型回傳了空的文字內容')
-
     const proposalMessage = state.modelMessages
       .filter((message) => ToolMessage.isInstance(message))
       .findLast((message) => {
@@ -35,6 +33,19 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
     const completedProposal = (
       proposalMessage?.artifact as { proposal?: AssistantProposal } | undefined
     )?.proposal ?? null
+
+    const rawReply = extractMessageText(lastAiMessage.content)
+    const reply =
+      rawReply ||
+      (completedProposal
+        ? completedProposal.status === 'applied'
+          ? '已成功套用行程調整。'
+          : completedProposal.status === 'rejected'
+            ? '已取消套用此行程調整。'
+            : '已完成處理。'
+        : '')
+
+    if (!reply) throw new Error('模型回傳了空的文字內容')
 
     const allGroundingQueries: string[] = []
     const allGroundingSources: Array<{ title?: string; uri?: string }> = []

@@ -199,6 +199,42 @@ export function extractAssistantToolsMetadata(
   }
 }
 
+export function extractMessageText(content: unknown): string {
+  if (typeof content === 'string') return content.trim()
+  if (Array.isArray(content)) {
+    const textParts: string[] = []
+    for (const part of content) {
+      if (typeof part === 'string') {
+        textParts.push(part)
+      } else if (part && typeof part === 'object') {
+        if ('type' in part) {
+          const type = (part as { type?: unknown }).type
+          if (type === 'thinking' || type === 'reasoning') {
+            continue
+          }
+          if (type === 'text' && typeof (part as { text?: unknown }).text === 'string') {
+            textParts.push((part as { text: string }).text)
+          }
+        } else if ('thought' in part && (part as { thought?: unknown }).thought) {
+          continue
+        } else if ('text' in part && typeof (part as { text?: unknown }).text === 'string') {
+          textParts.push((part as { text: string }).text)
+        }
+      }
+    }
+    return textParts.join('').trim()
+  }
+  if (
+    content &&
+    typeof content === 'object' &&
+    'text' in content &&
+    typeof (content as { text?: unknown }).text === 'string'
+  ) {
+    return (content as { text: string }).text.trim()
+  }
+  return ''
+}
+
 export async function invokeAssistantModel(
   messages: BaseMessage[],
   onTextDelta?: (text: string) => void,
@@ -234,7 +270,10 @@ export async function invokeAssistantModel(
   const stream = await assistantModel.stream(messages)
   for await (const chunk of stream) {
     const aiChunk = chunk as AIMessageChunk
-    const text = aiChunk.text
+    const text =
+      typeof aiChunk.text === 'string' && aiChunk.text
+        ? aiChunk.text
+        : extractMessageText(aiChunk.content)
     if (text) onTextDelta(text)
     if (aiChunk.response_metadata) {
       mergedResponseMetadata = { ...mergedResponseMetadata, ...aiChunk.response_metadata }
@@ -360,6 +399,6 @@ export async function summarizeWithGemini(
         .join('\n\n'),
     ),
   ])
-  return typeof response.content === 'string' ? response.content.trim() : ''
+  return extractMessageText(response.content)
 }
 
