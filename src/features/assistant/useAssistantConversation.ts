@@ -60,15 +60,6 @@ const hiddenProgressPhases = new Set<AssistantProgressPhase>([
 const visibleProgressLabel = (phase: AssistantProgressPhase) =>
   hiddenProgressPhases.has(phase) ? null : progressLabels[phase]
 
-const waitForUiSync = async (promise: Promise<unknown>, timeoutMs = 8_000) => {
-  let timeoutId: number | undefined
-  const timeout = new Promise<void>((resolve) => {
-    timeoutId = window.setTimeout(resolve, timeoutMs)
-  })
-  await Promise.race([promise, timeout])
-  if (timeoutId !== undefined) window.clearTimeout(timeoutId)
-}
-
 const friendlyError = (value: unknown, fallback: string) => {
   const errorRecord = value && typeof value === 'object'
     ? value as { code?: unknown; message?: unknown }
@@ -577,18 +568,19 @@ export function useAssistantConversation(
         await saveAssistantMessage(thread.id, assistantMessage)
       }
       if (state.summary !== thread.summary) {
-        await updateAssistantThreadSummary(thread.id, state.summary)
+        const nextSummary = state.summary
+        thread.summary = nextSummary
+        setThreads((current) => current.map((item) =>
+          item.id === thread.id ? { ...item, summary: nextSummary } : item
+        ))
+        void updateAssistantThreadSummary(thread.id, nextSummary)
       }
       setProgressLabel(null)
-      await waitForUiSync(Promise.all([
-        refreshConversation(thread.id, false),
-        refreshThreads(thread.id),
-      ]))
     } catch (error) {
       setStreamingMessage(null)
       throw error
     }
-  }, [appendStreamingText, checkpointer, messages, onProgress, refreshConversation, refreshThreads, runner])
+  }, [appendStreamingText, checkpointer, messages, onProgress, runner])
 
   const send = useCallback(async (event: FormEvent) => {
     event.preventDefault()
@@ -634,9 +626,13 @@ export function useAssistantConversation(
       attempt = { thread, request }
       if (thread.title === '新對話') {
         const titleSource = content || currentAttachments[0]?.name || '新對話'
-        await renameAssistantThread(thread.id, titleSource.slice(0, 36))
+        const nextTitle = titleSource.slice(0, 36)
+        thread.title = nextTitle
+        setThreads((current) => current.map((item) =>
+          item.id === thread.id ? { ...item, title: nextTitle } : item
+        ))
+        void renameAssistantThread(thread.id, nextTitle)
       }
-      await checkpointer.discardLegacyHistory(thread.id)
       await runAssistantTurn(thread, request)
       setRetryRequest(null)
     } catch (sendError) {
@@ -647,7 +643,7 @@ export function useAssistantConversation(
       sendingRef.current = false
       setSending(false)
     }
-  }, [attachments, checkpointer, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
+  }, [attachments, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
 
   const retryLastTurn = useCallback(async () => {
     if (!retryRequest || sending || sendingRef.current || !online) return
