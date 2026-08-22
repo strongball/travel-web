@@ -23,7 +23,6 @@ import type {
 } from '../types'
 import { ASSISTANT_GRAPH_VERSION } from '../types'
 import {
-  normalizeAssistantOperations,
   parseAssistantOperations,
   summarizeWithGemini,
   validateAssistantOperations,
@@ -41,7 +40,6 @@ import { ensureLangGraphAsyncContext } from '../../../lib/langGraphAsyncContext'
 export {
   ASSISTANT_GRAPH_VERSION,
   parseAssistantOperations,
-  normalizeAssistantOperations,
   validateAssistantOperations,
 }
 

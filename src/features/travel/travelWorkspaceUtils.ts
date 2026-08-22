@@ -90,12 +90,10 @@ export const recalculateDayTimes = (
   day: TripDay,
   attractions: Attraction[],
 ): TripDay => {
-  const [startHour, startMinute] = (day.startTime?.slice(11, 16) ?? '09:00')
+  const [startHour = 9, startMinute = 0] = (day.startTime?.slice(11, 16) ?? '09:00')
     .split(':')
     .map(Number)
-  let currentMinutes =
-    (Number.isFinite(startHour) ? startHour : 9) * 60 +
-    (Number.isFinite(startMinute) ? startMinute : 0)
+  let currentMinutes = startHour * 60 + startMinute
   return {
     ...day,
     attractions: attractions.map((attraction) => {

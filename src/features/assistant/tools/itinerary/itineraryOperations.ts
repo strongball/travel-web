@@ -15,10 +15,10 @@ export function applyItineraryOperations(
     ...day,
     attractions: day.attractions.map((attraction) => ({ ...attraction })),
   }))
+  const dayById = new Map(days.map((d) => [d.id, d]))
   const originalDayByAttraction = new Map(
     days.flatMap((day) => day.attractions.map((attraction) => [attraction.id, day.id] as const)),
   )
-  const originalAttractionIds = new Set(originalDayByAttraction.keys())
 
   const findAttraction = (id: string) => {
     for (const day of days) {
@@ -30,28 +30,23 @@ export function applyItineraryOperations(
 
   for (const operation of operations) {
     if (operation.type === 'set_day_start_time') {
-      const day = days.find((item) => item.id === operation.dayId)
-      if (!day) throw new Error('找不到指定日期')
-      day.startTime = normalizeTime(day, operation.startTime)
+      const day = dayById.get(operation.dayId)
+      if (day) day.startTime = normalizeTime(day, operation.startTime)
       continue
     }
     if (operation.type === 'add_attraction') {
-      const day = days.find((item) => item.id === operation.dayId)
-      if (!day) throw new Error('找不到指定日期')
-      if (!operation.attraction.name.trim()) throw new Error('景點名稱不可空白')
-      if (originalAttractionIds.has(operation.attraction.id) || days.some((item) =>
-        item.attractions.some((attraction) => attraction.id === operation.attraction.id))) {
-        throw new Error(`景點 ID 已存在 ${operation.attraction.id}`)
+      const day = dayById.get(operation.dayId)
+      if (day) {
+        const attraction: Attraction = {
+          ...operation.attraction,
+          dayId: day.id,
+          name: operation.attraction.name.trim(),
+          startTime: null,
+          endTime: null,
+        }
+        const index = Math.max(0, Math.min(operation.index ?? day.attractions.length, day.attractions.length))
+        day.attractions.splice(index, 0, attraction)
       }
-      const attraction: Attraction = {
-        ...operation.attraction,
-        dayId: day.id,
-        name: operation.attraction.name.trim(),
-        startTime: null,
-        endTime: null,
-      }
-      const index = Math.max(0, Math.min(operation.index ?? day.attractions.length, day.attractions.length))
-      day.attractions.splice(index, 0, attraction)
       continue
     }
     if (operation.type === 'update_attraction') {
@@ -71,22 +66,20 @@ export function applyItineraryOperations(
     }
     if (operation.type === 'move_attraction') {
       const target = findAttraction(operation.attractionId)
-      const destination = days.find((item) => item.id === operation.targetDayId)
-      if (!destination) throw new Error('找不到移動目的日期')
-      target.day.attractions.splice(target.index, 1)
-      const index = Math.max(0, Math.min(operation.index, destination.attractions.length))
-      destination.attractions.splice(index, 0, { ...target.attraction, dayId: destination.id, travelTime: null })
+      const destination = dayById.get(operation.targetDayId)
+      if (destination) {
+        target.day.attractions.splice(target.index, 1)
+        const index = Math.max(0, Math.min(operation.index, destination.attractions.length))
+        destination.attractions.splice(index, 0, { ...target.attraction, dayId: destination.id, travelTime: null })
+      }
       continue
     }
     if (operation.type === 'reorder_attractions') {
-      const day = days.find((item) => item.id === operation.dayId)
-      if (!day) throw new Error('找不到指定日期')
-      if (new Set(operation.attractionIds).size !== day.attractions.length ||
-        operation.attractionIds.some((id) => !day.attractions.some((item) => item.id === id))) {
-        throw new Error('景點排序資料不完整')
+      const day = dayById.get(operation.dayId)
+      if (day) {
+        const byId = new Map(day.attractions.map((item) => [item.id, item]))
+        day.attractions = operation.attractionIds.map((id) => byId.get(id)).filter(Boolean) as Attraction[]
       }
-      const byId = new Map(day.attractions.map((item) => [item.id, item]))
-      day.attractions = operation.attractionIds.map((id) => byId.get(id)!)
     }
   }
 

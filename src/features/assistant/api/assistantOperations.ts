@@ -93,9 +93,6 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
   })
 }
 
-export const normalizeAssistantOperations = (operations: unknown): AssistantOperation[] =>
-  parseAssistantOperations(operations)
-
 export function validateAssistantOperations(
   itinerary: Itinerary,
   operations: AssistantOperation[],

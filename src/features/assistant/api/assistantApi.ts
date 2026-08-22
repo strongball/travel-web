@@ -6,6 +6,7 @@ import {
   SystemMessage,
   type BaseMessage,
 } from '@langchain/core/messages'
+import { config } from '../../../config'
 import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
@@ -25,7 +26,7 @@ export {
   langchainAssistantTools,
 }
 
-const modelName = import.meta.env.VITE_GEMINI_MODEL
+const modelName = config.gemini.model
 
 export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
   override invocationParams(options?: this['ParsedCallOptions']) {
@@ -50,9 +51,8 @@ export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
 }
 
 export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI> {
-  const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim() || 'proxy-mode'
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim()
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+  const supabaseUrl = config.supabase.url
+  const publishableKey = config.supabase.publishableKey
 
   let baseUrl: string | undefined
   let customHeaders: Record<string, string> | undefined
@@ -69,7 +69,7 @@ export async function createLangChainChatModel(): Promise<ChatGoogleGenerativeAI
 
   return new AssistantChatGoogleGenerativeAI({
     model: modelName,
-    apiKey,
+    apiKey: 'proxied-by-edge-function',
     temperature: 0.2,
     ...(baseUrl ? { baseUrl } : {}),
     ...(customHeaders ? { customHeaders } : {}),

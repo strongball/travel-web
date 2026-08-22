@@ -1,7 +1,7 @@
 import { useRiverMutation, useRiverRef, useRiverWatch } from '@stball/react-river'
 import { useCallback, useRef, useState } from 'react'
 
-import { downloadReceiptFiles } from '../../lib/expensesApi'
+import { downloadReceiptFiles } from '../../lib/repositories'
 import type { OfflineMutation } from '../../lib/offlineStore'
 import {
   appErrorProvider,

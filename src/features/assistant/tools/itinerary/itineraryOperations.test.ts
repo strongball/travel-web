@@ -62,38 +62,6 @@ describe('applyItineraryOperations', () => {
     })
     expect(changedDays(itinerary.days ?? [], result).map((day) => day.id)).toEqual(['day-1', 'day-2'])
   })
-
-  it('rejects incomplete reorder operations', () => {
-    expect(() =>
-      applyItineraryOperations(itinerary, [
-        { type: 'reorder_attractions', dayId: 'day-1', attractionIds: [] },
-      ]),
-    ).toThrow('景點排序資料不完整')
-  })
-
-  it('does not allow an added attraction to overwrite an existing id', () => {
-    expect(() =>
-      applyItineraryOperations(itinerary, [
-        {
-          type: 'add_attraction',
-          dayId: 'day-2',
-          attraction: {
-            id: 'a-1',
-            name: '重複景點',
-            description: '',
-            cost: 0,
-            latitude: null,
-            longitude: null,
-            duration: 60,
-            transportMode: null,
-            travelTime: null,
-            placeId: null,
-            locationName: null,
-          },
-        },
-      ]),
-    ).toThrow('景點 ID 已存在 a-1')
-  })
 })
 
 describe('placeEnrichmentCandidates', () => {

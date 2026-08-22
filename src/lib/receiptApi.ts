@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai'
+import { config } from '../config'
 import { supabase } from './supabase'
 import type {
   ExpenseItem,
@@ -101,8 +102,8 @@ export const scanReceipt = async (
     throw new ReceiptScanError('UNAUTHENTICATED', '請先登入')
   }
 
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-  const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  const supabaseUrl = config.supabase.url
+  const publishableKey = config.supabase.publishableKey
   const ai = new GoogleGenAI({
     apiKey: 'proxied-by-edge-function',
     apiVersion: 'v1beta',
@@ -118,7 +119,7 @@ export const scanReceipt = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: import.meta.env.VITE_GEMINI_MODEL,
+      model: config.gemini.model,
       contents: [{
         role: 'user',
         parts: [

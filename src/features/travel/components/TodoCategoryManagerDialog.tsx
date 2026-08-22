@@ -27,7 +27,7 @@ import {
 } from '@mui/material'
 import type { TodoItem } from '../../../types/database'
 
-export const DEFAULT_TODO_CATEGORIES = ['行前準備', '旅途中', '其他']
+const DEFAULT_TODO_CATEGORIES = ['行前準備', '旅途中', '其他']
 
 interface TodoCategoryManagerDialogProps {
   open: boolean

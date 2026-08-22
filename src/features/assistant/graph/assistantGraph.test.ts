@@ -29,10 +29,6 @@ import {
 } from './assistantGraph'
 import type { AssistantGraphNodeState } from './graphState'
 import { routeAfterRespond, routeAfterTools } from './routing'
-import {
-  parseAssistantOperations,
-  validateAssistantOperations,
-} from '../api'
 import type {
   AssistantMessage,
   AssistantProposal,
@@ -91,45 +87,6 @@ beforeEach(() => {
 })
 
 describe('assistant graph helpers', () => {
-  it('parses only supported operations and validates itinerary references', () => {
-    const operations = parseAssistantOperations([{
-      type: 'set_day_start_time',
-      dayId: 'day-1',
-      startTime: '10:00',
-    }])
-    expect(operations).toEqual([{
-      type: 'set_day_start_time',
-      dayId: 'day-1',
-      startTime: '10:00',
-    }])
-    expect(() => validateAssistantOperations(itinerary, operations)).not.toThrow()
-    expect(() => validateAssistantOperations(itinerary, [{
-      type: 'remove_attraction',
-      attractionId: 'missing',
-    }])).toThrow('找不到景點 missing')
-    expect(() => parseAssistantOperations([{ type: 'delete_trip' }])).toThrow('Unsupported assistant operation')
-  })
-
-  it('allows a new attraction without a Google match', () => {
-    expect(() => validateAssistantOperations(itinerary, [{
-      type: 'add_attraction',
-      dayId: 'day-1',
-      attraction: {
-        id: 'new-place',
-        name: 'Unknown',
-        description: '',
-        cost: 0,
-        latitude: null,
-        longitude: null,
-        duration: 60,
-        transportMode: null,
-        travelTime: null,
-        placeId: null,
-        locationName: null,
-      },
-    }])).not.toThrow()
-  })
-
   it('uses message and character thresholds and keeps the recent window', () => {
     const messages: AssistantMessage[] = Array.from({ length: 4 }, (_, index) => ({
       id: `${index}`,

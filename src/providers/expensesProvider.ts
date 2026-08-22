@@ -6,7 +6,7 @@ import {
   asyncNotifierProvider,
 } from '@stball/react-river'
 
-import { fetchExpenses } from '../lib/expensesApi'
+import { fetchExpenses } from '../lib/repositories'
 import {
   applyPendingMutations,
   listMutations,
@@ -17,9 +17,7 @@ import type { Expense } from '../types/database'
 import { userIdProvider } from './authProviders'
 
 export class ExpensesNotifier extends AsyncNotifier<Expense[]> {
-  async build(): Promise<Expense[]> {
-    const userId = this.ref.watch(userIdProvider)
-    if (!userId) return []
+  private async loadData(userId: string): Promise<Expense[]> {
     try {
       const raw = await fetchExpenses()
       const pending = await listMutations(userId).catch(() => [])
@@ -33,6 +31,12 @@ export class ExpensesNotifier extends AsyncNotifier<Expense[]> {
       if (snapshot?.expenses) return snapshot.expenses
       throw err
     }
+  }
+
+  async build(): Promise<Expense[]> {
+    const userId = this.ref.watch(userIdProvider)
+    if (!userId) return []
+    return this.loadData(userId)
   }
 
   async save(
@@ -83,20 +87,10 @@ export class ExpensesNotifier extends AsyncNotifier<Expense[]> {
       return
     }
     try {
-      const raw = await fetchExpenses()
-      const pending = await listMutations(userId).catch(() => [])
-      const applied = applyPendingMutations(
-        { itineraries: [], expenses: raw, todos: [] },
-        pending,
-      )
-      this.state = asyncData(applied.expenses)
+      const data = await this.loadData(userId)
+      this.state = asyncData(data)
     } catch (err) {
-      const snapshot = await loadSnapshot(userId).catch(() => null)
-      if (snapshot?.expenses) {
-        this.state = asyncData(snapshot.expenses)
-      } else {
-        this.state = asyncError(err, this.state.data)
-      }
+      this.state = asyncError(err, this.state.data)
     }
   }
 }

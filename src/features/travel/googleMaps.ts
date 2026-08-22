@@ -1,7 +1,8 @@
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
+import { config } from '../../config'
 
 let configured = false
-export const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
+export const googleMapsApiKey = config.googleMaps.apiKey || undefined
 
 export type GoogleMapsLibraryName = 'maps' | 'marker' | 'places' | 'geocoding' | 'routes'
 type GoogleMapsLibraryMap = {

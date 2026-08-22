@@ -8,7 +8,7 @@ import {
   saveItinerary,
   saveTodo,
   uploadReceiptImages,
-} from '../lib/expensesApi'
+} from '../lib/repositories'
 import {
   countMutations,
   enqueueMutation,

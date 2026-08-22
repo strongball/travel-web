@@ -1,6 +1,6 @@
 import type { AssistantOperation } from '../../types'
 import type { Itinerary } from '../../../../types/database'
-import { saveItinerary, saveTodo } from '../../../../lib/expensesApi'
+import { saveItinerary, saveTodo } from '../../../../lib/repositories'
 
 export function extractProposedTodos(operations: AssistantOperation[]): Array<{ title: string; category: string }> {
   return operations

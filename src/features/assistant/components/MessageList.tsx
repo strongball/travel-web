@@ -18,7 +18,7 @@ import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { AssistantProgress, ConversationLoading } from './AssistantProgress'
 
-export const quickPrompts = [
+const quickPrompts = [
   '幫我整理這趟旅行的行前準備與打包清單',
   '根據目前行程，幫我列出需要預約或準備的待辦事項',
   '推薦今天附近熱門景點',

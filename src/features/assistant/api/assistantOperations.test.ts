@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 import {
-  normalizeAssistantOperations,
   parseAssistantOperations,
   validateAssistantOperations,
 } from './assistantOperations'
@@ -76,7 +75,7 @@ describe('assistant operation contract', () => {
       attraction: { ...newAttraction(), duration: 0 },
     }])).toThrow('Unsupported assistant operation')
 
-    const flatResult = normalizeAssistantOperations([{
+    const flatResult = parseAssistantOperations([{
       type: 'update_attraction',
       attractionId: 'a-1',
       duration: 120,
@@ -87,7 +86,7 @@ describe('assistant operation contract', () => {
       changes: { duration: 120 },
     })
 
-    const nestedResult = normalizeAssistantOperations([{
+    const nestedResult = parseAssistantOperations([{
       type: 'update_attraction',
       attractionId: 'a-1',
       changes: { duration: 90 },
@@ -100,7 +99,7 @@ describe('assistant operation contract', () => {
   })
 
   it('normalizes and validates HH:mm while rejecting invalid duration, transport, and empty text', () => {
-    expect(normalizeAssistantOperations([{
+    expect(parseAssistantOperations([{
       type: 'set_day_start_time',
       dayId: 'day-1',
       startTime: ' 09:05 ',

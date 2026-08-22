@@ -6,7 +6,7 @@ import {
   asyncNotifierProvider,
 } from '@stball/react-river'
 
-import { fetchTodos } from '../lib/expensesApi'
+import { fetchTodos } from '../lib/repositories'
 import {
   applyPendingMutations,
   listMutations,
@@ -17,9 +17,7 @@ import type { TodoItem } from '../types/database'
 import { userIdProvider } from './authProviders'
 
 export class TodosNotifier extends AsyncNotifier<TodoItem[]> {
-  async build(): Promise<TodoItem[]> {
-    const userId = this.ref.watch(userIdProvider)
-    if (!userId) return []
+  private async loadData(userId: string): Promise<TodoItem[]> {
     try {
       const raw = await fetchTodos()
       const pending = await listMutations(userId).catch(() => [])
@@ -33,6 +31,12 @@ export class TodosNotifier extends AsyncNotifier<TodoItem[]> {
       if (snapshot?.todos) return snapshot.todos
       throw err
     }
+  }
+
+  async build(): Promise<TodoItem[]> {
+    const userId = this.ref.watch(userIdProvider)
+    if (!userId) return []
+    return this.loadData(userId)
   }
 
   async save(
@@ -74,20 +78,10 @@ export class TodosNotifier extends AsyncNotifier<TodoItem[]> {
       return
     }
     try {
-      const raw = await fetchTodos()
-      const pending = await listMutations(userId).catch(() => [])
-      const applied = applyPendingMutations(
-        { itineraries: [], expenses: [], todos: raw },
-        pending,
-      )
-      this.state = asyncData(applied.todos)
+      const data = await this.loadData(userId)
+      this.state = asyncData(data)
     } catch (err) {
-      const snapshot = await loadSnapshot(userId).catch(() => null)
-      if (snapshot?.todos) {
-        this.state = asyncData(snapshot.todos)
-      } else {
-        this.state = asyncError(err, this.state.data)
-      }
+      this.state = asyncError(err, this.state.data)
     }
   }
 }

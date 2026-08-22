@@ -6,7 +6,7 @@ import {
   asyncNotifierProvider,
 } from '@stball/react-river'
 
-import { fetchItineraries } from '../lib/expensesApi'
+import { fetchItineraries } from '../lib/repositories'
 import {
   applyPendingMutations,
   listMutations,
@@ -17,9 +17,7 @@ import type { Itinerary } from '../types/database'
 import { userIdProvider } from './authProviders'
 
 export class ItinerariesNotifier extends AsyncNotifier<Itinerary[]> {
-  async build(): Promise<Itinerary[]> {
-    const userId = this.ref.watch(userIdProvider)
-    if (!userId) return []
+  private async loadData(userId: string): Promise<Itinerary[]> {
     try {
       const raw = await fetchItineraries()
       const pending = await listMutations(userId).catch(() => [])
@@ -33,6 +31,12 @@ export class ItinerariesNotifier extends AsyncNotifier<Itinerary[]> {
       if (snapshot?.itineraries) return snapshot.itineraries
       throw err
     }
+  }
+
+  async build(): Promise<Itinerary[]> {
+    const userId = this.ref.watch(userIdProvider)
+    if (!userId) return []
+    return this.loadData(userId)
   }
 
   async save(
@@ -74,20 +78,10 @@ export class ItinerariesNotifier extends AsyncNotifier<Itinerary[]> {
       return
     }
     try {
-      const raw = await fetchItineraries()
-      const pending = await listMutations(userId).catch(() => [])
-      const applied = applyPendingMutations(
-        { itineraries: raw, expenses: [], todos: [] },
-        pending,
-      )
-      this.state = asyncData(applied.itineraries)
+      const data = await this.loadData(userId)
+      this.state = asyncData(data)
     } catch (err) {
-      const snapshot = await loadSnapshot(userId).catch(() => null)
-      if (snapshot?.itineraries) {
-        this.state = asyncData(snapshot.itineraries)
-      } else {
-        this.state = asyncError(err, this.state.data)
-      }
+      this.state = asyncError(err, this.state.data)
     }
   }
 }

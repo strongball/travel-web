@@ -1,9 +1,11 @@
+import { config } from './config'
+
 export function registerPwa() {
-  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return
+  if (!config.app.isProd || !('serviceWorker' in navigator)) return
 
   window.addEventListener('load', () => {
-    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
-      scope: import.meta.env.BASE_URL,
+    void navigator.serviceWorker.register(`${config.app.baseUrl}sw.js`, {
+      scope: config.app.baseUrl,
     })
   }, { once: true })
 }
