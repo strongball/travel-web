@@ -236,6 +236,16 @@ export function AssistantConversationView({
               onSelectModel={controller.setSelectedModel}
               reasoningEffort={controller.reasoningEffort}
               onSelectReasoningEffort={controller.setReasoningEffort}
+              attachments={controller.attachments}
+              onAddAttachments={controller.addAttachments}
+              onRemoveAttachment={controller.removeAttachment}
+              error={controller.error}
+              onClearError={controller.clearError}
+              notice={controller.notice}
+              onClearNotice={controller.clearNotice}
+              canRetry={controller.canRetry}
+              onRetry={() => void controller.retryLastTurn()}
+              online={controller.online}
             />
           ) : null}
         </Stack>

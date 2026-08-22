@@ -30,6 +30,7 @@ import {
   type ReasoningEffort,
 } from './models'
 import type {
+  AssistantAttachment,
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantProgressPhase,
@@ -142,6 +143,10 @@ export type AssistantConversationController = {
   setSelectedModel: (modelId: string) => void
   reasoningEffort: ReasoningEffort
   setReasoningEffort: (effort: ReasoningEffort) => void
+  attachments: AssistantAttachment[]
+  addAttachments: (files: File[]) => Promise<void>
+  removeAttachment: (id: string) => void
+  clearAttachments: () => void
   setText: (text: string) => void
   clearError: () => void
   clearNotice: () => void
@@ -214,6 +219,79 @@ export function useAssistantConversation(
     } catch {
       // ignore storage failure
     }
+  }, [])
+
+  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
+
+  const addAttachments = useCallback(async (files: File[]) => {
+    const newAttachments: AssistantAttachment[] = []
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) {
+        setError(`檔案「${file.name}」超過 10MB 大小限制`)
+        continue
+      }
+      const id = crypto.randomUUID()
+      if (file.type.startsWith('image/')) {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+        newAttachments.push({
+          id,
+          name: file.name,
+          mimeType: file.type || 'image/jpeg',
+          size: file.size,
+          dataUrl,
+        })
+      } else if (
+        file.type.startsWith('text/') ||
+        file.name.endsWith('.txt') ||
+        file.name.endsWith('.md') ||
+        file.name.endsWith('.csv') ||
+        file.name.endsWith('.json')
+      ) {
+        const textContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsText(file)
+        })
+        newAttachments.push({
+          id,
+          name: file.name,
+          mimeType: file.type || 'text/plain',
+          size: file.size,
+          textContent,
+        })
+      } else {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+        newAttachments.push({
+          id,
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          size: file.size,
+          dataUrl,
+        })
+      }
+    }
+    if (newAttachments.length > 0) {
+      setAttachments((prev) => [...prev, ...newAttachments])
+    }
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((item) => item.id !== id))
+  }, [])
+
+  const clearAttachments = useCallback(() => {
+    setAttachments([])
   }, [])
 
   const activeThreadRef = useRef<string | null>(null)
@@ -515,7 +593,7 @@ export function useAssistantConversation(
   const send = useCallback(async (event: FormEvent) => {
     event.preventDefault()
     const content = text.trim()
-    if (!content || sending || sendingRef.current || hasPendingProposal || !online) return
+    if ((!content && attachments.length === 0) || sending || sendingRef.current || hasPendingProposal || !online) return
     setProgressLabel(null)
     setStreamingMessage(null)
     sendingRef.current = true
@@ -523,13 +601,20 @@ export function useAssistantConversation(
     setError(null)
     setNotice(null)
     let attempt: RetryRequest | null = null
+    const currentAttachments = [...attachments]
     try {
       const thread = currentThread ?? await createThreadRecord()
       const turnId = crypto.randomUUID()
       const userMessage: AssistantMessage = {
-        id: crypto.randomUUID(), turnId, role: 'user', content, createdAt: new Date().toISOString(),
+        id: crypto.randomUUID(),
+        turnId,
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+        attachments: currentAttachments.length > 0 ? currentAttachments : null,
       }
       setText('')
+      setAttachments([])
       setMessages((current) => [...current, userMessage])
       await saveAssistantMessage(thread.id, userMessage)
       const request: AssistantTurnRequest = {
@@ -544,9 +629,13 @@ export function useAssistantConversation(
         selectedModel,
         reasoningEffort,
         thinkingBudget: getThinkingBudget(reasoningEffort),
+        attachments: currentAttachments.length > 0 ? currentAttachments : null,
       }
       attempt = { thread, request }
-      if (thread.title === '新對話') await renameAssistantThread(thread.id, content.slice(0, 36))
+      if (thread.title === '新對話') {
+        const titleSource = content || currentAttachments[0]?.name || '新對話'
+        await renameAssistantThread(thread.id, titleSource.slice(0, 36))
+      }
       await checkpointer.discardLegacyHistory(thread.id)
       await runAssistantTurn(thread, request)
       setRetryRequest(null)
@@ -558,7 +647,7 @@ export function useAssistantConversation(
       sendingRef.current = false
       setSending(false)
     }
-  }, [checkpointer, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
+  }, [attachments, checkpointer, createThreadRecord, currentThread, hasPendingProposal, itinerary, online, reasoningEffort, runAssistantTurn, selectedModel, sending, text, todoCategories, todos])
 
   const retryLastTurn = useCallback(async () => {
     if (!retryRequest || sending || sendingRef.current || !online) return
@@ -681,6 +770,10 @@ export function useAssistantConversation(
     setSelectedModel,
     reasoningEffort,
     setReasoningEffort,
+    attachments,
+    addAttachments,
+    removeAttachment,
+    clearAttachments,
     setText,
     clearError: () => setError(null),
     clearNotice: () => setNotice(null),

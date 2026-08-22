@@ -14,16 +14,35 @@ export function createRespondNode(options: RespondNodeOptions) {
     if (!request) throw new Error('Assistant graph request is missing')
 
     options.emitProgress(request.threadId, 'generating_response')
-    const modelMessages = state.modelMessages.length > 0
-      ? state.modelMessages
-      : [new HumanMessage(buildAssistantPrompt(
-        request.itinerary,
-        state.summary || null,
-        state.messages,
-        request.text,
-        request.todos ?? [],
-        request.todoCategories ?? [],
-    ))]
+    const promptText = buildAssistantPrompt(
+      request.itinerary,
+      state.summary || null,
+      state.messages,
+      request.text,
+      request.todos ?? [],
+      request.todoCategories ?? [],
+      request.attachments ?? [],
+    )
+
+    const imageAttachments = (request.attachments ?? []).filter(
+      (att) => att.mimeType.startsWith('image/') && att.dataUrl,
+    )
+
+    const initialHumanMessage =
+      imageAttachments.length > 0
+        ? new HumanMessage({
+            content: [
+              { type: 'text', text: promptText },
+              ...imageAttachments.map((att) => ({
+                type: 'image_url',
+                image_url: { url: att.dataUrl },
+              })),
+            ],
+          })
+        : new HumanMessage(promptText)
+
+    const modelMessages =
+      state.modelMessages.length > 0 ? state.modelMessages : [initialHumanMessage]
     const writer = getWriter(config)
     const response = await invokeAssistantModel(
       modelMessages,

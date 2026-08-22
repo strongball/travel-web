@@ -42,6 +42,15 @@ export type AssistantCodeExecution = {
   output?: string
 }
 
+export type AssistantAttachment = {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  dataUrl?: string
+  textContent?: string
+}
+
 export type AssistantMessage = {
   id: string
   turnId: string
@@ -52,6 +61,7 @@ export type AssistantMessage = {
   proposal?: AssistantProposal | null
   grounding?: AssistantGroundingMetadata | null
   codeExecutions?: AssistantCodeExecution[] | null
+  attachments?: AssistantAttachment[] | null
 }
 
 export type AssistantAttractionDraft = {
@@ -127,6 +137,7 @@ export type AssistantTurnRequest = {
   selectedModel?: string
   reasoningEffort?: string
   thinkingBudget?: number
+  attachments?: AssistantAttachment[] | null
 }
 
 export type AssistantUserDecision = {

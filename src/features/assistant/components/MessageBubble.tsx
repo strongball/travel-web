@@ -170,7 +170,51 @@ export function MessageBubble({
             },
           }}
         >
-          <ReactMarkdown>{formatAssistantText(message.content)}</ReactMarkdown>
+          {message.attachments && message.attachments.length > 0 ? (
+            <Stack spacing={1} sx={{ mb: message.content ? 1 : 0 }}>
+              {message.attachments.map((att) => (
+                <Box key={att.id}>
+                  {att.mimeType.startsWith('image/') && att.dataUrl ? (
+                    <Box
+                      component="img"
+                      src={att.dataUrl}
+                      alt={att.name}
+                      sx={{
+                        maxWidth: '100%',
+                        maxHeight: 280,
+                        borderRadius: 2,
+                        objectFit: 'contain',
+                        bgcolor: 'rgba(0,0,0,0.05)',
+                        border: user ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.08)',
+                      }}
+                    />
+                  ) : (
+                    <Stack
+                      direction="row"
+                      spacing={0.75}
+                      sx={{
+                        alignItems: 'center',
+                        p: 0.75,
+                        px: 1.25,
+                        borderRadius: 2,
+                        bgcolor: user ? 'rgba(255,255,255,0.15)' : 'rgba(13, 118, 110, 0.08)',
+                        fontSize: '0.82rem',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <span>📎</span>
+                      <Typography noWrap variant="caption" sx={{ fontWeight: 700, color: 'inherit' }}>
+                        {att.name}
+                      </Typography>
+                    </Stack>
+                  )}
+                </Box>
+              ))}
+            </Stack>
+          ) : null}
+          {message.content ? (
+            <ReactMarkdown>{formatAssistantText(message.content)}</ReactMarkdown>
+          ) : null}
           {streaming ? (
             <Box component="span" className="assistant-typing-caret" aria-hidden="true">
               ▍

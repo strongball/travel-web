@@ -33,6 +33,7 @@ interface ModelSelectorProps {
   onSelectReasoningEffort: (effort: ReasoningEffort) => void
   disabled?: boolean
   size?: 'small' | 'medium'
+  variant?: 'pill' | 'minimal'
 }
 
 type MenuStep = 'model' | 'effort'
@@ -44,6 +45,7 @@ export function ModelSelector({
   onSelectReasoningEffort,
   disabled = false,
   size = 'small',
+  variant = 'pill',
 }: ModelSelectorProps) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const [step, setStep] = useState<MenuStep>('model')
@@ -94,49 +96,88 @@ export function ModelSelector({
         aria-label="選擇 Gemini 模型與思考強度"
         aria-haspopup="true"
         aria-expanded={open}
-        sx={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: size === 'small' ? 1.25 : 1.6,
-          py: size === 'small' ? 0.45 : 0.65,
-          borderRadius: 3,
-          bgcolor: 'rgba(13, 118, 110, 0.08)',
-          border: '1px solid rgba(13, 118, 110, 0.2)',
-          color: '#0d766e',
-          fontSize: size === 'small' ? '0.78rem' : '0.86rem',
-          fontWeight: 700,
-          transition: 'all 160ms ease',
-          opacity: disabled ? 0.6 : 1,
-          '&:hover': {
-            bgcolor: 'rgba(13, 118, 110, 0.14)',
-            borderColor: '#0d766e',
-          },
-        }}
+        sx={
+          variant === 'minimal'
+            ? {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
+                px: 0.9,
+                py: 0.35,
+                borderRadius: 2,
+                color: 'text.secondary',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                transition: 'all 160ms ease',
+                opacity: disabled ? 0.6 : 1,
+                '&:hover': {
+                  bgcolor: 'rgba(0, 0, 0, 0.05)',
+                  color: 'text.primary',
+                },
+              }
+            : {
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.75,
+                px: size === 'small' ? 1.25 : 1.6,
+                py: size === 'small' ? 0.45 : 0.65,
+                borderRadius: 3,
+                bgcolor: 'rgba(13, 118, 110, 0.08)',
+                border: '1px solid rgba(13, 118, 110, 0.2)',
+                color: '#0d766e',
+                fontSize: size === 'small' ? '0.78rem' : '0.86rem',
+                fontWeight: 700,
+                transition: 'all 160ms ease',
+                opacity: disabled ? 0.6 : 1,
+                '&:hover': {
+                  bgcolor: 'rgba(13, 118, 110, 0.14)',
+                  borderColor: '#0d766e',
+                },
+              }
+        }
       >
-        <AutoAwesomeRoundedIcon sx={{ fontSize: size === 'small' ? 15 : 17 }} />
-        <span>{currentModel.shortLabel}</span>
-        <Box
-          component="span"
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 0.3,
-            px: 0.7,
-            py: 0.1,
-            borderRadius: 1.5,
-            bgcolor:
-              currentEffort.id === 'off'
-                ? 'rgba(0, 0, 0, 0.06)'
-                : 'rgba(99, 102, 241, 0.12)',
-            color: currentEffort.id === 'off' ? 'text.secondary' : '#4338ca',
-            fontSize: '0.72rem',
-            fontWeight: 800,
-          }}
-        >
-          <PsychologyRoundedIcon sx={{ fontSize: 13 }} />
-          {currentEffort.shortLabel}
-        </Box>
+        {variant === 'minimal' ? (
+          <>
+            <span>{currentModel.label}</span>
+            <Typography
+              component="span"
+              sx={{
+                color: currentEffort.id === 'off' ? 'text.disabled' : '#0d766e',
+                fontSize: '0.76rem',
+                fontWeight: 700,
+                ml: 0.25,
+              }}
+            >
+              {currentEffort.shortLabel}
+            </Typography>
+          </>
+        ) : (
+          <>
+            <AutoAwesomeRoundedIcon sx={{ fontSize: size === 'small' ? 15 : 17 }} />
+            <span>{currentModel.shortLabel}</span>
+            <Box
+              component="span"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.3,
+                px: 0.7,
+                py: 0.1,
+                borderRadius: 1.5,
+                bgcolor:
+                  currentEffort.id === 'off'
+                    ? 'rgba(0, 0, 0, 0.06)'
+                    : 'rgba(99, 102, 241, 0.12)',
+                color: currentEffort.id === 'off' ? 'text.secondary' : '#4338ca',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+              }}
+            >
+              <PsychologyRoundedIcon sx={{ fontSize: 13 }} />
+              {currentEffort.shortLabel}
+            </Box>
+          </>
+        )}
         <ExpandMoreRoundedIcon
           sx={{
             fontSize: size === 'small' ? 15 : 18,

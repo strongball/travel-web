@@ -10,6 +10,7 @@ import { config } from '../../../config'
 import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
+  AssistantAttachment,
   AssistantCodeExecution,
   AssistantGroundingMetadata,
   AssistantMessage,
@@ -233,6 +234,7 @@ export function buildAssistantPrompt(
   currentQuestion: string,
   todos: Array<{ title: string; category: string; isCompleted: boolean }> = [],
   todoCategories: string[] = [],
+  attachments: AssistantAttachment[] = [],
 ) {
   const promptParts = [
     '你是一位專業、條理分明的旅遊行程規劃助理。',
@@ -283,7 +285,18 @@ export function buildAssistantPrompt(
     )
   }
 
-  promptParts.push('', '## 使用者最新訊息', currentQuestion)
+  if (attachments.length > 0) {
+    promptParts.push('', '## 使用者附加檔案')
+    for (const att of attachments) {
+      if (att.textContent) {
+        promptParts.push(`### 檔案【${att.name}】內容：\n${att.textContent}`)
+      } else {
+        promptParts.push(`- 附加檔案：${att.name}（類型：${att.mimeType}）`)
+      }
+    }
+  }
+
+  promptParts.push('', '## 使用者最新訊息', currentQuestion || '（使用者提供了附件並請求分析）')
 
   return promptParts.join('\n')
 }

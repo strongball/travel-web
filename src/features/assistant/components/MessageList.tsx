@@ -2,10 +2,8 @@ import { type RefObject } from 'react'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
 import {
-  Alert,
   Avatar,
   Box,
-  Button,
   Chip,
   Divider,
   Paper,
@@ -44,9 +42,6 @@ export function MessageList({
     sending,
     rejectingProposalId,
     progressLabel,
-    error,
-    notice,
-    canRetry,
   } = controller
 
   return (
@@ -216,54 +211,9 @@ export function MessageList({
         <AssistantProgress label={progressLabel || '正在根據行程整理回覆…'} />
       ) : null}
 
-      {!online ? (
-        <Alert severity="info" variant="outlined" sx={{ flexShrink: 0, borderRadius: 2.5 }}>
-          助理與行程確認需要網路連線。
-        </Alert>
-      ) : null}
-      {notice ? (
-        <Alert
-          severity="warning"
-          variant="outlined"
-          onClose={controller.clearNotice}
-          sx={{ flexShrink: 0, borderRadius: 2.5 }}
-        >
-          {notice}
-        </Alert>
-      ) : null}
-      {error ? (
-        <Alert
-          severity="error"
-          variant="outlined"
-          onClose={controller.clearError}
-          sx={{ flexShrink: 0, borderRadius: 2.5 }}
-        >
-          {error}
-        </Alert>
-      ) : null}
-      {canRetry ? (
-        <Alert
-          severity="warning"
-          variant="outlined"
-          sx={{ flexShrink: 0, borderRadius: 2.5 }}
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              disabled={sending || !online}
-              onClick={() => void controller.retryLastTurn()}
-            >
-              重試
-            </Button>
-          }
-        >
-          上次回覆未完成，這個回合可以安全重試。
-        </Alert>
-      ) : null}
-
       <Box
         sx={{
-          minHeight: messages.length > 0 ? 'calc(100% - 80px)' : { xs: 16, sm: 24 },
+          minHeight: messages.length > 0 ? 16 : { xs: 16, sm: 24 },
           flexShrink: 0,
         }}
       />

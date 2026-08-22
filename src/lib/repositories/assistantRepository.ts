@@ -114,6 +114,7 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
       proposal: metadata.proposal as AssistantProposal | undefined,
       grounding: metadata.grounding as AssistantGroundingMetadata | undefined,
       codeExecutions: metadata.codeExecutions as AssistantCodeExecution[] | undefined,
+      attachments: (metadata.attachments as AssistantMessage['attachments']) ?? null,
     }
   })
 }
@@ -123,6 +124,7 @@ export async function saveAssistantMessage(threadId: string, message: AssistantM
   if (message.proposal) metadata.proposal = message.proposal
   if (message.grounding) metadata.grounding = message.grounding
   if (message.codeExecutions) metadata.codeExecutions = message.codeExecutions
+  if (message.attachments) metadata.attachments = message.attachments
 
   const { error } = await supabase.from('assistant_messages').upsert({
     id: message.id,
