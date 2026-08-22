@@ -10,7 +10,6 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 import type { AssistantConversationSnapshot } from '../../../providers/assistantConversationsProvider'
 import type { AssistantMessage, AssistantProposal } from '../types'
 import { MessageBubble } from './MessageBubble'
@@ -30,6 +29,7 @@ export function MessageList({
   turn,
   loading: conversationLoading,
   sending,
+  online,
   composer,
   onDecision,
   scrollRef,
@@ -41,6 +41,7 @@ export function MessageList({
   turn: AssistantConversationSnapshot['turn']
   loading: boolean
   sending: boolean
+  online: boolean
   /** 快捷提問寫入輸入框用。 */
   composer: { setText: (text: string) => void }
   onDecision: (proposal: AssistantProposal, approved: boolean) => void
@@ -50,8 +51,6 @@ export function MessageList({
   const streamingMessage = turn?.streaming ?? null
   const pendingToolCall = turn?.pendingToolCall ?? null
   const progressLabel = turn?.progressLabel ?? null
-  const online = useOnlineStatus()
-
   return (
     <Stack
       ref={scrollRef}

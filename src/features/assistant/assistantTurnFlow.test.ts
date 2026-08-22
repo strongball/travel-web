@@ -2,18 +2,11 @@ import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../types/database'
 import {
   DEFAULT_THREAD_TITLE,
-
   buildTurnRequest,
-  buildUserMessage,
   findRecoveredAssistantMessages,
   nextThreadTitle,
-
 } from './assistantTurnFlow'
-import type {
-  AssistantAttachment,
-  AssistantGraphState,
-  AssistantMessage,
-} from './types'
+import type { AssistantAttachment, AssistantGraphState, AssistantMessage } from './types'
 
 const itinerary: Itinerary = {
   id: 'trip-1',
@@ -79,36 +72,6 @@ describe('findRecoveredAssistantMessages', () => {
     expect(findRecoveredAssistantMessages([], null)).toEqual([])
   })
 })
-
-
-describe('buildUserMessage', () => {
-  it('creates a user message with the given turn id', () => {
-    const created = buildUserMessage('turn-1', '請看附件', [])
-    expect(created).toMatchObject({
-      role: 'user',
-      content: '請看附件',
-      turnId: 'turn-1',
-      attachments: null,
-    })
-    expect(created.id).toBeTruthy()
-    expect(created.createdAt).toBeTruthy()
-  })
-
-  it('copies attachments when present', () => {
-    const attachment: AssistantAttachment = {
-      id: 'a1',
-      name: 'plan.txt',
-      mimeType: 'text/plain',
-      size: 4,
-      textContent: 'plan',
-    }
-    const attachments = [attachment]
-    const created = buildUserMessage('turn-1', '請看附件', attachments)
-    expect(created.attachments).toEqual([attachment])
-    expect(created.attachments).not.toBe(attachments)
-  })
-})
-
 describe('buildTurnRequest', () => {
   it('derives day revisions from the current itinerary and normalizes attachments', () => {
     const request = buildTurnRequest({

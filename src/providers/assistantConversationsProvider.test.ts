@@ -87,7 +87,7 @@ const setup = async (seededMessages: AssistantMessage[] = []) => {
   })
   const provider = assistantConversationsProvider('thread-1')
   await container.read(provider.promise)
-  const notifier = container.read(provider.notifier)
+  const notifier = container.read(provider.notifier) as any
   return {
     provider,
     notifier,

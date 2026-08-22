@@ -32,19 +32,6 @@ export const findRecoveredAssistantMessages = (
     .filter((message) => !canonicalAssistantTurnIds.has(message.turnId))
 }
 
-export const buildUserMessage = (
-  turnId: string,
-  content: string,
-  attachments: AssistantAttachment[],
-): AssistantMessage => ({
-  id: crypto.randomUUID(),
-  turnId,
-  role: 'user',
-  content,
-  createdAt: new Date().toISOString(),
-  attachments: attachments.length > 0 ? [...attachments] : null,
-})
-
 export const buildTurnRequest = ({
   threadId,
   turnId,

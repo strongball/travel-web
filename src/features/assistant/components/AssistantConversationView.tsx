@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
@@ -11,8 +11,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
-import { assistantConversationsProvider, assistantThreadsProvider } from '../../../providers'
+import { assistantConversationsProvider } from '../../../providers'
 import type { AssistantConversationController } from '../useAssistantConversation'
 import { ConversationList } from './ConversationList'
 import { MessageList } from './MessageList'
@@ -24,17 +23,22 @@ export { AssistantAppBarActions }
 export function AssistantConversationView({
   controller,
   fullPage,
+  onAssistantToolbarChange,
 }: {
   controller: AssistantConversationController
   fullPage: boolean
+  onAssistantToolbarChange?: (toolbar: ReactNode) => void
 }) {
   const {
-    itineraryId,
     threadId,
     threads: threadActions,
     selectionStatus,
+    threadList: threads,
+    currentThread,
+    threadLoading: collectionLoading,
+    online,
     composer,
-    actions,
+    actions: { manualSummarize, registerFocusComposer, decideProposal, send },
     feedback,
   } = controller
   const riverRef = useRiverRef()
@@ -46,7 +50,6 @@ export function AssistantConversationView({
   const turn = snapshot?.turn ?? null
   const conversationLoading = conversationState.isLoading && !conversationState.hasData
   const sending = Boolean(turn)
-  const online = useOnlineStatus()
   const dismissFailure = () => {
     if (threadId) riverRef.read(assistantConversationsProvider(threadId).notifier).dismissFailure()
   }
@@ -54,13 +57,8 @@ export function AssistantConversationView({
   const streamingMessage = turn?.streaming ?? null
   const hasPendingProposal = !!turn?.pendingToolCall
 
-  const threadState = useRiverWatch(assistantThreadsProvider(itineraryId))
-  const threads = threadState.data ?? []
-  const collectionLoading = threadState.isLoading && threads.length === 0
-  const currentThread = threads.find((thread) => thread.id === threadId) ?? null
   const { showThreadList, deleteThread } = threadActions
   const deletingThreadId = selectionStatus.deletingThreadId
-  const { registerFocusComposer } = actions
 
   const conversationScrollRef = useRef<HTMLDivElement>(null)
   const initializedThreadRef = useRef<string | null>(null)
@@ -79,6 +77,35 @@ export function AssistantConversationView({
       })
     })
   }, [registerFocusComposer])
+
+  useEffect(() => {
+    if (!fullPage || !onAssistantToolbarChange) return
+    onAssistantToolbarChange(
+      <AssistantAppBarActions
+        thread={currentThread}
+        deletingThreadId={deletingThreadId}
+        sending={sending}
+        messageCount={messageCount}
+        online={online}
+        onConversationList={showThreadList}
+        onSummarize={() => void manualSummarize()}
+        onDelete={(targetId) => void deleteThread(targetId)}
+      />,
+    )
+  }, [
+    currentThread,
+    deleteThread,
+    deletingThreadId,
+    fullPage,
+    manualSummarize,
+    messageCount,
+    onAssistantToolbarChange,
+    online,
+    sending,
+    showThreadList,
+  ])
+
+  useEffect(() => () => onAssistantToolbarChange?.(null), [onAssistantToolbarChange])
 
   useLayoutEffect(() => {
     const container = conversationScrollRef.current
@@ -244,7 +271,7 @@ export function AssistantConversationView({
                 messageCount={messages.length}
                 online={online}
                 onConversationList={showThreadList}
-                onSummarize={() => void actions.manualSummarize()}
+                onSummarize={() => void manualSummarize()}
                 onDelete={(tId) => void deleteThread(tId)}
                 showConversationList={false}
               />
@@ -257,8 +284,9 @@ export function AssistantConversationView({
             turn={turn}
             loading={conversationLoading}
             sending={sending}
+            online={online}
             composer={composer}
-            onDecision={actions.decideProposal}
+            onDecision={decideProposal}
             scrollRef={conversationScrollRef}
           />
 
@@ -267,7 +295,7 @@ export function AssistantConversationView({
               inputRef={composerInputRef}
               text={composer.text}
               onChangeText={composer.setText}
-              onSubmit={actions.send}
+              onSubmit={send}
               disabled={composerDisabled}
               placeholder={composerPlaceholder}
               sending={sending}

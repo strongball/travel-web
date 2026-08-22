@@ -5,7 +5,7 @@ import type { Itinerary, TodoItem } from '../../types/database'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { assistantConversationsProvider } from '../../providers/assistantConversationsProvider'
 import { friendlyError } from './assistantConversationUtils'
-import { buildTurnRequest, buildUserMessage, nextThreadTitle } from './assistantTurnFlow'
+import { buildTurnRequest, nextThreadTitle } from './assistantTurnFlow'
 import { createAssistantRuntime } from './assistantRuntime'
 import { useAssistantComposerState } from './hooks/useAssistantComposerState'
 import { useAssistantThreads } from './hooks/useAssistantThreads'
@@ -36,6 +36,14 @@ export function useAssistantConversation(
     () => createAssistantRuntime(onItineraryApplied, setNotice),
     [onItineraryApplied],
   )
+  const conversationRuntime = useMemo(
+    () => ({
+      ...runtime,
+      updateSummary: async (targetId: string, summary: string) => updateSummary(targetId, summary),
+      onNotice: setNotice,
+    }),
+    [runtime, setNotice, updateSummary],
+  )
 
   const notifier = useCallback(
     (threadId: string) => riverRef.read(assistantConversationsProvider(threadId).notifier),
@@ -45,12 +53,9 @@ export function useAssistantConversation(
   useEffect(() => {
     setError(null)
     if (!threadId) return
-    void notifier(threadId).refresh({
-      ...runtime,
-      updateSummary: async (targetId, summary) => updateSummary(targetId, summary),
-      onNotice: setNotice,
-    }).catch((loadError) => setError(friendlyError(loadError, '無法載入對話內容')))
-  }, [notifier, runtime, setError, threadId, updateSummary])
+    void notifier(threadId).refresh(conversationRuntime)
+      .catch((loadError) => setError(friendlyError(loadError, '無法載入對話內容')))
+  }, [conversationRuntime, notifier, setError, threadId])
 
   const send = useCallback(async (event: FormEvent) => {
     event.preventDefault()
@@ -67,50 +72,40 @@ export function useAssistantConversation(
     ) ?? undefined
     const thread = await ensureActiveThread(title)
     const turnId = crypto.randomUUID()
-    const userMessage = buildUserMessage(turnId, content, attachments)
     composer.setText('')
     composer.clearAttachments()
     const conversation = notifier(thread.id)
-    await conversation.save(userMessage)
     await conversation.send(buildTurnRequest({
       threadId: thread.id,
       turnId,
       text: content,
-      createdAt: userMessage.createdAt,
+      createdAt: new Date().toISOString(),
       context: { itinerary, todos, todoCategories },
       selectedModel: composer.selectedModel,
       reasoningEffort: composer.reasoningEffort,
       thinkingBudget: getThinkingBudget(composer.reasoningEffort),
       attachments,
-    }), {
-      ...runtime,
-      updateSummary: async (targetId, summary) => updateSummary(targetId, summary),
-      onNotice: setNotice,
-    })
-  }, [composer, currentThread, ensureActiveThread, itinerary, notifier, online, runtime, setError, setNotice, updateSummary, todoCategories, todos])
+    }), conversationRuntime)
+  }, [composer, conversationRuntime, currentThread, ensureActiveThread, itinerary, notifier, online, setError, setNotice, todoCategories, todos])
 
   const decideProposal = useCallback(async (proposal: AssistantProposal, approved: boolean) => {
     if (!online || threadId !== proposal.threadId || isDeleting(proposal.threadId)) return
-    await notifier(proposal.threadId).resumeProposal({ approved }, {
-      ...runtime,
-      updateSummary: async (targetId, summary) => updateSummary(targetId, summary),
-      onNotice: setNotice,
-    })
+    await notifier(proposal.threadId).resumeProposal({ approved }, conversationRuntime)
     focusComposerRef.current?.()
-  }, [isDeleting, notifier, online, runtime, setNotice, threadId, updateSummary])
+  }, [conversationRuntime, isDeleting, notifier, online, threadId])
 
   const manualSummarize = useCallback(async () => {
     if (!threadId || !online) return
-    await notifier(threadId).summarize({
-      ...runtime,
-      updateSummary: async (targetId, summary) => updateSummary(targetId, summary),
-      onNotice: setNotice,
-    })
-  }, [notifier, online, runtime, setNotice, threadId, updateSummary])
+    await notifier(threadId).summarize(conversationRuntime)
+  }, [conversationRuntime, notifier, online, threadId])
 
   return {
     itineraryId: itinerary.id,
-    threadId: threads.threadId,
+    threadId,
+    online,
+    threadList: threads.threads,
+    currentThread,
+    threadLoading: threads.loading,
     threads: {
       selectThread: threads.selectThread,
       showThreadList: threads.showThreadList,

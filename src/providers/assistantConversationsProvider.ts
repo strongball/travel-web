@@ -87,7 +87,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     return { messages, turn: current?.turn ?? null }
   }
 
-  async save(message: AssistantMessage): Promise<void> {
+  private async save(message: AssistantMessage): Promise<void> {
     this.upsertMessage(message)
     await saveAssistantMessage(this.threadId, message)
   }
@@ -114,6 +114,14 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     return this.runExclusive(async () => {
       this.beginTurn()
       try {
+        await this.save({
+          id: crypto.randomUUID(),
+          turnId: request.turnId,
+          role: 'user',
+          content: request.text.trim(),
+          createdAt: request.createdAt ?? new Date().toISOString(),
+          attachments: request.attachments ?? null,
+        })
         const input = {
         ...request,
         rehydratedSummary: request.rehydratedSummary,
@@ -202,7 +210,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
   // ---- 回合轉移(由 service 呼叫;元件只讀)----
 
-  beginTurn(): void {
+  private beginTurn(): void {
     this.updateSnapshot((current) => ({
       ...current,
       turn: {
@@ -216,7 +224,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
    * 回合收尾:沒有等待決策的提案時收掉 overlay;
    * 錯誤狀態不在此清除(fail 後仍需顯示錯誤與重試)。
    */
-  endTurn(): void {
+  private endTurn(): void {
     this.updateSnapshot((current) => {
       if (!current.turn) return current
       if (current.turn.phase === 'error') return current
@@ -227,7 +235,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     })
   }
 
-  appendDelta(turnId: string, text: string): void {
+  private appendDelta(turnId: string, text: string): void {
     if (!text) return
     this.updateSnapshot((current) => {
       if (!current.turn) return current
@@ -257,7 +265,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     })
   }
 
-  setProgress(label: string | null): void {
+  private setProgress(label: string | null): void {
     this.updateSnapshot((current) => {
       if (!current.turn || current.turn.progressLabel === label) return current
       return { ...current, turn: { ...current.turn, progressLabel: label } }
@@ -268,7 +276,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
    * graph 回傳結果的落點:帶 pendingToolCall 時停在 paused;
    * 否則原子完成——訊息進 canonical、overlay 歸 null,單次轉移。
    */
-  async commitTurn(graphState: AssistantGraphState): Promise<AssistantMessage | null> {
+  private async commitTurn(graphState: AssistantGraphState): Promise<AssistantMessage | null> {
     if (graphState.pendingToolCall) {
       this.updateSnapshot((current) => ({
         ...current,
@@ -292,7 +300,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
   }
 
   /** checkpoint 恢復:以 checkpoint 為準同步提案卡;無活躍 turn 時也能重建 paused 卡片。 */
-  restore(graphState: AssistantGraphState | null): void {
+  private restore(graphState: AssistantGraphState | null): void {
     this.updateSnapshot((current) => {
       const pendingToolCall = graphState?.pendingToolCall ?? null
       if (!pendingToolCall) {
@@ -312,14 +320,14 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     })
   }
 
-  discardStreaming(): void {
+  private discardStreaming(): void {
     this.updateSnapshot((current) => {
       if (!current.turn || current.turn.streaming === null) return current
       return { ...current, turn: { ...current.turn, streaming: null } }
     })
   }
 
-  patchPendingProposal(proposalId: string, nextStatus: AssistantProposalStatus): void {
+  private patchPendingProposal(proposalId: string, nextStatus: AssistantProposalStatus): void {
     this.updateSnapshot((current) => {
       if (!current.turn || current.turn.pendingToolCall?.proposal.id !== proposalId) {
         return current

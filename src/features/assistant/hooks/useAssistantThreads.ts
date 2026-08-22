@@ -44,7 +44,9 @@ export function useAssistantThreads(itineraryId: string, setError: Dispatch<SetS
     if (state.isError) setError(friendlyError(state.error, '無法載入助理對話'))
   }, [setError, state.error, state.isError])
 
-  const { mutate: create } = useRiverMutation(async (ref) => ref.read(provider.notifier).create())
+  const { mutate: create, state: createState } = useRiverMutation(
+    async (ref) => ref.read(provider.notifier).create(),
+  )
   const { mutate: rename } = useRiverMutation(async (ref, input: { threadId: string; title: string }) => {
     await ref.read(provider.notifier).rename(input.threadId, input.title)
   })
@@ -113,7 +115,7 @@ export function useAssistantThreads(itineraryId: string, setError: Dispatch<SetS
     threadId,
     currentThread,
     loading: state.isLoading && threads.length === 0,
-    creatingThread: false,
+    creatingThread: createState.isLoading,
     deletingThreadId,
     isDeleting,
     selectThread: activate,
