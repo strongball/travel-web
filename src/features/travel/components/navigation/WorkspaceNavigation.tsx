@@ -10,6 +10,7 @@ import {
   Tabs,
 } from '@mui/material'
 import type { WorkspaceSection } from '../../travelWorkspaceUtils'
+import { triggerHaptic } from '../../../../lib/haptics'
 
 interface WorkspaceDesktopTabsProps {
   section: WorkspaceSection
@@ -67,6 +68,13 @@ export function WorkspaceBottomNav({
   visible,
   onSectionChange,
 }: WorkspaceBottomNavProps) {
+  const handleChange = (_: React.SyntheticEvent, value: WorkspaceSection) => {
+    if (value !== section) {
+      triggerHaptic('light')
+      onSectionChange(value)
+    }
+  }
+
   return (
     <Paper
       elevation={0}
@@ -88,7 +96,7 @@ export function WorkspaceBottomNav({
     >
       <BottomNavigation
         value={section}
-        onChange={(_, value: WorkspaceSection) => onSectionChange(value)}
+        onChange={handleChange}
         showLabels
         sx={{
           bgcolor: 'transparent',
@@ -117,3 +125,4 @@ export function WorkspaceBottomNav({
     </Paper>
   )
 }
+

@@ -39,6 +39,7 @@ import {
   WorkspaceBottomNav,
   WorkspaceDesktopTabs,
 } from './components/navigation/WorkspaceNavigation'
+import { MobileFloatingAction } from './components/navigation/MobileFloatingAction'
 import type {
   Attraction,
   Expense,
@@ -553,6 +554,18 @@ export function TravelWorkspacePage({
           />
         )}
       </Container>
+
+      <MobileFloatingAction
+        section={section}
+        visible={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
+        onAddAttraction={days.length > 0 ? () => openNewAttraction(days[0].id) : undefined}
+        onFocusTodoInput={() => {
+          const input = document.getElementById('todo-input-field')
+          input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          input?.focus()
+        }}
+        onAddExpense={onAddExpense}
+      />
 
       <WorkspaceBottomNav
         section={section}
