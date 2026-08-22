@@ -11,10 +11,8 @@ export function findIncompleteUserMessage(
   )
   for (const turnId of checkpointCompletedTurnIds) completedTurnIds.add(turnId)
 
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message.role === 'user' && !completedTurnIds.has(message.turnId)) return message
-  }
-
-  return null
+  const latestUserMessage = messages.findLast((message) => message.role === 'user')
+  return latestUserMessage && !completedTurnIds.has(latestUserMessage.turnId)
+    ? latestUserMessage
+    : null
 }

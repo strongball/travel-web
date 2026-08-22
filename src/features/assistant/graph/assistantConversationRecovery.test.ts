@@ -50,6 +50,14 @@ describe('findIncompleteUserMessage', () => {
     expect(findIncompleteUserMessage(messages)).toBe(latestOrphan)
   })
 
+  it('ignores an older orphan after a later turn has completed', () => {
+    const olderOrphan = message('msg-1', 'user', 'turn-1')
+    const laterUser = message('msg-2', 'user', 'turn-2')
+    const laterReply = message('msg-3', 'assistant', 'turn-2')
+
+    expect(findIncompleteUserMessage([olderOrphan, laterUser, laterReply])).toBeNull()
+  })
+
   it('handles out-of-order turn ids in the list', () => {
     const orphan = message('msg-orphan', 'user', 'turn-x')
     const messages = [
