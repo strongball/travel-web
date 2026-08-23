@@ -1,4 +1,5 @@
 import { type RefObject } from 'react'
+import { useRiverWatch } from '@stball/react-river'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
 import {
@@ -10,7 +11,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import type { AssistantConversationSnapshot } from '../../../providers/assistantConversationsProvider'
+import { assistantConversationsProvider } from '../../../providers'
 import type { AssistantMessage, AssistantProposal } from '../types'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
@@ -24,38 +25,39 @@ const quickPrompts = [
 ]
 
 export function MessageList({
+  itineraryId,
   threadId,
-  messages,
-  turn,
-  loading: conversationLoading,
-  sending,
-  online,
-  composer,
-  onDecision,
   scrollRef,
-  onScroll,
+  online,
+  onQuickPrompt,
+  onDecision,
 }: {
-  /** 目標對話;資料由元件自行訂閱(graph → river → component)。 */
+  itineraryId: string
+  /** 目標對話;訊息與生成中的狀態由此元件自行訂閱(graph → river → component)。 */
   threadId: string | null
-  messages: AssistantMessage[]
-  turn: AssistantConversationSnapshot['turn']
-  loading: boolean
-  sending: boolean
-  online: boolean
-  /** 快捷提問寫入輸入框用。 */
-  composer: { setText: (text: string) => void }
-  onDecision: (proposal: AssistantProposal, approved: boolean) => void
   scrollRef: RefObject<HTMLDivElement | null>
-  onScroll?: (event: React.UIEvent<HTMLDivElement>) => void
+  online: boolean
+  /** 快捷提問寫入輸入草稿。 */
+  onQuickPrompt: (text: string) => void
+  onDecision: (proposal: AssistantProposal, approved: boolean) => void
 }) {
+  const conversationState = useRiverWatch(
+    assistantConversationsProvider({ itineraryId, threadId: threadId ?? '' }),
+    { enabled: Boolean(threadId) },
+  )
+
+  const messages = conversationState?.data?.messages ?? []
+  const turn = conversationState?.data?.turn ?? null
+  const loading = Boolean(conversationState?.isLoading && !conversationState.hasData)
+  const sending = Boolean(turn)
   const streamingMessage = turn?.streaming ?? null
   const pendingToolCall = turn?.pendingToolCall ?? null
   const progressLabel = turn?.progressLabel ?? null
+
   return (
     <Stack
       ref={scrollRef}
       spacing={2}
-      onScroll={onScroll}
       sx={{
         position: 'relative',
         flex: 1,
@@ -86,7 +88,7 @@ export function MessageList({
             從左側清單挑選對話，或點擊「+」建立新對話。
           </Typography>
         </Paper>
-      ) : conversationLoading ? (
+      ) : loading ? (
         <ConversationLoading />
       ) : messages.length === 0 && !streamingMessage && !pendingToolCall ? (
         <Paper
@@ -151,7 +153,7 @@ export function MessageList({
               <Chip
                 key={prompt}
                 label={prompt}
-                onClick={() => composer.setText(prompt)}
+                onClick={() => onQuickPrompt(prompt)}
                 sx={{
                   py: 2.2,
                   px: 1,
@@ -177,7 +179,7 @@ export function MessageList({
         </Paper>
       ) : (
         <>
-          {messages.map((message) => {
+          {messages.map((message: AssistantMessage) => {
             const messageProposal = message.proposal
             return (
               <Stack key={message.id} data-message-id={message.id} spacing={1.25}>

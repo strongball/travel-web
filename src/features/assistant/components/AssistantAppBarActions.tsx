@@ -4,7 +4,6 @@ import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import SummarizeRoundedIcon from '@mui/icons-material/SummarizeRounded'
 import {
-  CircularProgress,
   Divider,
   IconButton,
   ListItemIcon,
@@ -18,7 +17,6 @@ import type { AssistantThread } from '../../../lib/repositories/assistantReposit
 
 export function AssistantAppBarActions({
   thread,
-  deletingThreadId,
   sending,
   messageCount,
   online,
@@ -28,7 +26,6 @@ export function AssistantAppBarActions({
   showConversationList = true,
 }: {
   thread: AssistantThread | null
-  deletingThreadId: string | null
   sending: boolean
   messageCount: number
   online: boolean
@@ -57,15 +54,10 @@ export function AssistantAppBarActions({
             <span>
               <IconButton
                 aria-label="對話操作"
-                disabled={deletingThreadId === thread.id}
                 onClick={(event) => setMenuAnchor(event.currentTarget)}
                 sx={{ width: 38, height: 38 }}
               >
-                {deletingThreadId === thread.id ? (
-                  <CircularProgress color="inherit" size={18} />
-                ) : (
-                  <MoreVertRoundedIcon fontSize="small" />
-                )}
+                <MoreVertRoundedIcon fontSize="small" />
               </IconButton>
             </span>
           </Tooltip>

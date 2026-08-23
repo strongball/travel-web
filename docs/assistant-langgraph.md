@@ -11,16 +11,16 @@
 - `src/features/assistant/tools/proposalToolRuntime.ts`：Todo 與 Itinerary 共用的 `interrupt()`、resume decision 與 ToolMessage payload 處理。
 - `src/features/assistant/tools/itinerary/`：行程修改提案的 schema、操作驗證、套用與顯示。
 - `src/features/assistant/tools/todo/`：待辦清單提案的 schema、操作套用與顯示。
-- `src/features/assistant/useAssistantConversation.ts`：組裝控制面 controller(`itineraryId / threadId / threads / selectionStatus / composer / actions / feedback`)。對話資料不由 controller 轉發,元件透過 `assistantViewHooks.ts` 自行訂閱 River(graph → river → component)。
-- `src/features/assistant/assistantViewHooks.ts`：元件讀取資料的唯一縫——`useAssistantConversationView(threadId)`(訊息、turn overlay、loading、sending)與 `useAssistantThreadsCollection(itineraryId)`。
-- `src/features/assistant/assistantTurnFlow.ts`：回合流程的純函數(訊息/請求建構、checkpoint 恢復推導、retry 清除條件、自動命名),不依賴 React 與 River。
-- `src/features/assistant/hooks/useAssistantTurnEngine.ts`：回合控制面(薄 service)。命令進、狀態出:send/retryLastTurn/decideProposal/manualSummarize 共用同一份執行迴圈(上鎖、事件接線、可恢復錯誤重試、commit、摘要同步),所有視圖更新直接寫進 keyed 的對話 provider;不做 React state 管理。
-- `src/features/assistant/hooks/useAssistantThreads.ts`：thread collection(River)與選取狀態;`ensureActiveThread()` 供送出流程確保 thread 存在並套用自動命名。
+- `src/features/assistant/components/`：展示層直接訂閱 River(graph → river → component)；`AssistantConversationView` 只持有選取、草稿等檢視狀態並觸發使用者命令，不主動載入對話。
+- `src/providers/assistantTurnActionsProvider.ts`：只協調需要同時碰觸 thread collection 與 conversation 的送出、刪除、提案決策與壓縮命令；單一 provider 的 CRUD 直接呼叫其 notifier。
+- `src/providers/assistantRuntimeProvider.ts`：依 itinerary 建立 graph runtime、同步 thread summary、發送系統公告，並在提案套用後直接 refresh 既有的 itinerary/expense/todo providers；runtime 不參與 SSR 序列化。
+- `src/features/assistant/assistantAttachments.ts`：檔案大小/type 判斷與 FileReader 附件轉換；容器負責丟棄已失效的非同步讀取結果。
+- `src/features/assistant/assistantTurnFlow.ts`：回合流程的純函數(request 建構、checkpoint 缺漏訊息推導、自動命名),不依賴 React 與 River。
 - `src/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接 immutable 更新 cache，`refresh()` 只作明確的重新驗證。
-- `src/providers/assistantConversationsProvider.ts`：單一 thread 的「對話 provider」= canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)與跨回合的 `retryRequest`。`commitTurn()` 在有最終訊息時原子完成:訊息進 canonical、overlay 歸 null;`build()` 重載保留處理中的 turn。切換 thread 不清除其他 key 的快照(殘留語意)。
-- `src/providers/assistantEngineStateProvider.ts`：全域鎖的 UI 投影(`sending`);互斥判斷仍以 service 內 refs 同步執行。
-- thread collection 是跨元件共享的資料，選取中的 `threadId`、輸入框等短生命週期 UI 狀態留在 hooks/controller。
-- 過期事件防護由 keyed provider 天然隔離取代:寫入只落在目標 thread 自己的 snapshot 上。回合錯誤屬於該 thread 的 snapshot(切走再回來仍看得到);thread CRUD/載入失敗則走 controller `feedback.error`。
+- `src/providers/assistantConversationsProvider.ts`：以 `{ itineraryId, threadId }` 為 key 的對話 provider = canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)。`build()` 同時載入 canonical history 與 checkpoint、恢復 pending proposal 並回存缺漏的 assistant message；舊載入結果不可覆蓋已開始的 turn。
+- 選取中的 `threadId`(sessionStorage 記憶)與輸入草稿是檢視狀態,由容器元件 `AssistantConversationView` 持有;「刪除中」的同步互斥放在 `AssistantThreadsNotifier` 本體(`isDeleting()`),回合錯誤屬於各 thread 的 snapshot。
+- 載入錯誤由 River `AsyncValue` 表達；turn 內錯誤屬於各 thread snapshot；短暫 CRUD/附件錯誤仍是 component-local feedback；runtime 公告由 `assistantNoticeProvider(itineraryId)` 持有。
+- 過期事件防護由 keyed provider 天然隔離:寫入只落在目標 thread 自己的 snapshot 上(切走再回來仍看得到回合錯誤)。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
 - `supabase/functions/gemini-proxy`：代理已驗證使用者對固定 Gemini model 的 `generateContent` 與 `streamGenerateContent?alt=sse`；不執行 graph，也不讀寫產品資料。
 
@@ -118,15 +118,15 @@ sequenceDiagram
     autonumber
     actor User as 使用者
     participant UI as React UI (MessageList)
-    participant Hook as useAssistantConversation
+    participant River as TurnActions + ConversationNotifier
     participant Runner as Assistant Graph Runner
     participant LLM as Gemini Model (Proxy)
     participant DB as Supabase (Data API)
 
     User->>UI: 送出一般訊息 / 諮詢旅遊資訊
-    UI->>Hook: send(text)
-    Hook->>DB: 儲存 User Message (assistant_messages)
-    Hook->>Runner: sendTurn(request, onProgress, onStream)
+    UI->>River: turnActions.sendMessage(…)
+    River->>DB: 儲存 User Message (assistant_messages)
+    River->>Runner: sendTurn(request, onProgress, onStream)
 
     rect rgb(240, 253, 250)
         Note over Runner: 1. prepare_context
@@ -137,8 +137,8 @@ sequenceDiagram
         Note over Runner,LLM: 2. respond
         Runner->>LLM: workflow.stream (帶入 Tools 與對話紀錄)
         LLM-->>Runner: assistant_text_delta (逐段文字)
-        Runner-->>Hook: assistant_text_delta
-        Hook-->>UI: 累加 streamingMessage、即時 Markdown 與閃爍游標
+        Runner-->>River: assistant_text_delta
+        River-->>UI: 累加 streamingMessage、即時 Markdown 與閃爍游標
         LLM-->>Runner: 完整 AIMessage (純文字回答，無 Tool Call)
     end
 
@@ -147,9 +147,9 @@ sequenceDiagram
         Runner->>Runner: 建立 AssistantMessage 物件並清除 Request
     end
 
-    Runner-->>Hook: 回傳 AssistantGraphState (含 assistantMessage)
-    Hook->>DB: 儲存 Assistant Message (assistant_messages)
-    Hook->>UI: 更新對話清單，呈現助理文字回覆
+    Runner-->>River: 回傳 AssistantGraphState (含 assistantMessage)
+    River->>DB: 儲存 Assistant Message (assistant_messages)
+    River->>UI: 更新對話清單，呈現助理文字回覆
 ```
 
 ---
@@ -173,16 +173,16 @@ sequenceDiagram
     autonumber
     actor User as 使用者
     participant UI as React UI (ProposalCard)
-    participant Hook as useAssistantConversation
+    participant River as TurnActions + ConversationNotifier
     participant Runner as Assistant Graph Runner
     participant ToolNode as ToolNode / Proposal Tool
     participant DB as Supabase (RPC / Checkpoint)
     participant LLM as Gemini Model (Proxy)
 
     User->>UI: 提出修改需求 (例如:「幫我第二天加淺草寺」)
-    UI->>Hook: send(text)
-    Hook->>DB: 儲存 User Message (assistant_messages)
-    Hook->>Runner: sendTurn(request, onProgress)
+    UI->>River: turnActions.sendMessage(…)
+    River->>DB: 儲存 User Message (assistant_messages)
+    River->>Runner: sendTurn(request, onProgress)
 
     Note over Runner,LLM: 1. 模型分析並決定呼叫提案工具
     Runner->>LLM: respond (Context + Tools)
@@ -195,13 +195,13 @@ sequenceDiagram
     ToolNode->>DB: CheckpointSaver 儲存中斷狀態 (tasks, interrupts)
     ToolNode-->>Runner: Graph 中斷暫停
 
-    Runner-->>Hook: 回傳 state (含 pendingToolCall)
-    Hook-->>UI: pendingToolCall -> 顯示大張完整展開的待確認 ProposalCard (詢問當下)
+    Runner-->>River: 回傳 state (含 pendingToolCall)
+    River-->>UI: pendingToolCall -> 顯示大張完整展開的待確認 ProposalCard (詢問當下)
 
     Note over User,UI: 3. 使用者確認或拒絕
     User->>UI: 點擊「確認儲存並套用」或「不套用，繼續討論」
-    UI->>Hook: decideProposal(proposal, approved)
-    Hook->>Runner: resumeTurn(proposal.threadId, { approved }, onStream)
+    UI->>River: turnActions.decideProposal(proposal, approved)
+    River->>Runner: resumeTurn(proposal.threadId, { approved }, onStream)
 
     Note over Runner,ToolNode: 4. 恢復執行工具 (Resume Replay)
     Runner->>ToolNode: Command({ resume: { approved } })
@@ -219,17 +219,17 @@ sequenceDiagram
     Note over Runner,LLM: 5. 工具結果送回模型生成總結
     Runner->>LLM: workflow.stream (帶入 ToolMessage)
     LLM-->>Runner: assistant_text_delta (逐段文字)
-    Runner-->>Hook: assistant_text_delta -> UI 累加 streamingMessage
+    Runner-->>River: assistant_text_delta -> UI 累加 streamingMessage
     LLM-->>Runner: 完整 AIMessage (文字總結回覆)
 
     Note over Runner: 6. finalize_response
     Runner->>Runner: 建立 AssistantMessage (metadata 附上 completed proposal)
     Runner->>DB: 儲存最終 Checkpoint
-    Runner-->>Hook: 回傳完整狀態 (pendingToolCall 清除, 含 assistantMessage)
+    Runner-->>River: 回傳完整狀態 (pendingToolCall 清除, 含 assistantMessage)
 
-    Hook->>DB: 儲存 Assistant Message (含 proposal metadata)
-    Hook->>DB: onItineraryApplied() 重新同步行程與待辦資料
-    Hook-->>UI: 更新對話歷史 -> ProposalCard 轉為歷史「預設摺疊」卡片
+    River->>DB: 儲存 Assistant Message (含 proposal metadata)
+    River->>River: refresh itinerary / expense / todo providers
+    River-->>UI: 更新對話歷史 -> ProposalCard 轉為歷史「預設摺疊」卡片
 ```
 
 ### Replay 注意事項
@@ -259,6 +259,8 @@ Dynamic interrupt 恢復時會從 tool 開頭重新執行，不是從 `interrupt
 - `src/features/assistant/graph/assistantGraph.test.ts`：Graph 流程、dynamic interrupt、approve/reject resume 與摘要。
 - `src/features/assistant/api/assistantOperations.test.ts`：操作解析與 itinerary invariants。
 - `src/features/assistant/tools/providerToolSchema.test.ts`：Tool schema 與 runtime context 驗證。
+- `src/providers/assistantConversationsProvider.test.ts`：provider-owned 載入、checkpoint 恢復、streaming 狀態轉移與 stale completion 防護。
+- `src/features/assistant/assistantTurnActionsProvider.test.tsx`：跨 thread/conversation 命令、刪除互斥與切換 thread 的隔離。
 
 ```sh
 npm test -- --run

@@ -1,4 +1,5 @@
-import { useRef, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useRiverWatch } from '@stball/react-river'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded'
@@ -12,11 +13,35 @@ import {
   Stack,
   Tooltip,
 } from '@mui/material'
+import {
+  assistantConversationsProvider,
+} from '../../../providers'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
+import type { AssistantAttachment } from '../types'
 import { ModelSelector } from './ModelSelector'
 import { AttachmentPreviewList } from './AttachmentPreviewList'
-import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
-import type { AssistantAttachment } from '../types'
-import type { ReasoningEffort } from '../models'
+
+function useStoredPreference<T extends string>(key: string, fallback: T) {
+  const [value, setValueState] = useState<T>(() => {
+    try {
+      return (localStorage.getItem(key) as T | null) ?? fallback
+    } catch {
+      return fallback
+    }
+  })
+
+  const setValue = useCallback((nextValue: T) => {
+    setValueState(nextValue)
+    try {
+      localStorage.setItem(key, nextValue)
+    } catch {
+      // The preference still applies for this page session.
+    }
+  }, [key])
+
+  return [value, setValue] as const
+}
 
 const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement | HTMLTextAreaElement>) => {
   if (event.nativeEvent.isComposing || event.keyCode === 229) return
@@ -27,69 +52,103 @@ const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement | HTMLTextAre
 }
 
 export function ChatComposer({
-  text,
-  onChangeText,
-  onSubmit,
-  disabled,
-  placeholder,
-  sending,
+  itineraryId,
+  threadId,
   inputRef,
-  selectedModel,
-  onSelectModel,
-  reasoningEffort,
-  onSelectReasoningEffort,
-  attachments = [],
-  onAddAttachments,
-  onRemoveAttachment,
-  error,
-  onClearError,
-  notice,
-  onClearNotice,
   online = true,
+  draft,
+  onSubmit,
+  error: feedbackError = null,
+  notice = null,
+  onClearError,
+  onClearNotice,
 }: {
-  text: string
-  onChangeText: (value: string) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  disabled: boolean
-  placeholder: string
-  sending: boolean
-  inputRef?: React.Ref<HTMLInputElement | HTMLTextAreaElement>
-  selectedModel?: string
-  onSelectModel?: (modelId: string) => void
-  reasoningEffort?: ReasoningEffort
-  onSelectReasoningEffort?: (effort: ReasoningEffort) => void
-  attachments?: AssistantAttachment[]
-  onAddAttachments?: (files: File[]) => Promise<void>
-  onRemoveAttachment?: (id: string) => void
-  error?: string | null
-  onClearError?: () => void
-  notice?: string | null
-  onClearNotice?: () => void
+  itineraryId: string
+  threadId: string
+  inputRef?: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
   online?: boolean
+  /** 輸入草稿(文字與附件),由容器持有。 */
+  draft: {
+    text: string
+    setText: (text: string) => void
+    attachments: AssistantAttachment[]
+    addAttachments: (files: File[]) => Promise<void>
+    removeAttachment: (id: string) => void
+  }
+  /** 送出;容器負責清空草稿、建立回合並更新選取。 */
+  onSubmit: (payload: {
+    text: string
+    attachments: AssistantAttachment[]
+    selectedModel?: string
+    reasoningEffort?: ReasoningEffort
+  }) => void
+  /** 容器層(載入/清單/附件)的錯誤;turn 內錯誤由對話 snapshot 提供。 */
+  error?: string | null
+  onClearError: () => void
+  /** 系統公告，由 itinerary-scoped River provider 持有。 */
+  notice?: string | null
+  onClearNotice: () => void
 }) {
+  const conversationState = useRiverWatch(assistantConversationsProvider({ itineraryId, threadId }))
+
+  const [selectedModel, setSelectedModel] = useStoredPreference<string>(
+    'preferred_gemini_model',
+    DEFAULT_GEMINI_MODEL,
+  )
+  const [reasoningEffort, setReasoningEffort] = useStoredPreference<ReasoningEffort>(
+    'preferred_gemini_reasoning_effort',
+    DEFAULT_REASONING_EFFORT,
+  )
+
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const text = draft.text
+  const attachments = draft.attachments
+
+  const turn = conversationState.data?.turn ?? null
+  const sending = Boolean(turn)
+  const hasPendingProposal = !!turn?.pendingToolCall
+  const loading = conversationState.isLoading && !conversationState.hasData
+  const unavailable = conversationState.isError && !conversationState.hasData
 
   const { isListening, error: speechError, clearError: clearSpeechError, toggleListening } =
     useSpeechRecognition({
       onTranscript: (transcript) => {
-        onChangeText(text ? `${text} ${transcript}` : transcript)
+        draft.setText(draft.text ? `${draft.text} ${transcript}` : transcript)
       },
     })
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
-    if (files && files.length > 0 && onAddAttachments) {
-      void onAddAttachments(Array.from(files))
+    if (files && files.length > 0) {
+      void draft.addAttachments(Array.from(files))
     }
     event.target.value = ''
   }
 
-  const canSubmit = (Boolean(text.trim()) || attachments.length > 0) && !disabled && !sending
+  const canSubmit = (Boolean(text.trim()) || attachments.length > 0) &&
+    !loading && !unavailable && !sending && !hasPendingProposal && online
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!canSubmit) return
+    onSubmit({ text, attachments, selectedModel, reasoningEffort })
+  }
+
+  const composerPlaceholder = unavailable
+    ? '無法載入對話，請切換對話後重試'
+    : loading
+    ? '正在載入對話…'
+    : hasPendingProposal
+    ? '請先確認或拒絕待處理的行程提案'
+    : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
+
+  const disabled = loading || unavailable || sending || hasPendingProposal || !online
+  const error = turn?.error ?? feedbackError
 
   return (
     <Stack
       component="form"
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit}
       sx={{
         px: { xs: 1.25, sm: 2 },
         pt: 0.75,
@@ -164,11 +223,11 @@ export function ChatComposer({
         }}
       >
         {/* 附件預覽 */}
-        {attachments.length > 0 && onRemoveAttachment ? (
+        {attachments.length > 0 ? (
           <AttachmentPreviewList
             attachments={attachments}
-            onRemoveAttachment={onRemoveAttachment}
-            disabled={disabled || sending}
+            onRemoveAttachment={draft.removeAttachment}
+            disabled={disabled}
           />
         ) : null}
 
@@ -189,9 +248,9 @@ export function ChatComposer({
           multiline
           minRows={1}
           maxRows={6}
-          placeholder={isListening ? '正在聆聽您的語音輸入…' : placeholder}
+          placeholder={isListening ? '正在聆聽您的語音輸入…' : composerPlaceholder}
           value={text}
-          onChange={(event) => onChangeText(event.target.value)}
+          onChange={(event) => draft.setText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           disabled={disabled}
           sx={{
@@ -225,7 +284,7 @@ export function ChatComposer({
                 <IconButton
                   size="small"
                   aria-label="上傳檔案或圖片"
-                  disabled={disabled || sending}
+                  disabled={disabled}
                   onClick={() => fileInputRef.current?.click()}
                   sx={{
                     width: 30,
@@ -242,16 +301,14 @@ export function ChatComposer({
               </span>
             </Tooltip>
 
-            {selectedModel && onSelectModel ? (
-              <ModelSelector
-                selectedModel={selectedModel}
-                onSelectModel={onSelectModel}
-                reasoningEffort={reasoningEffort ?? 'low'}
-                onSelectReasoningEffort={onSelectReasoningEffort ?? (() => {})}
-                disabled={disabled || sending}
-                variant="minimal"
-              />
-            ) : null}
+            <ModelSelector
+              selectedModel={selectedModel}
+              onSelectModel={setSelectedModel}
+              reasoningEffort={reasoningEffort ?? 'low'}
+              onSelectReasoningEffort={setReasoningEffort}
+              disabled={disabled}
+              variant="minimal"
+            />
           </Stack>
 
           {/* 右側群組：麥克風 語音輸入 與 送出按鈕 */}
@@ -261,7 +318,7 @@ export function ChatComposer({
                 <IconButton
                   size="small"
                   aria-label={isListening ? '停止語音輸入' : '開始語音輸入'}
-                  disabled={disabled || sending}
+                  disabled={disabled}
                   onClick={toggleListening}
                   sx={{
                     width: 32,

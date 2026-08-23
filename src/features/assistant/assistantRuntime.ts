@@ -6,7 +6,7 @@ import { enrichAppliedProposalPlaces } from './tools'
 import type { AssistantProposal } from './types'
 
 export const createAssistantRuntime = (
-  onItineraryApplied: () => void | Promise<void>,
+  refreshWorkspace: () => void | Promise<void>,
   onNotice: (message: string) => void,
 ) => {
   const checkpointer = new SupabaseAssistantCheckpointer(supabase)
@@ -21,11 +21,16 @@ export const createAssistantRuntime = (
               onNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
             }
           }
-          await onItineraryApplied()
+          await refreshWorkspace()
         }
         return status
       },
     },
   })
   return { checkpointer, runner }
+}
+
+export type AssistantConversationRuntime = ReturnType<typeof createAssistantRuntime> & {
+  updateSummary: (threadId: string, summary: string) => Promise<void>
+  onNotice: (message: string) => void
 }

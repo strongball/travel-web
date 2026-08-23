@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
+  Alert,
   Avatar,
   Box,
   CircularProgress,
@@ -11,98 +12,202 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { assistantConversationsProvider } from '../../../providers'
-import type { AssistantConversationController } from '../useAssistantConversation'
+import {
+  assistantConversationsProvider,
+  assistantNoticeProvider,
+  assistantThreadsProvider,
+  assistantTurnActionsProvider,
+} from '../../../providers'
+import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
+import type { Itinerary, TodoItem } from '../../../types/database'
+import type { ReasoningEffort } from '../models'
+import type { AssistantAttachment, AssistantProposal } from '../types'
+import { friendlyError, rememberedThread, rememberThread } from '../assistantConversationUtils'
+import { readAssistantAttachments } from '../assistantAttachments'
 import { ConversationList } from './ConversationList'
 import { MessageList } from './MessageList'
 import { ChatComposer } from './ChatComposer'
 import { AssistantAppBarActions } from './AssistantAppBarActions'
 
-export { AssistantAppBarActions }
-
+/**
+ * 對話工作區的容器:持有選取中的執行緒、輸入草稿與錯誤訊息這幾份檢視狀態,
+ * 負責檢視狀態與使用者事件；訊息載入、checkpoint 恢復與生成狀態由 River 管理。
+ */
 export function AssistantConversationView({
-  controller,
+  itineraryId,
+  itinerary,
+  todos,
+  todoCategories,
   fullPage,
   onAssistantToolbarChange,
 }: {
-  controller: AssistantConversationController
+  itineraryId: string
+  itinerary: Itinerary
+  todos: TodoItem[]
+  todoCategories: string[]
   fullPage: boolean
   onAssistantToolbarChange?: (toolbar: ReactNode) => void
 }) {
-  const {
-    threadId,
-    threads: threadActions,
-    selectionStatus,
-    threadList: threads,
-    currentThread,
-    threadLoading: collectionLoading,
-    online,
-    composer,
-    actions: { manualSummarize, registerFocusComposer, decideProposal, send },
-    feedback,
-  } = controller
-  const riverRef = useRiverRef()
-  const conversationState = useRiverWatch(assistantConversationsProvider(threadId ?? ''))
-  const snapshot = conversationState.data
-  const messages = snapshot?.messages ?? []
-  const messageCount = messages.length
-  const lastMessage = messages.at(-1)
-  const turn = snapshot?.turn ?? null
-  const conversationLoading = conversationState.isLoading && !conversationState.hasData
+  const ref = useRiverRef()
+  const online = useOnlineStatus()
+  const threadStorageKey = `assistant-active-thread:${itineraryId}`
+  const [threadId, setThreadId] = useState<string | null>(() => rememberedThread(threadStorageKey))
+  const [draftText, setDraftText] = useState('')
+  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const attachmentGenerationRef = useRef(0)
+  const selectionGenerationRef = useRef(0)
+  const threadIdRef = useRef(threadId)
+
+  useEffect(() => () => {
+    attachmentGenerationRef.current += 1
+    selectionGenerationRef.current += 1
+  }, [])
+
+  const threadProvider = assistantThreadsProvider(itineraryId)
+  const conversationProvider = assistantConversationsProvider({
+    itineraryId,
+    threadId: threadId ?? '',
+  })
+  const threadsState = useRiverWatch(threadProvider)
+  const conversationState = useRiverWatch(conversationProvider, { enabled: Boolean(threadId) })
+  const turnActions = useRiverWatch(assistantTurnActionsProvider(itineraryId))
+  const notice = useRiverWatch(assistantNoticeProvider(itineraryId))
+
+  const messages = conversationState?.data?.messages ?? []
+  const turn = conversationState?.data?.turn ?? null
   const sending = Boolean(turn)
-  const dismissFailure = () => {
-    if (threadId) riverRef.read(assistantConversationsProvider(threadId).notifier).dismissFailure()
-  }
 
-  const streamingMessage = turn?.streaming ?? null
-  const hasPendingProposal = !!turn?.pendingToolCall
+  const select = useCallback((next: string | null) => {
+    if (threadIdRef.current !== next) selectionGenerationRef.current += 1
+    threadIdRef.current = next
+    setThreadId(next)
+    setError(null)
+    rememberThread(threadStorageKey, next)
+  }, [threadStorageKey])
 
-  const { showThreadList, deleteThread } = threadActions
-  const deletingThreadId = selectionStatus.deletingThreadId
+  // 清單載入後,選取無效或未選時退回記住的/第一個執行緒。
+  useEffect(() => {
+    if (!threadsState.hasData) return
+    const list = threadsState.data ?? []
+    const currentValid = threadId && list.some((thread) => thread.id === threadId) ? threadId : null
+    const next = currentValid ?? list[0]?.id ?? null
+    if (next !== threadId) select(next)
+  }, [select, threadId, threadsState])
+
+  // ---- 使用者命令（資料載入與 checkpoint 恢復由 River provider build 處理）----
+
+  const handleCreateThread = useCallback(async () => {
+    try {
+      const thread = await ref.read(threadProvider.notifier).create()
+      select(thread.id)
+    } catch (createError) {
+      setError(friendlyError(createError, '無法建立新對話'))
+    }
+  }, [ref, select, threadProvider])
+
+  const handleRenameThread = useCallback(async (targetId: string, title: string) => {
+    try {
+      await ref.read(threadProvider.notifier).rename(targetId, title)
+    } catch (renameError) {
+      setError(friendlyError(renameError, '無法重新命名對話'))
+    }
+  }, [ref, threadProvider])
+
+  const handleDeleteThread = useCallback(async (targetId: string) => {
+    try {
+      const deleted = await turnActions.deleteThread(targetId)
+      // 刪掉的是目前選取的對話時退回清單;其餘交給自動選取效果收斂。
+      if (deleted && targetId === threadId) select(null)
+    } catch (deleteError) {
+      setError(friendlyError(deleteError, '無法刪除對話'))
+    }
+  }, [select, threadId, turnActions])
+
+  const handleSummarize = useCallback(() => {
+    if (!threadId) return
+    void turnActions.summarize(threadId)
+  }, [threadId, turnActions])
+
+  const handleAddAttachments = useCallback(async (files: File[]) => {
+    const generation = attachmentGenerationRef.current
+    const { attachments: next, errors } = await readAssistantAttachments(files)
+    if (generation !== attachmentGenerationRef.current) return
+    if (errors.length > 0) setError(errors.at(-1) ?? null)
+    if (next.length > 0) setAttachments((current) => [...current, ...next])
+  }, [])
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+  }, [])
+
+  const handleSubmit = useCallback((
+    payload: { text: string; attachments: AssistantAttachment[]; selectedModel?: string; reasoningEffort?: ReasoningEffort },
+  ) => {
+    const submittedThreadId = threadIdRef.current
+    const submissionGeneration = selectionGenerationRef.current
+    attachmentGenerationRef.current += 1
+    setDraftText('')
+    setAttachments([])
+    setError(null)
+    ref.set(assistantNoticeProvider(itineraryId), null)
+    void turnActions.sendMessage({
+      ...payload,
+      threadId: submittedThreadId,
+      context: { itinerary, todos, todoCategories },
+      })
+      .then((usedThreadId) => {
+        if (selectionGenerationRef.current !== submissionGeneration) return
+        if (usedThreadId &&
+          usedThreadId !== submittedThreadId) select(usedThreadId)
+      })
+      .catch((sendError: unknown) => {
+        if (selectionGenerationRef.current !== submissionGeneration) return
+        setDraftText((current) => current || payload.text)
+        setAttachments((current) => current.length > 0 ? current : payload.attachments)
+        setError(friendlyError(sendError, '助理暫時無法回覆'))
+      })
+  }, [itinerary, itineraryId, ref, select, todoCategories, todos, turnActions])
+
+  const handleDecision = useCallback(async (proposal: AssistantProposal, approved: boolean) => {
+    await turnActions.decideProposal({ threadId, proposal, approved })
+    requestAnimationFrame(() => composerInputRef.current?.focus())
+  }, [threadId, turnActions])
+
+  // ---- 檢視效果 ----
 
   const conversationScrollRef = useRef<HTMLDivElement>(null)
   const initializedThreadRef = useRef<string | null>(null)
   const previousMessageCountRef = useRef(0)
-  const previousStreamingLengthRef = useRef(0)
   const previousSendingRef = useRef(false)
-  const suppressScrollTrackingRef = useRef(false)
-
   const composerInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
-    registerFocusComposer(() => {
-      requestAnimationFrame(() => {
-        composerInputRef.current?.focus()
-      })
-    })
-  }, [registerFocusComposer])
-
-  useEffect(() => {
     if (!fullPage || !onAssistantToolbarChange) return
+    const currentThread = threadsState.data?.find((thread) => thread.id === threadId) ?? null
     onAssistantToolbarChange(
       <AssistantAppBarActions
         thread={currentThread}
-        deletingThreadId={deletingThreadId}
         sending={sending}
-        messageCount={messageCount}
+        messageCount={messages.length}
         online={online}
-        onConversationList={showThreadList}
-        onSummarize={() => void manualSummarize()}
-        onDelete={(targetId) => void deleteThread(targetId)}
+        onConversationList={() => select(null)}
+        onSummarize={handleSummarize}
+        onDelete={(targetId) => void handleDeleteThread(targetId)}
       />,
     )
   }, [
-    currentThread,
-    deleteThread,
-    deletingThreadId,
     fullPage,
-    manualSummarize,
-    messageCount,
+    handleDeleteThread,
+    handleSummarize,
+    messages.length,
     onAssistantToolbarChange,
     online,
+    select,
     sending,
-    showThreadList,
+    threadId,
+    threadsState,
   ])
 
   useEffect(() => () => onAssistantToolbarChange?.(null), [onAssistantToolbarChange])
@@ -112,23 +217,21 @@ export function AssistantConversationView({
     if (!threadId) {
       initializedThreadRef.current = null
       previousMessageCountRef.current = 0
-      previousStreamingLengthRef.current = 0
       previousSendingRef.current = false
       return
     }
-    if (!container || conversationLoading) return
+    if (!container || (conversationState?.isLoading && !conversationState.hasData)) return
 
+    const messages = conversationState?.data?.messages ?? []
     if (initializedThreadRef.current !== threadId) {
       container.scrollTop = container.scrollHeight
       initializedThreadRef.current = threadId
-      previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
     } else {
-      const messageAdded = messageCount > previousMessageCountRef.current
+      const lastMessage = messages.at(-1)
+      const messageAdded = messages.length > previousMessageCountRef.current
       const userJustSent = messageAdded && lastMessage?.role === 'user'
-      const retryingUserMessage =
-        !messageAdded && sending && !previousSendingRef.current && lastMessage?.role === 'user'
 
-      if (userJustSent || retryingUserMessage) {
+      if ((userJustSent || (sending && !previousSendingRef.current)) && lastMessage) {
         requestAnimationFrame(() => {
           const messageElement = Array.from(
             container.querySelectorAll<HTMLElement>('[data-message-id]'),
@@ -136,38 +239,31 @@ export function AssistantConversationView({
           if (messageElement) {
             const containerTop = container.getBoundingClientRect().top
             const messageTop = messageElement.getBoundingClientRect().top
-            suppressScrollTrackingRef.current = true
             const nextScrollTop = Math.max(0, container.scrollTop + messageTop - containerTop - 12)
             if (typeof container.scrollTo === 'function') {
               container.scrollTo({ top: nextScrollTop, behavior: 'smooth' })
             } else {
               container.scrollTop = nextScrollTop
             }
-            requestAnimationFrame(() => {
-              suppressScrollTrackingRef.current = false
-            })
           }
         })
       }
     }
 
-    previousMessageCountRef.current = messageCount
-    previousStreamingLengthRef.current = streamingMessage?.content.length ?? 0
+    previousMessageCountRef.current = messages.length
     previousSendingRef.current = sending
-  }, [conversationLoading, lastMessage?.id, lastMessage?.role, messageCount, sending, streamingMessage, threadId])
-
-  const composerDisabled = conversationLoading || sending || hasPendingProposal || !online
+  }, [conversationState, sending, threadId])
 
   useEffect(() => {
-    if (prevSendingRef.current && !sending && !composerDisabled) {
+    if (prevSendingRef.current && !sending) {
       requestAnimationFrame(() => {
         composerInputRef.current?.focus()
       })
     }
     prevSendingRef.current = sending
-  }, [composerDisabled, sending])
+  }, [sending])
 
-  if (collectionLoading) {
+  if (threadsState.isLoading && (threadsState.data ?? []).length === 0) {
     return (
       <Box sx={{ display: 'grid', placeItems: 'center', minHeight: 260 }}>
         <CircularProgress />
@@ -175,14 +271,19 @@ export function AssistantConversationView({
     )
   }
 
-  const composerPlaceholder = conversationLoading
-    ? '正在載入對話…'
-    : hasPendingProposal
-    ? '請先確認或拒絕待處理的行程提案'
-    : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
+  const currentThread = threadsState.data?.find((thread) => thread.id === threadId) ?? null
+  const collectionError = threadsState.isError
+    ? friendlyError(threadsState.error, '無法載入助理對話')
+    : null
+  const conversationError = conversationState?.isError
+    ? friendlyError(conversationState.error, '無法載入對話內容')
+    : null
 
   return (
     <Stack spacing={0} sx={{ height: '100%' }}>
+      {collectionError || (!threadId && error) ? (
+        <Alert severity="error">{collectionError ?? error}</Alert>
+      ) : null}
       <Paper
         variant={fullPage ? undefined : 'outlined'}
         elevation={fullPage ? 0 : undefined}
@@ -201,13 +302,12 @@ export function AssistantConversationView({
         }}
       >
         <ConversationList
-          threads={threads}
+          itineraryId={itineraryId}
           threadId={threadId}
-          creatingThread={selectionStatus.creatingThread}
-          onSelectThread={threadActions.selectThread}
-          onCreateThread={() => void threadActions.createThread()}
-          onRenameThread={(id, title) => void threadActions.renameThread(id, title)}
-          onDeleteThread={(id) => void deleteThread(id)}
+          onSelectThread={select}
+          onCreateThread={() => void handleCreateThread()}
+          onRenameThread={(id, title) => void handleRenameThread(id, title)}
+          onDeleteThread={(id) => void handleDeleteThread(id)}
         />
 
         <Stack
@@ -241,7 +341,7 @@ export function AssistantConversationView({
                   bgcolor: 'rgba(13, 118, 110, 0.06)',
                   '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.12)' },
                 }}
-                onClick={showThreadList}
+                onClick={() => select(null)}
               >
                 <ArrowBackRoundedIcon fontSize="small" />
               </IconButton>
@@ -266,54 +366,47 @@ export function AssistantConversationView({
               </Box>
               <AssistantAppBarActions
                 thread={currentThread}
-                deletingThreadId={deletingThreadId}
                 sending={sending}
                 messageCount={messages.length}
                 online={online}
-                onConversationList={showThreadList}
-                onSummarize={() => void manualSummarize()}
-                onDelete={(tId) => void deleteThread(tId)}
+                onConversationList={() => select(null)}
+                onSummarize={handleSummarize}
+                onDelete={(tId) => void handleDeleteThread(tId)}
                 showConversationList={false}
               />
             </Stack>
           ) : null}
 
           <MessageList
+            itineraryId={itineraryId}
             threadId={threadId}
-            messages={messages}
-            turn={turn}
-            loading={conversationLoading}
-            sending={sending}
-            online={online}
-            composer={composer}
-            onDecision={decideProposal}
             scrollRef={conversationScrollRef}
+            online={online}
+            onQuickPrompt={setDraftText}
+            onDecision={(proposal, approved) => void handleDecision(proposal, approved)}
           />
 
           {threadId ? (
             <ChatComposer
+              itineraryId={itineraryId}
               inputRef={composerInputRef}
-              text={composer.text}
-              onChangeText={composer.setText}
-              onSubmit={send}
-              disabled={composerDisabled}
-              placeholder={composerPlaceholder}
-              sending={sending}
-              selectedModel={composer.selectedModel}
-              onSelectModel={composer.setSelectedModel}
-              reasoningEffort={composer.reasoningEffort}
-              onSelectReasoningEffort={composer.setReasoningEffort}
-              attachments={composer.attachments}
-              onAddAttachments={composer.addAttachments}
-              onRemoveAttachment={composer.removeAttachment}
-              error={turn?.error ?? feedback.error}
-              onClearError={() => {
-                dismissFailure()
-                feedback.clearError()
-              }}
-              notice={feedback.notice}
-              onClearNotice={feedback.clearNotice}
+              threadId={threadId}
               online={online}
+              draft={{
+                text: draftText,
+                setText: setDraftText,
+                attachments,
+                addAttachments: handleAddAttachments,
+                removeAttachment: handleRemoveAttachment,
+              }}
+              onSubmit={handleSubmit}
+              error={conversationError ?? error}
+              notice={notice}
+              onClearError={() => {
+                ref.read(conversationProvider.notifier).dismissFailure()
+                setError(null)
+              }}
+              onClearNotice={() => ref.set(assistantNoticeProvider(itineraryId), null)}
             />
           ) : null}
         </Stack>

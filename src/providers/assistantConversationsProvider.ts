@@ -9,7 +9,6 @@ import {
   saveAssistantMessage,
 } from '../lib/repositories/assistantRepository'
 import type {
-  AssistantGraphRunner,
   AssistantGraphState,
   AssistantMessage,
   AssistantPendingToolCall,
@@ -17,8 +16,9 @@ import type {
   AssistantTurnRequest,
   AssistantUserDecision,
 } from '../features/assistant/types'
-import type { SupabaseAssistantCheckpointer } from '../lib/assistantCheckpointer'
 import { isRecoverableGraphStateError, visibleProgressLabel } from '../features/assistant/assistantConversationUtils'
+import { findRecoveredAssistantMessages } from '../features/assistant/assistantTurnFlow'
+import { assistantRuntimeProvider } from './assistantRuntimeProvider'
 import { userIdProvider } from './authProviders'
 
 const messageKey = (message: AssistantMessage) => `${message.turnId}:${message.role}`
@@ -42,11 +42,9 @@ export type AssistantConversationSnapshot = {
   turn: AssistantTurnOverlay | null
 }
 
-export type AssistantConversationRuntime = {
-  runner: AssistantGraphRunner
-  checkpointer: SupabaseAssistantCheckpointer
-  updateSummary?: (threadId: string, summary: string, wait: boolean) => Promise<void>
-  onNotice?: (message: string) => void
+export type AssistantConversationKey = {
+  itineraryId: string
+  threadId: string
 }
 
 const EMPTY_TURN: AssistantTurnOverlay = {
@@ -62,6 +60,23 @@ const IDLE_CONVERSATION: AssistantConversationSnapshot = {
   turn: null,
 }
 
+const restoredTurn = (
+  current: AssistantTurnOverlay | null,
+  graphState: AssistantGraphState | null,
+): AssistantTurnOverlay | null => {
+  if (current?.phase === 'running') return current
+  const pendingToolCall = graphState?.pendingToolCall ?? null
+  if (pendingToolCall) {
+    return {
+      ...(current ?? EMPTY_TURN),
+      phase: 'paused',
+      streaming: null,
+      pendingToolCall,
+    }
+  }
+  return current?.phase === 'paused' ? null : current
+}
+
 /**
  * 單一 thread 的對話 provider:canonical messages 加上處理中的暫態。
  * 暫態不持久化;build() 重載時會保留進行中的 turn。
@@ -69,10 +84,12 @@ const IDLE_CONVERSATION: AssistantConversationSnapshot = {
 export class AssistantConversationNotifier extends AsyncNotifier<AssistantConversationSnapshot> {
   private loadGeneration = 0
   private activeTurn: Promise<void> | null = null
+  private readonly itineraryId: string
   private readonly threadId: string
 
-  constructor(threadId: string) {
+  constructor({ itineraryId, threadId }: AssistantConversationKey) {
     super()
+    this.itineraryId = itineraryId
     this.threadId = threadId
   }
 
@@ -80,11 +97,29 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     const generation = ++this.loadGeneration
     const userId = this.ref.watch(userIdProvider)
     if (!userId || !this.threadId) return IDLE_CONVERSATION
-    const messages = await listAssistantMessages(this.threadId)
+    const runtime = this.ref.watch(assistantRuntimeProvider(this.itineraryId))
+    const [messages, graphState] = await Promise.all([
+      listAssistantMessages(this.threadId),
+      runtime.runner.getState(this.threadId),
+    ])
     const current = this.state.data
     if (generation !== this.loadGeneration && current) return current
-    // 重載只更新 canonical 訊息,保留處理中的 turn 與待重試請求(殘留語意)。
-    return { messages, turn: current?.turn ?? null }
+
+    const recovered = findRecoveredAssistantMessages(messages, graphState)
+    if (recovered.length > 0) {
+      try {
+        await Promise.all(recovered.map((message) => saveAssistantMessage(this.threadId, message)))
+      } catch {
+        runtime.onNotice('已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。')
+      }
+    }
+    const latest = this.state.data
+    if (generation !== this.loadGeneration && latest) return latest
+
+    return {
+      messages: orderedMessages([...messages, ...recovered]),
+      turn: restoredTurn(current?.turn ?? null, graphState),
+    }
   }
 
   private async save(message: AssistantMessage): Promise<void> {
@@ -92,28 +127,11 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     await saveAssistantMessage(this.threadId, message)
   }
 
-  async refresh(runtime: AssistantConversationRuntime): Promise<void> {
-    const [canonical, graphState] = await Promise.all([
-      this.ref.read(assistantConversationsProvider(this.threadId).promise),
-      runtime.runner.getState(this.threadId),
-    ])
-    this.restore(graphState)
-    const recovered = (graphState?.messages ?? [])
-      .filter((message) => message.role === 'assistant')
-      .filter((message) => !canonical.messages.some(
-        (item) => item.role === 'assistant' && item.turnId === message.turnId,
-      ))
-    try {
-      await Promise.all(recovered.map((message) => this.save(message)))
-    } catch {
-      runtime.onNotice?.('已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。')
-    }
-  }
-
-  async send(request: AssistantTurnRequest, runtime: AssistantConversationRuntime): Promise<void> {
+  async send(request: AssistantTurnRequest): Promise<void> {
+    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
     return this.runExclusive(async () => {
-      this.beginTurn()
       try {
+        this.beginTurn()
         await this.save({
           id: crypto.randomUUID(),
           turnId: request.turnId,
@@ -123,25 +141,25 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           attachments: request.attachments ?? null,
         })
         const input = {
-        ...request,
-        rehydratedSummary: request.rehydratedSummary,
-        rehydratedMessages: this.state.data?.messages ?? request.rehydratedMessages,
-      }
+          ...request,
+          rehydratedSummary: request.rehydratedSummary,
+          rehydratedMessages: this.state.data?.messages ?? request.rehydratedMessages,
+        }
         let graphState: AssistantGraphState
         try {
           graphState = await runtime.runner.sendTurn(
-          input,
-          (phase) => this.setProgress(visibleProgressLabel(phase)),
-          (event) => this.appendDelta(event.turnId, event.text),
-        )
+            input,
+            (phase) => this.setProgress(visibleProgressLabel(phase)),
+            (event) => this.appendDelta(event.turnId, event.text),
+          )
         } catch (error) {
           if (!isRecoverableGraphStateError(error)) throw error
           await runtime.checkpointer.deleteThread(this.threadId)
           graphState = await runtime.runner.sendTurn(
-          input,
-          (phase) => this.setProgress(visibleProgressLabel(phase)),
-          (event) => this.appendDelta(event.turnId, event.text),
-        )
+            input,
+            (phase) => this.setProgress(visibleProgressLabel(phase)),
+            (event) => this.appendDelta(event.turnId, event.text),
+          )
         }
         this.setProgress(null)
         await this.commitTurn(graphState)
@@ -156,24 +174,26 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
   async resumeProposal(
     decision: AssistantUserDecision,
-    runtime: AssistantConversationRuntime,
   ): Promise<void> {
+    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
     return this.runExclusive(async () => {
-      this.beginTurn()
-      const approved = decision.approved
-      const pending = this.state.data?.turn?.pendingToolCall
-      if (pending) this.patchPendingProposal(pending.proposal.id, approved ? 'approved' : 'rejected')
       try {
-        const state = await runtime.runner.resumeTurn(
-        this.threadId,
-        decision,
-        (phase) => this.setProgress(visibleProgressLabel(phase)),
-        (event) => this.appendDelta(event.turnId, event.text),
-      )
-        await this.commitTurn(state)
-        if (!state.pendingToolCall && runtime.updateSummary) {
-          await runtime.updateSummary(this.threadId, state.summary, false)
+        this.beginTurn()
+        const pending = this.state.data?.turn?.pendingToolCall
+        if (pending) {
+          this.patchPendingProposal(
+            pending.proposal.id,
+            decision.approved ? 'approved' : 'rejected',
+          )
         }
+        const state = await runtime.runner.resumeTurn(
+          this.threadId,
+          decision,
+          (phase) => this.setProgress(visibleProgressLabel(phase)),
+          (event) => this.appendDelta(event.turnId, event.text),
+        )
+        await this.commitTurn(state)
+        if (!state.pendingToolCall) await runtime.updateSummary(this.threadId, state.summary)
       } catch (error) {
         this.fail(error instanceof Error ? error.message : '無法處理行程提案')
       } finally {
@@ -182,14 +202,15 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     })
   }
 
-  async summarize(runtime: AssistantConversationRuntime): Promise<void> {
+  async summarize(): Promise<void> {
     if (!this.state.data?.messages.length) return
+    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
     return this.runExclusive(async () => {
-      this.beginTurn()
-      this.setProgress('正在壓縮較早的對話內容…')
       try {
+        this.beginTurn()
+        this.setProgress('正在壓縮較早的對話內容…')
         const state = await runtime.runner.summarizeThread(this.threadId)
-        if (runtime.updateSummary) await runtime.updateSummary(this.threadId, state.summary, true)
+        await runtime.updateSummary(this.threadId, state.summary)
       } catch (error) {
         this.fail(error instanceof Error ? error.message : '無法壓縮對話')
       } finally {
@@ -202,13 +223,14 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     if (this.activeTurn) return this.activeTurn
     const current = operation()
     this.activeTurn = current
-    void current.finally(() => {
+    const clear = () => {
       if (this.activeTurn === current) this.activeTurn = null
-    })
+    }
+    void current.then(clear, clear)
     return current
   }
 
-  // ---- 回合轉移(由 service 呼叫;元件只讀)----
+  // ---- 回合轉移(由 turn actions 呼叫;元件只讀)----
 
   private beginTurn(): void {
     this.updateSnapshot((current) => ({
@@ -299,27 +321,6 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     return message
   }
 
-  /** checkpoint 恢復:以 checkpoint 為準同步提案卡;無活躍 turn 時也能重建 paused 卡片。 */
-  private restore(graphState: AssistantGraphState | null): void {
-    this.updateSnapshot((current) => {
-      const pendingToolCall = graphState?.pendingToolCall ?? null
-      if (!pendingToolCall) {
-        if (!current.turn ||
-          (current.turn.pendingToolCall === null && current.turn.streaming === null)) {
-          return current
-        }
-        return { ...current, turn: { ...current.turn, pendingToolCall: null, streaming: null } }
-      }
-      if (current.turn?.pendingToolCall === pendingToolCall && !current.turn.streaming) {
-        return current
-      }
-      return {
-        ...current,
-        turn: { ...(current.turn ?? EMPTY_TURN), phase: 'paused', streaming: null, pendingToolCall },
-      }
-    })
-  }
-
   private discardStreaming(): void {
     this.updateSnapshot((current) => {
       if (!current.turn || current.turn.streaming === null) return current
@@ -404,8 +405,8 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
 export const assistantConversationsProvider = asyncNotifierProviderFamily<
   AssistantConversationNotifier,
-  string
+  AssistantConversationKey
 >(
-  (threadId) => new AssistantConversationNotifier(threadId),
+  (key) => new AssistantConversationNotifier(key),
   { name: 'assistantConversations' },
 )

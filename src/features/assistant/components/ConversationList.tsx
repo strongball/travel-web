@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useRiverWatch } from '@stball/react-river'
 import AddCommentRoundedIcon from '@mui/icons-material/AddCommentRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
@@ -21,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
+import { assistantThreadsProvider } from '../../../providers'
 import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
 
 const timeLabel = (value: string) =>
@@ -46,26 +48,37 @@ const threadTimeLabel = (value: string) => {
 }
 
 export function ConversationList({
-  threads,
+  itineraryId,
   threadId,
-  creatingThread,
   onSelectThread,
   onCreateThread,
   onRenameThread,
   onDeleteThread,
 }: {
-  threads: AssistantThread[]
+  itineraryId: string
   threadId: string | null
-  creatingThread: boolean
-  onSelectThread: (threadId: string) => void
-  onCreateThread: () => void
+  onSelectThread: (threadId: string | null) => void
+  /** 建立流程;失敗由容器轉譯顯示。 */
+  onCreateThread: () => void | Promise<void>
   onRenameThread: (threadId: string, title: string) => void
   onDeleteThread: (threadId: string) => void
 }) {
+  const threadsState = useRiverWatch(assistantThreadsProvider(itineraryId))
+  const threads = threadsState.data ?? []
+  const [creating, setCreating] = useState(false)
   const [menu, setMenu] = useState<{
     anchorEl: HTMLElement
     thread: AssistantThread
   } | null>(null)
+
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      await onCreateThread()
+    } finally {
+      setCreating(false)
+    }
+  }
 
   return (
     <Box
@@ -117,8 +130,8 @@ export function ConversationList({
           <IconButton
             color="primary"
             aria-label="建立新對話"
-            disabled={creatingThread}
-            onClick={() => onCreateThread()}
+            disabled={creating}
+            onClick={() => void handleCreate()}
             sx={{
               width: 38,
               height: 38,
@@ -130,7 +143,7 @@ export function ConversationList({
               },
             }}
           >
-            {creatingThread ? (
+            {creating ? (
               <CircularProgress color="inherit" size={18} />
             ) : (
               <AddCommentRoundedIcon sx={{ fontSize: 19 }} />

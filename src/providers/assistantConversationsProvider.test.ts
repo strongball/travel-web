@@ -2,8 +2,15 @@ import { RiverContainer } from '@stball/react-river'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  deleteCheckpoint: vi.fn(),
+  getState: vi.fn(),
   listAssistantMessages: vi.fn(),
+  notice: vi.fn(),
+  resumeTurn: vi.fn(),
   saveAssistantMessage: vi.fn(),
+  sendTurn: vi.fn(),
+  summarizeThread: vi.fn(),
+  updateSummary: vi.fn(),
 }))
 
 vi.mock('../lib/repositories/assistantRepository', () => mocks)
@@ -14,11 +21,13 @@ import type {
   AssistantPendingToolCall,
   AssistantProposal,
 } from '../features/assistant/types'
+import type { AssistantConversationRuntime } from '../features/assistant/assistantRuntime'
 import { userIdProvider } from './authProviders'
 import {
   assistantConversationsProvider,
   type AssistantConversationSnapshot,
 } from './assistantConversationsProvider'
+import { assistantRuntimeProvider } from './assistantRuntimeProvider'
 
 const message = (
   role: AssistantMessage['role'],
@@ -70,24 +79,53 @@ const graphState = (
 
 let container: RiverContainer
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.getState.mockResolvedValue(null)
   mocks.listAssistantMessages.mockResolvedValue([])
   mocks.saveAssistantMessage.mockResolvedValue(undefined)
+  mocks.updateSummary.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
   container?.dispose()
 })
 
+const createTestProvider = () => {
+  const runtime = {
+    runner: {
+      getState: mocks.getState,
+      resumeTurn: mocks.resumeTurn,
+      sendTurn: mocks.sendTurn,
+      summarizeThread: mocks.summarizeThread,
+    },
+    checkpointer: { deleteThread: mocks.deleteCheckpoint },
+    updateSummary: mocks.updateSummary,
+    onNotice: mocks.notice,
+  } as unknown as AssistantConversationRuntime
+  container = new RiverContainer({
+    overrides: [
+      { original: userIdProvider, create: () => 'user-1' },
+      { original: assistantRuntimeProvider('trip-1'), create: () => runtime },
+    ],
+  })
+  const provider = assistantConversationsProvider({ itineraryId: 'trip-1', threadId: 'thread-1' })
+  const notifier = container.read(provider.notifier) as any
+  return { provider, notifier }
+}
+
 const setup = async (seededMessages: AssistantMessage[] = []) => {
   mocks.listAssistantMessages.mockResolvedValue(seededMessages)
-  container = new RiverContainer({
-    overrides: [{ original: userIdProvider, create: () => 'user-1' }],
-  })
-  const provider = assistantConversationsProvider('thread-1')
+  const { provider, notifier } = createTestProvider()
   await container.read(provider.promise)
-  const notifier = container.read(provider.notifier) as any
   return {
     provider,
     notifier,
@@ -129,6 +167,37 @@ describe('canonical messages', () => {
     expect(reloaded.messages).toEqual([message('user', 'turn-9', '新載入的問題')])
     expect(reloaded.turn?.phase).toBe('running')
     expect(reloaded.turn?.streaming?.content).toBe('生成中')
+  })
+
+  it('does not let an older checkpoint load replace an active turn', async () => {
+    const checkpoint = deferred<AssistantGraphState | null>()
+    mocks.getState.mockReturnValue(checkpoint.promise)
+    const { provider, notifier } = createTestProvider()
+    const loading = container.read(provider.promise)
+
+    notifier.beginTurn()
+    notifier.appendDelta('turn-new', '新的生成內容')
+    checkpoint.resolve(graphState({ pendingToolCall: pendingToolCall() }))
+    await loading
+
+    const state = container.read(provider).data as AssistantConversationSnapshot
+    expect(state.turn?.phase).toBe('running')
+    expect(state.turn?.streaming?.content).toBe('新的生成內容')
+    expect(state.turn?.pendingToolCall).toBeNull()
+  })
+
+  it('keeps recovered messages visible when canonical persistence fails', async () => {
+    const user = message('user', 'turn-1', '問題')
+    const recovered = message('assistant', 'turn-1', '已恢復')
+    mocks.getState.mockResolvedValue(graphState({ messages: [user, recovered] }))
+    mocks.saveAssistantMessage.mockRejectedValue(new Error('write failed'))
+
+    const { snapshot } = await setup([user])
+
+    expect(snapshot().messages).toEqual([user, recovered])
+    expect(mocks.notice).toHaveBeenCalledWith(
+      '已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。',
+    )
   })
 })
 
@@ -255,24 +324,22 @@ describe('commitTurn', () => {
 
 describe('restore from checkpoint', () => {
   it('rebuilds a paused card when no overlay exists yet', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.restore(graphState({ pendingToolCall: pendingToolCall() }))
+    mocks.getState.mockResolvedValue(graphState({ pendingToolCall: pendingToolCall() }))
+    const { snapshot } = await setup()
     expect(snapshot().turn?.phase).toBe('paused')
     expect(snapshot().turn?.pendingToolCall?.proposal.id).toBe('turn-t1')
   })
 
   it('clears stale cards when the checkpoint has none', async () => {
-    const { notifier, snapshot } = await setup()
+    const { notifier } = await setup()
     await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    notifier.restore(graphState())
-    expect(snapshot().turn?.pendingToolCall).toBeNull()
+    const reloaded = await notifier.build()
+    expect(reloaded.turn).toBeNull()
   })
 
   it('does nothing on an idle conversation without checkpoint data', async () => {
-    const { notifier, snapshot } = await setup()
-    const before = snapshot()
-    notifier.restore(null)
-    expect(snapshot()).toBe(before)
+    const { snapshot } = await setup()
+    expect(snapshot()).toEqual({ messages: [], turn: null })
   })
 })
 

@@ -22,6 +22,14 @@ const thread = (id: string, title = '測試對話'): AssistantThread => ({
   updatedAt: '2026-08-22T00:00:00.000Z',
 })
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 let container: RiverContainer
 
 beforeEach(() => {
@@ -92,5 +100,27 @@ describe('assistantThreadsProvider', () => {
     await refreshPromise
 
     expect(container.read(provider).data?.[0].title).toBe('新標題')
+  })
+
+  it('reports skipped concurrent deletes without removing another thread', async () => {
+    const first = thread('thread-1')
+    const second = thread('thread-2')
+    const deletion = deferred<void>()
+    mocks.listAssistantThreads.mockResolvedValueOnce([first, second])
+    mocks.deleteAssistantThread.mockReturnValue(deletion.promise)
+
+    container = new RiverContainer({
+      overrides: [{ original: userIdProvider, create: () => 'user-1' }],
+    })
+    const provider = assistantThreadsProvider('trip-1')
+
+    await container.read(provider.promise)
+    const notifier = container.read(provider.notifier)
+    const firstDelete = notifier.delete(first.id)
+
+    await expect(notifier.delete(second.id)).resolves.toBe(false)
+    deletion.resolve()
+    await expect(firstDelete).resolves.toBe(true)
+    expect(container.read(provider).data).toEqual([second])
   })
 })

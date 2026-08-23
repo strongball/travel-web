@@ -18,6 +18,7 @@ import { userIdProvider } from './authProviders'
 
 export class AssistantThreadsNotifier extends AsyncNotifier<AssistantThread[]> {
   private loadGeneration = 0
+  private deletingId: string | null = null
   private readonly itineraryId: string
 
   constructor(itineraryId: string) {
@@ -63,9 +64,21 @@ export class AssistantThreadsNotifier extends AsyncNotifier<AssistantThread[]> {
     this.patch(threadId, { title: title.trim() })
   }
 
-  async delete(threadId: string): Promise<void> {
-    await deleteAssistantThread(threadId)
-    this.remove(threadId)
+  async delete(threadId: string): Promise<boolean> {
+    // 同步互斥:同一時間只允許一個刪除;重複呼叫直接略過。
+    if (this.deletingId) return false
+    this.deletingId = threadId
+    try {
+      await deleteAssistantThread(threadId)
+      this.remove(threadId)
+      return true
+    } finally {
+      this.deletingId = null
+    }
+  }
+
+  isDeleting(threadId: string): boolean {
+    return this.deletingId === threadId
   }
 
   async updateSummary(threadId: string, summary: string): Promise<void> {

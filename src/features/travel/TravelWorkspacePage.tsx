@@ -496,7 +496,6 @@ export function TravelWorkspacePage({
                     itinerary={selectedItinerary}
                     todos={selectedTodos}
                     todoCategories={categories}
-                    onItineraryApplied={onRefresh}
                     fullPage
                     onAssistantToolbarChange={handleAssistantToolbarChange}
                   />
