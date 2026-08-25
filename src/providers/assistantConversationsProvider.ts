@@ -4,29 +4,15 @@ import {
   asyncNotifierProviderFamily,
 } from '@stball/react-river'
 
-import {
-  listAssistantMessages,
-  saveAssistantMessage,
-} from '../lib/repositories/assistantRepository'
 import type {
-  AssistantGraphState,
   AssistantMessage,
   AssistantPendingToolCall,
-  AssistantProposalStatus,
   AssistantTurnRequest,
   AssistantUserDecision,
 } from '../features/assistant/types'
-import { isRecoverableGraphStateError, visibleProgressLabel } from '../features/assistant/assistantConversationUtils'
-import { findRecoveredAssistantMessages } from '../features/assistant/assistantTurnFlow'
-import { assistantRuntimeProvider } from './assistantRuntimeProvider'
+import { assistantChatServiceProvider } from './assistantChatServiceProvider'
 import { userIdProvider } from './authProviders'
 
-const messageKey = (message: AssistantMessage) => `${message.turnId}:${message.role}`
-
-const orderedMessages = (messages: AssistantMessage[]) =>
-  [...messages].sort((first, second) => first.createdAt.localeCompare(second.createdAt))
-
-/** 對話處理中的單一狀態:有值就渲染「正在進行」的內容(提案卡或生成文字)。 */
 export type AssistantTurnOverlay = {
   phase: 'running' | 'paused' | 'error'
   streaming: AssistantMessage | null
@@ -36,9 +22,7 @@ export type AssistantTurnOverlay = {
 }
 
 export type AssistantConversationSnapshot = {
-  /** canonical 對話紀錄(持久化來源)。 */
   messages: AssistantMessage[]
-  /** 處理中狀態;null 代表閒置,只渲染 messages。 */
   turn: AssistantTurnOverlay | null
 }
 
@@ -47,42 +31,16 @@ export type AssistantConversationKey = {
   threadId: string
 }
 
-const EMPTY_TURN: AssistantTurnOverlay = {
-  phase: 'running',
-  streaming: null,
-  pendingToolCall: null,
-  progressLabel: null,
-  error: null,
-}
-
 const IDLE_CONVERSATION: AssistantConversationSnapshot = {
   messages: [],
   turn: null,
 }
 
-const restoredTurn = (
-  current: AssistantTurnOverlay | null,
-  graphState: AssistantGraphState | null,
-): AssistantTurnOverlay | null => {
-  if (current?.phase === 'running') return current
-  const pendingToolCall = graphState?.pendingToolCall ?? null
-  if (pendingToolCall) {
-    return {
-      ...(current ?? EMPTY_TURN),
-      phase: 'paused',
-      streaming: null,
-      pendingToolCall,
-    }
-  }
-  return current?.phase === 'paused' ? null : current
-}
-
 /**
- * 單一 thread 的對話 provider:canonical messages 加上處理中的暫態。
- * 暫態不持久化;build() 重載時會保留進行中的 turn。
+ * 專注於對話狀態管理的 River Notifier：
+ * 所有底層 Checkpoint 恢復、持久化、圖狀態執行皆委託 AssistantChatService 處理。
  */
 export class AssistantConversationNotifier extends AsyncNotifier<AssistantConversationSnapshot> {
-  private loadGeneration = 0
   private activeTurn: Promise<void> | null = null
   private readonly itineraryId: string
   private readonly threadId: string
@@ -94,312 +52,253 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
   }
 
   async build(): Promise<AssistantConversationSnapshot> {
-    const generation = ++this.loadGeneration
     const userId = this.ref.watch(userIdProvider)
     if (!userId || !this.threadId) return IDLE_CONVERSATION
-    const runtime = this.ref.watch(assistantRuntimeProvider(this.itineraryId))
-    const [messages, graphState] = await Promise.all([
-      listAssistantMessages(this.threadId),
-      runtime.runner.getState(this.threadId),
-    ])
-    const current = this.state.data
-    if (generation !== this.loadGeneration && current) return current
 
-    const recovered = findRecoveredAssistantMessages(messages, graphState)
-    if (recovered.length > 0) {
-      try {
-        await Promise.all(recovered.map((message) => saveAssistantMessage(this.threadId, message)))
-      } catch {
-        runtime.onNotice('已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。')
-      }
-    }
-    const latest = this.state.data
-    if (generation !== this.loadGeneration && latest) return latest
+    const service = this.ref.watch(assistantChatServiceProvider(this.itineraryId))
+    const { messages, pendingToolCall } = await service.fetchHistory(this.threadId)
 
-    return {
-      messages: orderedMessages([...messages, ...recovered]),
-      turn: restoredTurn(current?.turn ?? null, graphState),
-    }
-  }
+    const currentTurn = this.state.data?.turn
+    const restored = currentTurn?.phase === 'running'
+      ? currentTurn
+      : pendingToolCall
+      ? {
+          phase: 'paused' as const,
+          streaming: null,
+          pendingToolCall,
+          progressLabel: null,
+          error: null,
+        }
+      : null
 
-  private async save(message: AssistantMessage): Promise<void> {
-    this.upsertMessage(message)
-    await saveAssistantMessage(this.threadId, message)
+    return { messages, turn: restored }
   }
 
   async send(request: AssistantTurnRequest): Promise<void> {
-    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
-    return this.runExclusive(async () => {
-      try {
-        this.beginTurn()
-        await this.save({
-          id: crypto.randomUUID(),
-          turnId: request.turnId,
-          role: 'user',
-          content: request.text.trim(),
-          createdAt: request.createdAt ?? new Date().toISOString(),
-          attachments: request.attachments ?? null,
-        })
-        const input = {
-          ...request,
-          rehydratedSummary: request.rehydratedSummary,
-          rehydratedMessages: this.state.data?.messages ?? request.rehydratedMessages,
-        }
-        let graphState: AssistantGraphState
-        try {
-          graphState = await runtime.runner.sendTurn(
-            input,
-            (phase) => this.setProgress(visibleProgressLabel(phase)),
-            (event) => this.appendDelta(event.turnId, event.text),
-          )
-        } catch (error) {
-          if (!isRecoverableGraphStateError(error)) throw error
-          await runtime.checkpointer.deleteThread(this.threadId)
-          graphState = await runtime.runner.sendTurn(
-            input,
-            (phase) => this.setProgress(visibleProgressLabel(phase)),
-            (event) => this.appendDelta(event.turnId, event.text),
-          )
-        }
-        this.setProgress(null)
-        await this.commitTurn(graphState)
-      } catch (error) {
-        this.discardStreaming()
-        this.fail(error instanceof Error ? error.message : '助理暫時無法回覆')
-      } finally {
-        this.endTurn()
+    const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
+    if (!service) return
+
+    if (this.activeTurn) return this.activeTurn
+
+    const execute = async () => {
+      const current = this.state.data ?? IDLE_CONVERSATION
+      const userMessage: AssistantMessage = {
+        id: crypto.randomUUID(),
+        turnId: request.turnId,
+        role: 'user',
+        content: request.text.trim(),
+        createdAt: request.createdAt ?? new Date().toISOString(),
+        attachments: request.attachments ?? null,
       }
-    })
+
+      this.state = asyncData({
+        messages: [...current.messages, userMessage],
+        turn: {
+          phase: 'running',
+          streaming: null,
+          pendingToolCall: null,
+          progressLabel: null,
+          error: null,
+        },
+      })
+
+      try {
+        await service.sendStream(request, this.state.data?.messages ?? [], (event) => {
+          const cur = this.state.data
+          if (!cur) return
+
+          if (event.type === 'progress') {
+            this.state = asyncData({
+              ...cur,
+              turn: cur.turn ? { ...cur.turn, progressLabel: event.label } : null,
+            })
+          } else if (event.type === 'content') {
+            const streaming = cur.turn?.streaming
+            const updatedStreaming: AssistantMessage = streaming?.turnId === event.turnId
+              ? { ...streaming, content: streaming.content + event.text }
+              : {
+                  id: `streaming-${event.turnId}`,
+                  turnId: event.turnId,
+                  role: 'assistant',
+                  content: event.text,
+                  createdAt: new Date().toISOString(),
+                }
+            this.state = asyncData({
+              ...cur,
+              turn: cur.turn ? { ...cur.turn, streaming: updatedStreaming } : null,
+            })
+          } else if (event.type === 'proposal') {
+            this.state = asyncData({
+              ...cur,
+              turn: {
+                phase: 'paused',
+                streaming: null,
+                pendingToolCall: event.pendingToolCall,
+                progressLabel: null,
+                error: null,
+              },
+            })
+          } else if (event.type === 'message') {
+            const filtered = cur.messages.filter((m) => m.id !== event.message.id)
+            this.state = asyncData({
+              messages: [...filtered, event.message],
+              turn: null,
+            })
+          }
+        })
+
+        if (this.state.data?.turn?.phase === 'running') {
+          this.state = asyncData({ ...this.state.data, turn: null })
+        }
+      } catch (err: any) {
+        const cur = this.state.data ?? IDLE_CONVERSATION
+        this.state = asyncData({
+          ...cur,
+          turn: {
+            phase: 'error',
+            streaming: null,
+            pendingToolCall: null,
+            progressLabel: null,
+            error: err.message || '助理暫時無法回覆',
+          },
+        })
+      } finally {
+        this.activeTurn = null
+      }
+    }
+
+    this.activeTurn = execute()
+    return this.activeTurn
   }
 
-  async resumeProposal(
-    decision: AssistantUserDecision,
-  ): Promise<void> {
-    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
-    return this.runExclusive(async () => {
+  async resumeProposal(decision: AssistantUserDecision): Promise<void> {
+    const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
+    if (!service) return
+
+    if (this.activeTurn) return this.activeTurn
+
+    const execute = async () => {
+      const current = this.state.data ?? IDLE_CONVERSATION
+      this.state = asyncData({
+        ...current,
+        turn: {
+          phase: 'running',
+          streaming: null,
+          pendingToolCall: current.turn?.pendingToolCall ?? null,
+          progressLabel: '正在套用…',
+          error: null,
+        },
+      })
+
       try {
-        this.beginTurn()
-        const pending = this.state.data?.turn?.pendingToolCall
-        if (pending) {
-          this.patchPendingProposal(
-            pending.proposal.id,
-            decision.approved ? 'approved' : 'rejected',
-          )
+        await service.resumeProposal(this.threadId, decision, (event) => {
+          const cur = this.state.data
+          if (!cur) return
+
+          if (event.type === 'progress') {
+            this.state = asyncData({
+              ...cur,
+              turn: cur.turn ? { ...cur.turn, progressLabel: event.label } : null,
+            })
+          } else if (event.type === 'content') {
+            const streaming = cur.turn?.streaming
+            const updatedStreaming: AssistantMessage = streaming
+              ? { ...streaming, content: streaming.content + event.text }
+              : {
+                  id: `streaming-${this.threadId}`,
+                  turnId: this.threadId,
+                  role: 'assistant',
+                  content: event.text,
+                  createdAt: new Date().toISOString(),
+                }
+            this.state = asyncData({
+              ...cur,
+              turn: cur.turn ? { ...cur.turn, streaming: updatedStreaming } : null,
+            })
+          } else if (event.type === 'proposal') {
+            this.state = asyncData({
+              ...cur,
+              turn: {
+                phase: 'paused',
+                streaming: null,
+                pendingToolCall: event.pendingToolCall,
+                progressLabel: null,
+                error: null,
+              },
+            })
+          } else if (event.type === 'message') {
+            const filtered = cur.messages.filter((m) => m.id !== event.message.id)
+            this.state = asyncData({
+              messages: [...filtered, event.message],
+              turn: null,
+            })
+          }
+        })
+
+        if (this.state.data?.turn?.phase === 'running') {
+          this.state = asyncData({ ...this.state.data, turn: null })
         }
-        const state = await runtime.runner.resumeTurn(
-          this.threadId,
-          decision,
-          (phase) => this.setProgress(visibleProgressLabel(phase)),
-          (event) => this.appendDelta(event.turnId, event.text),
-        )
-        await this.commitTurn(state)
-        if (!state.pendingToolCall) await runtime.updateSummary(this.threadId, state.summary)
-      } catch (error) {
-        this.fail(error instanceof Error ? error.message : '無法處理行程提案')
+      } catch (err: any) {
+        const cur = this.state.data ?? IDLE_CONVERSATION
+        this.state = asyncData({
+          ...cur,
+          turn: {
+            phase: 'error',
+            streaming: null,
+            pendingToolCall: null,
+            progressLabel: null,
+            error: err.message || '無法處理行程提案',
+          },
+        })
       } finally {
-        this.endTurn()
+        this.activeTurn = null
       }
-    })
+    }
+
+    this.activeTurn = execute()
+    return this.activeTurn
   }
 
   async summarize(): Promise<void> {
-    if (!this.state.data?.messages.length) return
-    const runtime = this.ref.read(assistantRuntimeProvider(this.itineraryId))
-    return this.runExclusive(async () => {
-      try {
-        this.beginTurn()
-        this.setProgress('正在壓縮較早的對話內容…')
-        const state = await runtime.runner.summarizeThread(this.threadId)
-        await runtime.updateSummary(this.threadId, state.summary)
-      } catch (error) {
-        this.fail(error instanceof Error ? error.message : '無法壓縮對話')
-      } finally {
-        this.endTurn()
-      }
-    })
-  }
+    const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
+    if (!service) return
 
-  private runExclusive(operation: () => Promise<void>): Promise<void> {
-    if (this.activeTurn) return this.activeTurn
-    const current = operation()
-    this.activeTurn = current
-    const clear = () => {
-      if (this.activeTurn === current) this.activeTurn = null
-    }
-    void current.then(clear, clear)
-    return current
-  }
+    const current = this.state.data
+    if (!current?.messages.length) return
 
-  // ---- 回合轉移(由 turn actions 呼叫;元件只讀)----
-
-  private beginTurn(): void {
-    this.updateSnapshot((current) => ({
+    this.state = asyncData({
       ...current,
       turn: {
-        ...EMPTY_TURN,
-        pendingToolCall: current.turn?.pendingToolCall ?? null,
-      },
-    }))
-  }
-
-  /**
-   * 回合收尾:沒有等待決策的提案時收掉 overlay;
-   * 錯誤狀態不在此清除(fail 後仍需顯示錯誤與重試)。
-   */
-  private endTurn(): void {
-    this.updateSnapshot((current) => {
-      if (!current.turn) return current
-      if (current.turn.phase === 'error') return current
-      if (current.turn.pendingToolCall) {
-        return { ...current, turn: { ...current.turn, phase: 'paused', streaming: null } }
-      }
-      return { ...current, turn: null }
-    })
-  }
-
-  private appendDelta(turnId: string, text: string): void {
-    if (!text) return
-    this.updateSnapshot((current) => {
-      if (!current.turn) return current
-      const streaming = current.turn.streaming
-      if (streaming?.turnId === turnId) {
-        return {
-          ...current,
-          turn: {
-            ...current.turn,
-            streaming: { ...streaming, content: streaming.content + text },
-          },
-        }
-      }
-      return {
-        ...current,
-        turn: {
-          ...current.turn,
-          streaming: {
-            id: `streaming-${turnId}`,
-            turnId,
-            role: 'assistant',
-            content: text,
-            createdAt: new Date().toISOString(),
-          },
-        },
-      }
-    })
-  }
-
-  private setProgress(label: string | null): void {
-    this.updateSnapshot((current) => {
-      if (!current.turn || current.turn.progressLabel === label) return current
-      return { ...current, turn: { ...current.turn, progressLabel: label } }
-    })
-  }
-
-  /**
-   * graph 回傳結果的落點:帶 pendingToolCall 時停在 paused;
-   * 否則原子完成——訊息進 canonical、overlay 歸 null,單次轉移。
-   */
-  private async commitTurn(graphState: AssistantGraphState): Promise<AssistantMessage | null> {
-    if (graphState.pendingToolCall) {
-      this.updateSnapshot((current) => ({
-        ...current,
-        turn: {
-          ...(current.turn ?? EMPTY_TURN),
-          phase: 'paused',
-          streaming: null,
-          pendingToolCall: graphState.pendingToolCall,
-        },
-      }))
-      return null
-    }
-    if (!graphState.assistantMessage) {
-      this.updateSnapshot((current) => (current.turn ? { ...current, turn: null } : current))
-      return null
-    }
-    const message = graphState.assistantMessage
-    this.upsertAndEndTurn(message)
-    await saveAssistantMessage(this.threadId, message)
-    return message
-  }
-
-  private discardStreaming(): void {
-    this.updateSnapshot((current) => {
-      if (!current.turn || current.turn.streaming === null) return current
-      return { ...current, turn: { ...current.turn, streaming: null } }
-    })
-  }
-
-  private patchPendingProposal(proposalId: string, nextStatus: AssistantProposalStatus): void {
-    this.updateSnapshot((current) => {
-      if (!current.turn || current.turn.pendingToolCall?.proposal.id !== proposalId) {
-        return current
-      }
-      return {
-        ...current,
-        turn: {
-          ...current.turn,
-          pendingToolCall: {
-            ...current.turn.pendingToolCall,
-            proposal: { ...current.turn.pendingToolCall.proposal, status: nextStatus },
-          },
-        },
-      }
-    })
-  }
-
-  fail(errorMessage: string): void {
-    this.updateSnapshot((current) => ({
-      ...current,
-      turn: {
-        ...(current.turn ?? EMPTY_TURN),
-        phase: 'error',
+        phase: 'running',
         streaming: null,
-        error: errorMessage,
+        pendingToolCall: null,
+        progressLabel: '正在壓縮較早的對話內容…',
+        error: null,
       },
-    }))
+    })
+
+    try {
+      await service.summarize(this.threadId)
+      this.state = asyncData({ ...this.state.data!, turn: null })
+    } catch (err: any) {
+      this.state = asyncData({
+        ...this.state.data!,
+        turn: {
+          phase: 'error',
+          streaming: null,
+          pendingToolCall: null,
+          progressLabel: null,
+          error: err.message || '無法壓縮對話',
+        },
+      })
+    }
   }
 
-  /** 使用者主動關閉失敗提示;非錯誤狀態時不作用。 */
   dismissFailure(): void {
-    this.updateSnapshot((current) => {
-      if (!current.turn || current.turn.phase !== 'error') return current
-      return { ...current, turn: null }
-    })
-  }
-
-  // ---- 內部 ----
-
-  private updateSnapshot(
-    updater: (current: AssistantConversationSnapshot) => AssistantConversationSnapshot,
-  ): void {
-    const next = updater(this.state.data ?? IDLE_CONVERSATION)
-    if (next !== (this.state.data ?? IDLE_CONVERSATION)) this.commit(next)
-  }
-
-  private commit(snapshot: AssistantConversationSnapshot): void {
-    this.loadGeneration += 1
-    this.state = asyncData(snapshot)
-  }
-
-  private upsertMessage(message: AssistantMessage): void {
-    this.updateSnapshot((current) => {
-      const key = messageKey(message)
-      const messages = orderedMessages([
-        ...current.messages.filter((item) => messageKey(item) !== key),
-        message,
-      ])
-      return { ...current, messages }
-    })
-  }
-
-  /** 原子完成:訊息進 canonical、overlay 與待重試請求一併結束,單次轉移。 */
-  private upsertAndEndTurn(message: AssistantMessage): void {
-    const current = this.state.data ?? IDLE_CONVERSATION
-    const key = messageKey(message)
-    const messages = orderedMessages([
-      ...current.messages.filter((item) => messageKey(item) !== key),
-      message,
-    ])
-    this.commit({ messages, turn: null })
+    const current = this.state.data
+    if (current?.turn?.phase === 'error') {
+      this.state = asyncData({ ...current, turn: null })
+    }
   }
 }
 

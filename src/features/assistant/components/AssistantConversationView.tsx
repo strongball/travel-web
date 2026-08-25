@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
@@ -23,14 +23,13 @@ import type { Itinerary, TodoItem } from '../../../types/database'
 import type { ReasoningEffort } from '../models'
 import type { AssistantAttachment, AssistantProposal } from '../types'
 import { friendlyError, rememberedThread, rememberThread } from '../assistantConversationUtils'
-import { readAssistantAttachments } from '../assistantAttachments'
 import { ConversationList } from './ConversationList'
 import { MessageList } from './MessageList'
-import { ChatComposer } from './ChatComposer'
+import { ChatComposer, type ChatComposerHandle } from './ChatComposer'
 import { AssistantAppBarActions } from './AssistantAppBarActions'
 
 /**
- * 對話工作區的容器:持有選取中的執行緒、輸入草稿與錯誤訊息這幾份檢視狀態,
+ * 對話工作區的容器:持有選取中的執行緒與錯誤訊息,
  * 負責檢視狀態與使用者事件；訊息載入、checkpoint 恢復與生成狀態由 River 管理。
  */
 export function AssistantConversationView({
@@ -52,15 +51,12 @@ export function AssistantConversationView({
   const online = useOnlineStatus()
   const threadStorageKey = `assistant-active-thread:${itineraryId}`
   const [threadId, setThreadId] = useState<string | null>(() => rememberedThread(threadStorageKey))
-  const [draftText, setDraftText] = useState('')
-  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
   const [error, setError] = useState<string | null>(null)
-  const attachmentGenerationRef = useRef(0)
   const selectionGenerationRef = useRef(0)
   const threadIdRef = useRef(threadId)
+  const composerRef = useRef<ChatComposerHandle | null>(null)
 
   useEffect(() => () => {
-    attachmentGenerationRef.current += 1
     selectionGenerationRef.current += 1
   }, [])
 
@@ -95,7 +91,7 @@ export function AssistantConversationView({
     if (next !== threadId) select(next)
   }, [select, threadId, threadsState])
 
-  // ---- 使用者命令（資料載入與 checkpoint 恢復由 River provider build 處理）----
+  // ---- 使用者命令 ----
 
   const handleCreateThread = useCallback(async () => {
     try {
@@ -117,7 +113,6 @@ export function AssistantConversationView({
   const handleDeleteThread = useCallback(async (targetId: string) => {
     try {
       const deleted = await turnActions.deleteThread(targetId)
-      // 刪掉的是目前選取的對話時退回清單;其餘交給自動選取效果收斂。
       if (deleted && targetId === threadId) select(null)
     } catch (deleteError) {
       setError(friendlyError(deleteError, '無法刪除對話'))
@@ -129,58 +124,38 @@ export function AssistantConversationView({
     void turnActions.summarize(threadId)
   }, [threadId, turnActions])
 
-  const handleAddAttachments = useCallback(async (files: File[]) => {
-    const generation = attachmentGenerationRef.current
-    const { attachments: next, errors } = await readAssistantAttachments(files)
-    if (generation !== attachmentGenerationRef.current) return
-    if (errors.length > 0) setError(errors.at(-1) ?? null)
-    if (next.length > 0) setAttachments((current) => [...current, ...next])
-  }, [])
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-  }, [])
-
   const handleSubmit = useCallback((
-    payload: { text: string; attachments: AssistantAttachment[]; selectedModel?: string; reasoningEffort?: ReasoningEffort },
+    payload: {
+      text: string
+      attachments: AssistantAttachment[]
+      selectedModel?: string
+      reasoningEffort?: ReasoningEffort
+    },
   ) => {
     const submittedThreadId = threadIdRef.current
     const submissionGeneration = selectionGenerationRef.current
-    attachmentGenerationRef.current += 1
-    setDraftText('')
-    setAttachments([])
     setError(null)
     ref.set(assistantNoticeProvider(itineraryId), null)
     void turnActions.sendMessage({
       ...payload,
       threadId: submittedThreadId,
       context: { itinerary, todos, todoCategories },
-      })
+    })
       .then((usedThreadId) => {
         if (selectionGenerationRef.current !== submissionGeneration) return
-        if (usedThreadId &&
-          usedThreadId !== submittedThreadId) select(usedThreadId)
+        if (usedThreadId && usedThreadId !== submittedThreadId) select(usedThreadId)
       })
       .catch((sendError: unknown) => {
         if (selectionGenerationRef.current !== submissionGeneration) return
-        setDraftText((current) => current || payload.text)
-        setAttachments((current) => current.length > 0 ? current : payload.attachments)
         setError(friendlyError(sendError, '助理暫時無法回覆'))
       })
   }, [itinerary, itineraryId, ref, select, todoCategories, todos, turnActions])
 
   const handleDecision = useCallback(async (proposal: AssistantProposal, approved: boolean) => {
     await turnActions.decideProposal({ threadId, proposal, approved })
-    requestAnimationFrame(() => composerInputRef.current?.focus())
+    requestAnimationFrame(() => composerRef.current?.focus())
   }, [threadId, turnActions])
 
-  // ---- 檢視效果 ----
-
-  const conversationScrollRef = useRef<HTMLDivElement>(null)
-  const initializedThreadRef = useRef<string | null>(null)
-  const previousMessageCountRef = useRef(0)
-  const previousSendingRef = useRef(false)
-  const composerInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
@@ -212,52 +187,10 @@ export function AssistantConversationView({
 
   useEffect(() => () => onAssistantToolbarChange?.(null), [onAssistantToolbarChange])
 
-  useLayoutEffect(() => {
-    const container = conversationScrollRef.current
-    if (!threadId) {
-      initializedThreadRef.current = null
-      previousMessageCountRef.current = 0
-      previousSendingRef.current = false
-      return
-    }
-    if (!container || (conversationState?.isLoading && !conversationState.hasData)) return
-
-    const messages = conversationState?.data?.messages ?? []
-    if (initializedThreadRef.current !== threadId) {
-      container.scrollTop = container.scrollHeight
-      initializedThreadRef.current = threadId
-    } else {
-      const lastMessage = messages.at(-1)
-      const messageAdded = messages.length > previousMessageCountRef.current
-      const userJustSent = messageAdded && lastMessage?.role === 'user'
-
-      if ((userJustSent || (sending && !previousSendingRef.current)) && lastMessage) {
-        requestAnimationFrame(() => {
-          const messageElement = Array.from(
-            container.querySelectorAll<HTMLElement>('[data-message-id]'),
-          ).find((element) => element.dataset.messageId === lastMessage.id)
-          if (messageElement) {
-            const containerTop = container.getBoundingClientRect().top
-            const messageTop = messageElement.getBoundingClientRect().top
-            const nextScrollTop = Math.max(0, container.scrollTop + messageTop - containerTop - 12)
-            if (typeof container.scrollTo === 'function') {
-              container.scrollTo({ top: nextScrollTop, behavior: 'smooth' })
-            } else {
-              container.scrollTop = nextScrollTop
-            }
-          }
-        })
-      }
-    }
-
-    previousMessageCountRef.current = messages.length
-    previousSendingRef.current = sending
-  }, [conversationState, sending, threadId])
-
   useEffect(() => {
     if (prevSendingRef.current && !sending) {
       requestAnimationFrame(() => {
-        composerInputRef.current?.focus()
+        composerRef.current?.focus()
       })
     }
     prevSendingRef.current = sending
@@ -380,25 +313,17 @@ export function AssistantConversationView({
           <MessageList
             itineraryId={itineraryId}
             threadId={threadId}
-            scrollRef={conversationScrollRef}
             online={online}
-            onQuickPrompt={setDraftText}
+            onQuickPrompt={(prompt) => composerRef.current?.setText(prompt)}
             onDecision={(proposal, approved) => void handleDecision(proposal, approved)}
           />
 
           {threadId ? (
             <ChatComposer
+              ref={composerRef}
               itineraryId={itineraryId}
-              inputRef={composerInputRef}
               threadId={threadId}
               online={online}
-              draft={{
-                text: draftText,
-                setText: setDraftText,
-                attachments,
-                addAttachments: handleAddAttachments,
-                removeAttachment: handleRemoveAttachment,
-              }}
               onSubmit={handleSubmit}
               error={conversationError ?? error}
               notice={notice}

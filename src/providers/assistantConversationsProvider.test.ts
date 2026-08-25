@@ -1,33 +1,21 @@
 import { RiverContainer } from '@stball/react-river'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  deleteCheckpoint: vi.fn(),
-  getState: vi.fn(),
-  listAssistantMessages: vi.fn(),
-  notice: vi.fn(),
-  resumeTurn: vi.fn(),
-  saveAssistantMessage: vi.fn(),
-  sendTurn: vi.fn(),
-  summarizeThread: vi.fn(),
-  updateSummary: vi.fn(),
-}))
-
-vi.mock('../lib/repositories/assistantRepository', () => mocks)
-
 import type {
-  AssistantGraphState,
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantProposal,
 } from '../features/assistant/types'
-import type { AssistantConversationRuntime } from '../features/assistant/assistantRuntime'
+import type {
+  AssistantChatService,
+  ChatStreamEvent,
+} from '../features/assistant/api/assistantChatService'
 import { userIdProvider } from './authProviders'
 import {
   assistantConversationsProvider,
   type AssistantConversationSnapshot,
 } from './assistantConversationsProvider'
-import { assistantRuntimeProvider } from './assistantRuntimeProvider'
+import { assistantChatServiceProvider } from './assistantChatServiceProvider'
 
 const message = (
   role: AssistantMessage['role'],
@@ -63,36 +51,16 @@ const pendingToolCall = (): AssistantPendingToolCall => ({
   proposal: proposal(),
 })
 
-const graphState = (
-  overrides: Partial<AssistantGraphState> = {},
-): AssistantGraphState => ({
-  graphVersion: 8,
-  summary: '',
-  messages: [],
-  request: null,
-  assistantMessage: null,
-  pendingToolCall: null,
-  modelMessages: [],
-  toolRound: 0,
-  ...overrides,
-})
-
 let container: RiverContainer
-
-function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
-}
+let mockService: AssistantChatService
 
 beforeEach(() => {
-  vi.clearAllMocks()
-  mocks.getState.mockResolvedValue(null)
-  mocks.listAssistantMessages.mockResolvedValue([])
-  mocks.saveAssistantMessage.mockResolvedValue(undefined)
-  mocks.updateSummary.mockResolvedValue(undefined)
+  mockService = {
+    fetchHistory: vi.fn().mockResolvedValue({ messages: [], pendingToolCall: null }),
+    sendStream: vi.fn().mockResolvedValue(undefined),
+    resumeProposal: vi.fn().mockResolvedValue(undefined),
+    summarize: vi.fn().mockResolvedValue(undefined),
+  }
 })
 
 afterEach(() => {
@@ -100,262 +68,84 @@ afterEach(() => {
 })
 
 const createTestProvider = () => {
-  const runtime = {
-    runner: {
-      getState: mocks.getState,
-      resumeTurn: mocks.resumeTurn,
-      sendTurn: mocks.sendTurn,
-      summarizeThread: mocks.summarizeThread,
-    },
-    checkpointer: { deleteThread: mocks.deleteCheckpoint },
-    updateSummary: mocks.updateSummary,
-    onNotice: mocks.notice,
-  } as unknown as AssistantConversationRuntime
   container = new RiverContainer({
     overrides: [
       { original: userIdProvider, create: () => 'user-1' },
-      { original: assistantRuntimeProvider('trip-1'), create: () => runtime },
+      { original: assistantChatServiceProvider('trip-1'), create: () => mockService },
     ],
   })
   const provider = assistantConversationsProvider({ itineraryId: 'trip-1', threadId: 'thread-1' })
-  const notifier = container.read(provider.notifier) as any
+  const notifier = container.read(provider.notifier)
   return { provider, notifier }
 }
 
-const setup = async (seededMessages: AssistantMessage[] = []) => {
-  mocks.listAssistantMessages.mockResolvedValue(seededMessages)
-  const { provider, notifier } = createTestProvider()
-  await container.read(provider.promise)
-  return {
-    provider,
-    notifier,
-    snapshot: () => container.read(provider).data as AssistantConversationSnapshot,
-  }
-}
-
-describe('canonical messages', () => {
-  it('loads history on build', async () => {
-    const seeded = [message('user', 'turn-1', '問題')]
-    const { snapshot } = await setup(seeded)
-    expect(snapshot().messages).toEqual(seeded)
-    expect(snapshot().turn).toBeNull()
-  })
-
-  it('save upserts into cache and persists to repository', async () => {
-    const seeded = [message('user', 'turn-1', '問題')]
-    const { notifier, snapshot } = await setup(seeded)
-    const assistant = message('assistant', 'turn-1', '回答')
-
-    await notifier.save(assistant)
-
-    expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', assistant)
-    expect(snapshot().messages).toEqual([seeded[0], assistant])
-    expect(mocks.listAssistantMessages).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps the in-flight turn when history reloads', async () => {
-    const { notifier } = await setup()
-    mocks.listAssistantMessages.mockResolvedValue([
-      message('user', 'turn-9', '新載入的問題'),
-    ])
-
-    notifier.beginTurn()
-    notifier.appendDelta('turn-t1', '生成中')
-
-    // build() 的合併結果:新 canonical 訊息 + 保留處理中狀態
-    const reloaded = await notifier.build()
-    expect(reloaded.messages).toEqual([message('user', 'turn-9', '新載入的問題')])
-    expect(reloaded.turn?.phase).toBe('running')
-    expect(reloaded.turn?.streaming?.content).toBe('生成中')
-  })
-
-  it('does not let an older checkpoint load replace an active turn', async () => {
-    const checkpoint = deferred<AssistantGraphState | null>()
-    mocks.getState.mockReturnValue(checkpoint.promise)
-    const { provider, notifier } = createTestProvider()
-    const loading = container.read(provider.promise)
-
-    notifier.beginTurn()
-    notifier.appendDelta('turn-new', '新的生成內容')
-    checkpoint.resolve(graphState({ pendingToolCall: pendingToolCall() }))
-    await loading
-
-    const state = container.read(provider).data as AssistantConversationSnapshot
-    expect(state.turn?.phase).toBe('running')
-    expect(state.turn?.streaming?.content).toBe('新的生成內容')
-    expect(state.turn?.pendingToolCall).toBeNull()
-  })
-
-  it('keeps recovered messages visible when canonical persistence fails', async () => {
+describe('AssistantConversationNotifier', () => {
+  it('loads history and restores paused tool call on build', async () => {
     const user = message('user', 'turn-1', '問題')
-    const recovered = message('assistant', 'turn-1', '已恢復')
-    mocks.getState.mockResolvedValue(graphState({ messages: [user, recovered] }))
-    mocks.saveAssistantMessage.mockRejectedValue(new Error('write failed'))
-
-    const { snapshot } = await setup([user])
-
-    expect(snapshot().messages).toEqual([user, recovered])
-    expect(mocks.notice).toHaveBeenCalledWith(
-      '已從對話進度恢復助理回覆，但暫時無法同步至對話紀錄。',
-    )
-  })
-})
-
-describe('beginTurn / endTurn', () => {
-  it('starts a running overlay with clean fields', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    const state = snapshot()
-    expect(state.turn).toMatchObject({ phase: 'running', streaming: null, error: null })
-  })
-
-  it('preserves a pending tool call across beginTurn (resume flow)', async () => {
-    const { notifier, snapshot } = await setup()
-    await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    notifier.beginTurn()
-    expect(snapshot().turn?.phase).toBe('running')
-    expect(snapshot().turn?.pendingToolCall?.id).toBe('tool-1')
-  })
-
-  it('endTurn is a no-op without an overlay', async () => {
-    const { notifier, snapshot } = await setup()
-    const before = snapshot()
-    notifier.endTurn()
-    expect(snapshot()).toBe(before)
-  })
-
-  it('endTurn closes a plain running overlay', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.endTurn()
-    expect(snapshot().turn).toBeNull()
-  })
-
-  it('endTurn keeps an errored overlay so the failure stays visible', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.fail('產生失敗')
-    notifier.endTurn()
-    expect(snapshot().turn?.phase).toBe('error')
-    expect(snapshot().turn?.error).toBe('產生失敗')
-  })
-})
-
-describe('streaming deltas', () => {
-  it('creates then appends streaming text for the same turn', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.appendDelta('t1', '你好')
-    notifier.appendDelta('t1', ',東京')
-    expect(snapshot().turn?.streaming).toMatchObject({
-      id: 'streaming-t1',
-      turnId: 't1',
-      content: '你好,東京',
+    const toolCall = pendingToolCall()
+    mockService.fetchHistory = vi.fn().mockResolvedValue({
+      messages: [user],
+      pendingToolCall: toolCall,
     })
+
+    const { provider } = createTestProvider()
+    await container.read(provider.promise)
+
+    const snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.messages).toEqual([user])
+    expect(snapshot.turn?.phase).toBe('paused')
+    expect(snapshot.turn?.pendingToolCall).toEqual(toolCall)
   })
 
-  it('switches to a fresh draft when the turn changes', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.appendDelta('t1', 'A')
-    notifier.appendDelta('t2', 'B')
-    expect(snapshot().turn?.streaming?.turnId).toBe('t2')
-    expect(snapshot().turn?.streaming?.content).toBe('B')
+  it('send streams text deltas and commits assistant message', async () => {
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+
+    const assistantMsg = message('assistant', 'turn-1', '完整回答')
+
+    mockService.sendStream = vi.fn().mockImplementation(async (_req, _hist, onEvent) => {
+      onEvent({ type: 'progress', label: '思考中…' } as ChatStreamEvent)
+      onEvent({ type: 'content', text: '完整', turnId: 'turn-1' } as ChatStreamEvent)
+      onEvent({ type: 'content', text: '回答', turnId: 'turn-1' } as ChatStreamEvent)
+      onEvent({ type: 'message', message: assistantMsg } as ChatStreamEvent)
+    })
+
+    await notifier.send({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      text: '你好',
+      itinerary: {} as any,
+      dayRevisions: {},
+    })
+
+    const snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.messages).toHaveLength(2)
+    expect(snapshot.messages[0].role).toBe('user')
+    expect(snapshot.messages[1]).toEqual(assistantMsg)
+    expect(snapshot.turn).toBeNull()
   })
 
-  it('ignores empty deltas', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    const before = snapshot()
-    notifier.appendDelta('t1', '')
-    expect(snapshot()).toBe(before)
-  })
-})
+  it('handles error during stream gracefully and allows dismissal', async () => {
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
 
-describe('progress labels', () => {
-  it('sets and clears labels while a turn is active', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.setProgress('套用中')
-    expect(snapshot().turn?.progressLabel).toBe('套用中')
-    notifier.setProgress(null)
-    expect(snapshot().turn?.progressLabel).toBeNull()
-  })
-})
+    mockService.sendStream = vi.fn().mockRejectedValue(new Error('網路錯誤'))
 
-describe('commitTurn', () => {
-  it('pauses with a pending tool call and clears streaming', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    notifier.appendDelta('t1', '部分文字')
-    await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    const state = snapshot()
-    expect(state.turn?.phase).toBe('paused')
-    expect(state.turn?.pendingToolCall?.proposal.id).toBe('turn-t1')
-    expect(state.turn?.streaming).toBeNull()
-  })
+    await notifier.send({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      text: '你好',
+      itinerary: {} as any,
+      dayRevisions: {},
+    })
 
-  it('finishes atomically: message enters canonical history and overlay ends', async () => {
-    const seeded = [message('user', 'turn-u1', '問題')]
-    const { notifier, snapshot } = await setup(seeded)
-    notifier.beginTurn()
-    notifier.appendDelta('turn-u1', '部分')
+    let snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.turn?.phase).toBe('error')
+    expect(snapshot.turn?.error).toBe('網路錯誤')
 
-    const completed = message('assistant', 'turn-u1', '完整回答')
-    const returned = await notifier.commitTurn(graphState({
-      assistantMessage: completed,
-      messages: [seeded[0], completed],
-    }))
-
-    expect(returned).toEqual(completed)
-    expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', completed)
-    const state = snapshot()
-    expect(state.messages).toEqual([seeded[0], completed])
-    expect(state.turn).toBeNull()
-  })
-
-  it('closes the overlay when the result has neither message nor proposal', async () => {
-    const { notifier, snapshot } = await setup()
-    notifier.beginTurn()
-    await notifier.commitTurn(graphState())
-    expect(snapshot().turn).toBeNull()
+    notifier.dismissFailure()
+    snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.turn).toBeNull()
   })
 })
 
-describe('restore from checkpoint', () => {
-  it('rebuilds a paused card when no overlay exists yet', async () => {
-    mocks.getState.mockResolvedValue(graphState({ pendingToolCall: pendingToolCall() }))
-    const { snapshot } = await setup()
-    expect(snapshot().turn?.phase).toBe('paused')
-    expect(snapshot().turn?.pendingToolCall?.proposal.id).toBe('turn-t1')
-  })
-
-  it('clears stale cards when the checkpoint has none', async () => {
-    const { notifier } = await setup()
-    await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    const reloaded = await notifier.build()
-    expect(reloaded.turn).toBeNull()
-  })
-
-  it('does nothing on an idle conversation without checkpoint data', async () => {
-    const { snapshot } = await setup()
-    expect(snapshot()).toEqual({ messages: [], turn: null })
-  })
-})
-
-describe('patchPendingProposal', () => {
-  it('optimistically updates the matching proposal status', async () => {
-    const { notifier, snapshot } = await setup()
-    await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    notifier.patchPendingProposal('turn-t1', 'approved')
-    expect(snapshot().turn?.pendingToolCall?.proposal.status).toBe('approved')
-  })
-
-  it('ignores unrelated proposals', async () => {
-    const { notifier, snapshot } = await setup()
-    await notifier.commitTurn(graphState({ pendingToolCall: pendingToolCall() }))
-    const before = snapshot()
-    notifier.patchPendingProposal('other', 'rejected')
-    expect(snapshot()).toBe(before)
-  })
-})

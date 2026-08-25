@@ -1,5 +1,7 @@
 export * from './MessageBubble'
 export * from './MessageList'
+export * from './ConversationThread'
+export * from './useActiveTurnScroll'
 export * from './ChatComposer'
 export * from './ConversationList'
 export * from './AssistantAppBarActions'
@@ -9,3 +11,4 @@ export * from './AssistantConversationView'
 export * from './ModelSelector'
 export * from './ReasoningEffortSelector'
 export * from './AttachmentPreviewList'
+

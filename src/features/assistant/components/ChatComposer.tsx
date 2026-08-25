@@ -1,4 +1,12 @@
-import { useCallback, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react'
 import { useRiverWatch } from '@stball/react-river'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
@@ -13,12 +21,11 @@ import {
   Stack,
   Tooltip,
 } from '@mui/material'
-import {
-  assistantConversationsProvider,
-} from '../../../providers'
+import { assistantConversationsProvider } from '../../../providers'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
 import type { AssistantAttachment } from '../types'
+import { readAssistantAttachments } from '../assistantAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AttachmentPreviewList } from './AttachmentPreviewList'
 
@@ -51,45 +58,45 @@ const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement | HTMLTextAre
   }
 }
 
-export function ChatComposer({
-  itineraryId,
-  threadId,
-  inputRef,
-  online = true,
-  draft,
-  onSubmit,
-  error: feedbackError = null,
-  notice = null,
-  onClearError,
-  onClearNotice,
-}: {
+export interface ChatComposerHandle {
+  setText: (text: string) => void
+  focus: () => void
+}
+
+export interface ChatComposerProps {
   itineraryId: string
   threadId: string
-  inputRef?: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
   online?: boolean
-  /** 輸入草稿(文字與附件),由容器持有。 */
-  draft: {
-    text: string
-    setText: (text: string) => void
-    attachments: AssistantAttachment[]
-    addAttachments: (files: File[]) => Promise<void>
-    removeAttachment: (id: string) => void
-  }
-  /** 送出;容器負責清空草稿、建立回合並更新選取。 */
   onSubmit: (payload: {
     text: string
     attachments: AssistantAttachment[]
     selectedModel?: string
     reasoningEffort?: ReasoningEffort
   }) => void
-  /** 容器層(載入/清單/附件)的錯誤;turn 內錯誤由對話 snapshot 提供。 */
   error?: string | null
   onClearError: () => void
-  /** 系統公告，由 itinerary-scoped River provider 持有。 */
   notice?: string | null
   onClearNotice: () => void
-}) {
+}
+
+export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer(
+  {
+    itineraryId,
+    threadId,
+    online = true,
+    onSubmit,
+    error: feedbackError = null,
+    notice = null,
+    onClearError,
+    onClearNotice,
+  },
+  ref,
+) {
   const conversationState = useRiverWatch(assistantConversationsProvider({ itineraryId, threadId }))
+
+  const [text, setText] = useState('')
+  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
+  const [localError, setLocalError] = useState<string | null>(null)
 
   const [selectedModel, setSelectedModel] = useStoredPreference<string>(
     'preferred_gemini_model',
@@ -100,9 +107,18 @@ export function ChatComposer({
     DEFAULT_REASONING_EFFORT,
   )
 
+  const inputElementRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const text = draft.text
-  const attachments = draft.attachments
+
+  useImperativeHandle(ref, () => ({
+    setText: (newText: string) => {
+      setText(newText)
+      requestAnimationFrame(() => inputElementRef.current?.focus())
+    },
+    focus: () => {
+      inputElementRef.current?.focus()
+    },
+  }))
 
   const turn = conversationState.data?.turn ?? null
   const sending = Boolean(turn)
@@ -113,14 +129,24 @@ export function ChatComposer({
   const { isListening, error: speechError, clearError: clearSpeechError, toggleListening } =
     useSpeechRecognition({
       onTranscript: (transcript) => {
-        draft.setText(draft.text ? `${draft.text} ${transcript}` : transcript)
+        setText((current) => (current ? `${current} ${transcript}` : transcript))
       },
     })
+
+  const handleAddAttachments = async (files: File[]) => {
+    const { attachments: next, errors } = await readAssistantAttachments(files)
+    if (errors.length > 0) setLocalError(errors.at(-1) ?? null)
+    if (next.length > 0) setAttachments((current) => [...current, ...next])
+  }
+
+  const handleRemoveAttachment = (id: string) => {
+    setAttachments((current) => current.filter((item) => item.id !== id))
+  }
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files
     if (files && files.length > 0) {
-      void draft.addAttachments(Array.from(files))
+      void handleAddAttachments(Array.from(files))
     }
     event.target.value = ''
   }
@@ -131,7 +157,19 @@ export function ChatComposer({
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!canSubmit) return
-    onSubmit({ text, attachments, selectedModel, reasoningEffort })
+
+    const submittedText = text
+    const submittedAttachments = attachments
+    setText('')
+    setAttachments([])
+    setLocalError(null)
+
+    onSubmit({
+      text: submittedText,
+      attachments: submittedAttachments,
+      selectedModel,
+      reasoningEffort,
+    })
   }
 
   const composerPlaceholder = unavailable
@@ -143,7 +181,7 @@ export function ChatComposer({
     : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
 
   const disabled = loading || unavailable || sending || hasPendingProposal || !online
-  const error = turn?.error ?? feedbackError
+  const displayError = turn?.error ?? feedbackError ?? localError
 
   return (
     <Stack
@@ -158,7 +196,7 @@ export function ChatComposer({
         zIndex: 3,
       }}
     >
-      {/* 網路斷線提示 (輸入框上方) */}
+      {/* 網路斷線提示 */}
       {!online ? (
         <Alert
           severity="info"
@@ -169,7 +207,7 @@ export function ChatComposer({
         </Alert>
       ) : null}
 
-      {/* 系統公告 / 提示 (輸入框上方) */}
+      {/* 系統公告 */}
       {notice ? (
         <Alert
           severity="warning"
@@ -181,19 +219,22 @@ export function ChatComposer({
         </Alert>
       ) : null}
 
-      {/* 錯誤訊息提示 (輸入框上方) */}
-      {error ? (
+      {/* 錯誤訊息 */}
+      {displayError ? (
         <Alert
           severity="error"
           variant="outlined"
-          onClose={onClearError}
+          onClose={() => {
+            setLocalError(null)
+            onClearError()
+          }}
           sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
         >
-          {error}
+          {displayError}
         </Alert>
       ) : null}
 
-      {/* 語音錯誤提示 */}
+      {/* 語音錯誤 */}
       {speechError ? (
         <Alert
           severity="warning"
@@ -204,7 +245,7 @@ export function ChatComposer({
         </Alert>
       ) : null}
 
-      {/* 整合式現代化輸入卡片 (參考設計) */}
+      {/* 整合式現代化輸入卡片 */}
       <Paper
         elevation={0}
         sx={{
@@ -226,7 +267,7 @@ export function ChatComposer({
         {attachments.length > 0 ? (
           <AttachmentPreviewList
             attachments={attachments}
-            onRemoveAttachment={draft.removeAttachment}
+            onRemoveAttachment={handleRemoveAttachment}
             disabled={disabled}
           />
         ) : null}
@@ -243,14 +284,14 @@ export function ChatComposer({
 
         {/* 無邊框文字輸入區 */}
         <InputBase
-          inputRef={inputRef}
+          inputRef={inputElementRef}
           fullWidth
           multiline
           minRows={1}
           maxRows={6}
           placeholder={isListening ? '正在聆聽您的語音輸入…' : composerPlaceholder}
           value={text}
-          onChange={(event) => draft.setText(event.target.value)}
+          onChange={(event) => setText(event.target.value)}
           onKeyDown={handleComposerKeyDown}
           disabled={disabled}
           sx={{
@@ -353,15 +394,9 @@ export function ChatComposer({
               sx={{
                 width: 32,
                 height: 32,
-                bgcolor:
-                  !canSubmit
-                    ? 'rgba(0, 0, 0, 0.08)'
-                    : '#0d766e',
+                bgcolor: !canSubmit ? 'rgba(0, 0, 0, 0.08)' : '#0d766e',
                 color: '#ffffff',
-                boxShadow:
-                  !canSubmit
-                    ? 'none'
-                    : '0 2px 8px rgba(13, 118, 110, 0.3)',
+                boxShadow: !canSubmit ? 'none' : '0 2px 8px rgba(13, 118, 110, 0.3)',
                 transition: 'all 160ms ease',
                 '&:hover': {
                   bgcolor: '#075c57',
@@ -384,4 +419,5 @@ export function ChatComposer({
       </Paper>
     </Stack>
   )
-}
+})
+
