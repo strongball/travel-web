@@ -18,6 +18,7 @@ import type {
 import {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
+  SEARCH_WEB_TOOL_NAME,
   assistantBuiltinTools,
   langchainAssistantTools,
 } from '../tools'
@@ -25,6 +26,7 @@ import {
 export {
   PROPOSAL_TOOL_NAME,
   TODO_PROPOSAL_TOOL_NAME,
+  SEARCH_WEB_TOOL_NAME,
   assistantBuiltinTools,
   langchainAssistantTools,
 }
@@ -321,10 +323,15 @@ export function buildAssistantPrompt(
     '請根據以下行程目前狀態與對話脈絡提供協助。',
     '',
     '## 核心原則',
-    '1. 一般問答、提供旅遊建議、景點介紹、交通方式、或是詢問/釐清細節時，直接回覆自然文字即可，**不要**呼叫任何 Tool。',
+    '1. 一般問答、提供旅遊建議、景點介紹、交通方式、或是詢問/釐清細節時，直接回覆自然文字即可。當需要查詢即時資訊、最新情報或需要連網查證資料時，可呼叫 `search_web_information` 搜尋。',
     '2. 只有在使用者明確要求、同意或接受「修改行程景點」時，才呼叫 `propose_itinerary_edit` 工具提出具體操作（ operations ）。',
     '3. 當使用者要求「規劃、整理、建議或新增待辦清單」（如行前準備、打包清單、預約提醒等）時，呼叫 `propose_todo_list` 工具。',
-    '4. 當你呼叫工具提出提案時，該提案會由使用者介面長出專屬畫面讓使用者確認後才儲存與套用。',
+    '4. 當你呼叫提案工具（`propose_itinerary_edit` 或 `propose_todo_list`）提出提案時，該提案會由使用者介面長出專屬畫面讓使用者確認後才儲存與套用。',
+    '',
+    '## 格式與資料來源連結規範',
+    '- **超連結與資料來源**：當你使用搜尋工具或提及任何官方網站、售票網址、交通資訊、景點網址或參考資料時，**務必使用 Markdown 超連結語法**（例如 `[景點或網站名稱](URL)`）將連結直接放入回覆中，方便使用者點擊。',
+    '- **具體連結文字**：連結文字請使用具有描述性的名稱（如 `[東京晴空塔官方預約網站](https://...)` 或 `[JR東日本路線圖](https://...)`），切勿使用「點這裡」、「網址」等空泛字詞。',
+    '- **文末來源彙整**：若有透過搜尋取得參考資料，可以在回覆結尾加上「🔗 參考資料 / 相關連結」清單供使用者進一步查閱。',
     '',
     '## 當前行程摘要',
     `標題：${itinerary.title}`,

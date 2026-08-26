@@ -11,18 +11,20 @@
 - `src/features/assistant/tools/proposalToolRuntime.ts`：Todo 與 Itinerary 共用的 `interrupt()`、resume decision 與 ToolMessage payload 處理。
 - `src/features/assistant/tools/itinerary/`：行程修改提案的 schema、操作驗證、套用與顯示。
 - `src/features/assistant/tools/todo/`：待辦清單提案的 schema、操作套用與顯示。
+- `src/features/assistant/tools/search/`：Tavily 聯網即時搜尋工具（`search_web_information`），將結果轉為結構化 Markdown 供模型閱讀。
 - `src/features/assistant/components/`：展示層直接訂閱 River(graph → river → component)；`AssistantConversationView` 只持有選取、草稿等檢視狀態並觸發使用者命令，不主動載入對話。
 - `src/providers/assistantTurnActionsProvider.ts`：只協調需要同時碰觸 thread collection 與 conversation 的送出、刪除、提案決策與壓縮命令；單一 provider 的 CRUD 直接呼叫其 notifier。
 - `src/providers/assistantRuntimeProvider.ts`：依 itinerary 建立 graph runtime、同步 thread summary、發送系統公告，並在提案套用後直接 refresh 既有的 itinerary/expense/todo providers；runtime 不參與 SSR 序列化。
 - `src/features/assistant/assistantAttachments.ts`：檔案大小/type 判斷與 FileReader 附件轉換；容器負責丟棄已失效的非同步讀取結果。
 - `src/features/assistant/assistantTurnFlow.ts`：回合流程的純函數(request 建構、checkpoint 缺漏訊息推導、自動命名),不依賴 React 與 River。
-- `src/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接 immutable 更新 cache，`refresh()` 只作明確的重新驗證。
+- `src/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接儲存快取。
 - `src/providers/assistantConversationsProvider.ts`：以 `{ itineraryId, threadId }` 為 key 的對話 provider = canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)。`build()` 同時載入 canonical history 與 checkpoint、恢復 pending proposal 並回存缺漏的 assistant message；舊載入結果不可覆蓋已開始的 turn。
 - 選取中的 `threadId`(sessionStorage 記憶)與輸入草稿是檢視狀態,由容器元件 `AssistantConversationView` 持有;「刪除中」的同步互斥放在 `AssistantThreadsNotifier` 本體(`isDeleting()`),回合錯誤屬於各 thread 的 snapshot。
 - 載入錯誤由 River `AsyncValue` 表達；turn 內錯誤屬於各 thread snapshot；短暫 CRUD/附件錯誤仍是 component-local feedback；runtime 公告由 `assistantNoticeProvider(itineraryId)` 持有。
 - 過期事件防護由 keyed provider 天然隔離:寫入只落在目標 thread 自己的 snapshot 上(切走再回來仍看得到回合錯誤)。
 - `src/lib/assistantCheckpointer.ts`：以 Supabase Data API 實作 LangGraph `BaseCheckpointSaver`。
 - `supabase/functions/gemini-proxy`：代理已驗證使用者對固定 Gemini model 的 `generateContent` 與 `streamGenerateContent?alt=sse`；不執行 graph，也不讀寫產品資料。
+- `supabase/functions/tavily-proxy`：代理已驗證使用者對 Tavily Search API 的呼叫，隱藏 API Key 並在後端實施搜尋深度與筆數限制。
 
 LangGraph checkpoint 是 pending tool call 與可恢復執行的唯一來源。暫停中的 proposal card 不會寫成 `AssistantMessage`，前端從 checkpoint task 的 interrupt payload 與原本的 AI tool call 推導 `pendingToolCall`；只有工具完成、LLM 產生最後文字後，才會建立 `AssistantMessage`。完成後的 proposal 可附在 `assistant_messages.metadata.proposal`，讓歷史仍能顯示已套用/已拒絕結果；新流程不再讀寫 `assistant_proposals`。實際行程仍以 `days`、`attractions` 與 `todo_items` 為準。
 

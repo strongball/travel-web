@@ -213,7 +213,15 @@ export function MessageBubble({
             </Stack>
           ) : null}
           {message.content ? (
-            <ReactMarkdown>{formatAssistantText(message.content)}</ReactMarkdown>
+            <ReactMarkdown
+              components={{
+                a: ({ node: _node, ...props }) => (
+                  <a target="_blank" rel="noopener noreferrer" {...props} />
+                ),
+              }}
+            >
+              {formatAssistantText(message.content)}
+            </ReactMarkdown>
           ) : null}
           {streaming ? (
             <Box component="span" className="assistant-typing-caret" aria-hidden="true">

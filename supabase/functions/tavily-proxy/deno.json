@@ -1,0 +1,5 @@
+{
+  "compilerOptions": { "strict": true },
+  "nodeModulesDir": "auto",
+  "tasks": { "test": "deno test tavily_contract_test.ts" }
+}

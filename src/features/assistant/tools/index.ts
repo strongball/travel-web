@@ -15,6 +15,10 @@ import {
   applyTodoProposal,
   TodoProposalView,
 } from './todo'
+import {
+  SEARCH_WEB_TOOL_NAME,
+  tavilySearchTool,
+} from './search'
 
 export {
   PROPOSAL_TOOL_NAME,
@@ -30,6 +34,8 @@ export {
   extractProposedCategories,
   applyTodoProposal,
   TodoProposalView,
+  SEARCH_WEB_TOOL_NAME,
+  tavilySearchTool,
 }
 
 /** 提案 / UI 類工具：執行後中斷模型回合，交由前端 UI 確認 */
@@ -40,7 +46,7 @@ export const assistantProposalTools = [
 
 /** 一般查詢 / 背景類工具：執行後將結果回傳給模型繼續思考 */
 export const assistantGeneralTools = [
-  // 供未來擴充：例如 lookupWeatherTool, searchPlacesTool 等
+  tavilySearchTool,
 ] as const
 
 /** 前端/本地可執行的工具集合（供 LangGraph ToolNode 使用） */
