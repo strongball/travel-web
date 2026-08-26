@@ -258,7 +258,7 @@ export class SupabaseAssistantCheckpointer extends BaseCheckpointSaver {
     const namespace = checkpointNamespace(config)
     let query = this.client
       .from(this.checkpointTable)
-      .select('*')
+      .select('thread_id,checkpoint_ns,checkpoint_id,parent_checkpoint_id,checkpoint_type,checkpoint_payload,metadata_type,metadata_payload')
       .eq('thread_id', threadId)
       .eq('checkpoint_ns', namespace)
     const checkpointId = config.configurable?.checkpoint_id

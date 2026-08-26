@@ -22,7 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { assistantThreadsProvider } from '../../../providers'
+import { assistantThreadsProvider } from '../providers'
 import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
 
 const timeLabel = (value: string) =>

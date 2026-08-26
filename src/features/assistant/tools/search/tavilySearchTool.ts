@@ -29,13 +29,28 @@ export const tavilySearchTool = tool(
       return '搜尋關鍵字不能為空。'
     }
 
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return '目前處於離線狀態，無法進行即時網路搜尋。請根據既有行程與已知資訊進行回覆。'
+    }
+
     try {
       const { data, error } = await supabase.functions.invoke<TavilySearchResponse>('tavily-proxy', {
         body: { query },
       })
 
       if (error) {
-        return `搜尋失敗：${error.message || '無法連線至搜尋服務'}`
+        let msg = error.message || '無法連線至搜尋服務'
+        if ('context' in error && error.context && typeof (error.context as { json?: unknown }).json === 'function') {
+          try {
+            const body = await (error.context as Response).json()
+            if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
+              msg = body.message
+            }
+          } catch {
+            // Ignore response parsing failure
+          }
+        }
+        return `搜尋失敗：${msg}`
       }
 
       if (!data) {

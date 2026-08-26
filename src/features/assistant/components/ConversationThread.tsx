@@ -64,6 +64,7 @@ export interface ConversationThreadProps<
   renderStreaming?: (context: ConversationStreamingRenderContext<TStreamingState>) => ReactNode
   renderInterrupt?: (context: ConversationInterruptRenderContext<TInterrupt, TResumeInput>) => ReactNode
   renderError?: (error: unknown) => ReactNode
+  renderHead?: ReactNode
   renderTail?: ReactNode
   onResume?: (input: TResumeInput) => void
 }
@@ -94,6 +95,7 @@ export function ConversationThread<
     renderStreaming,
     renderInterrupt,
     renderError,
+    renderHead,
     renderTail,
     onResume,
   } = props
@@ -116,6 +118,8 @@ export function ConversationThread<
       )}
 
       {!isHistoryLoading && !hasMessages && emptyState}
+
+      {hasMessages && renderHead}
 
       {messages.map((message, index) => {
         const renderedMessage = renderMessage({

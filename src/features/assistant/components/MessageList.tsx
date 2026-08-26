@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
+import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded'
 import {
   Avatar,
   Box,
+  Button,
   Chip,
   Divider,
   Paper,
@@ -10,12 +13,14 @@ import {
   Typography,
 } from '@mui/material'
 import { useRiverWatch } from '@stball/react-river'
-import { assistantConversationsProvider, type AssistantTurnOverlay } from '../../../providers'
+import { assistantConversationsProvider, type AssistantTurnOverlay } from '../providers'
 import type { AssistantMessage, AssistantPendingToolCall, AssistantProposal } from '../types'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { AssistantProgress, ConversationLoading } from './AssistantProgress'
 import { ConversationThread } from './ConversationThread'
+
+const INITIAL_VISIBLE_COUNT = 40
 
 const quickPrompts = [
   '幫我整理這趟旅行的行前準備與打包清單',
@@ -142,6 +147,17 @@ export function MessageList({
   const isStreaming = Boolean(turn?.streaming || turn?.progressLabel)
   const pendingToolCall = turn?.pendingToolCall ?? null
 
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    setExpanded(false)
+  }, [threadId])
+
+  const hasMore = messages.length > INITIAL_VISIBLE_COUNT
+  const visibleMessages = expanded || !hasMore
+    ? messages
+    : messages.slice(messages.length - INITIAL_VISIBLE_COUNT)
+
   if (!threadId) {
     return (
       <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 3 }}>
@@ -172,7 +188,33 @@ export function MessageList({
       AssistantPendingToolCall,
       { proposal: AssistantProposal; approved: boolean }
     >
-      messages={messages}
+      messages={visibleMessages}
+      renderHead={
+        hasMore && !expanded ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />}
+              onClick={() => setExpanded(true)}
+              sx={{
+                borderRadius: 999,
+                fontSize: '0.8rem',
+                fontWeight: 650,
+                color: '#0d766e',
+                borderColor: 'rgba(13, 118, 110, 0.25)',
+                bgcolor: 'rgba(13, 118, 110, 0.04)',
+                '&:hover': {
+                  borderColor: '#0d766e',
+                  bgcolor: 'rgba(13, 118, 110, 0.08)',
+                },
+              }}
+            >
+              載入更早的 {messages.length - INITIAL_VISIBLE_COUNT} 則對話
+            </Button>
+          </Box>
+        ) : null
+      }
       isHistoryLoading={loading}
       historyLoading={<ConversationLoading />}
       emptyState={<WelcomeCard onQuickPrompt={onQuickPrompt} />}

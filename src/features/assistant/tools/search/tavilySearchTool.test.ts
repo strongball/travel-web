@@ -74,6 +74,33 @@ describe('tavilySearchTool', () => {
     expect(result).toBe('搜尋失敗：Tavily API key not configured')
   })
 
+  it('handles Supabase function invocation error with context json', async () => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValueOnce({
+      data: null,
+      error: {
+        message: 'Edge Function returned a non-2xx status code',
+        context: {
+          json: async () => ({ message: 'Tavily proxy is not configured' }),
+        },
+      },
+    } as any)
+
+    const result = await tavilySearchTool.invoke({ query: '天氣' })
+    expect(result).toBe('搜尋失敗：Tavily proxy is not configured')
+  })
+
+  it('returns friendly message immediately when offline', async () => {
+    const originalOnLine = navigator.onLine
+    try {
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
+      const result = await tavilySearchTool.invoke({ query: '天氣' })
+      expect(result).toContain('離線狀態')
+      expect(supabase.functions.invoke).not.toHaveBeenCalled()
+    } finally {
+      Object.defineProperty(navigator, 'onLine', { value: originalOnLine, configurable: true })
+    }
+  })
+
   it('handles network or unexpected exceptions', async () => {
     vi.mocked(supabase.functions.invoke).mockRejectedValueOnce(new Error('Network offline'))
 

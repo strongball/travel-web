@@ -21,7 +21,7 @@ import {
   Stack,
   Tooltip,
 } from '@mui/material'
-import { assistantConversationsProvider } from '../../../providers'
+import { assistantConversationsProvider } from '../providers'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
 import type { AssistantAttachment } from '../types'

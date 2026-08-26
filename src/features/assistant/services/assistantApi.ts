@@ -58,14 +58,14 @@ export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
               ? 'MEDIUM'
               : 'LOW'
         params.generationConfig = {
-          ...((params.generationConfig as Record<string, unknown>) || {}),
+          ...((params.generationConfig as Record<string, unknown>) ?? {}),
           thinkingConfig: {
             thinkingLevel,
           },
         }
       } else {
         params.generationConfig = {
-          ...((params.generationConfig as Record<string, unknown>) || {}),
+          ...((params.generationConfig as Record<string, unknown>) ?? {}),
           thinkingConfig: {
             thinkingBudget: this.thinkingBudget,
           },
@@ -75,7 +75,7 @@ export class AssistantChatGoogleGenerativeAI extends ChatGoogleGenerativeAI {
 
     if (assistantBuiltinTools.length > 0 && params.toolConfig) {
       params.toolConfig = {
-        ...((params.toolConfig as Record<string, unknown>) || {}),
+        ...((params.toolConfig as Record<string, unknown>) ?? {}),
         includeServerSideToolInvocations: true,
       }
     }
@@ -155,7 +155,8 @@ export function extractAssistantToolsMetadata(
       if (!grounding) {
         grounding = { webSearchQueries: [], sources: extraSources }
       } else {
-        const currentSources = grounding.sources || []
+        const currentSources = grounding.sources ?? []
+        grounding.sources = currentSources
         const existingUris = new Set(currentSources.map((s) => s.uri))
         for (const s of extraSources) {
           if (s.uri && !existingUris.has(s.uri)) {
@@ -163,7 +164,6 @@ export function extractAssistantToolsMetadata(
             existingUris.add(s.uri)
           }
         }
-        grounding.sources = currentSources
       }
     }
   }

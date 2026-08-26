@@ -17,7 +17,7 @@ import {
   assistantNoticeProvider,
   assistantThreadsProvider,
   assistantTurnActionsProvider,
-} from '../../../providers'
+} from '../providers'
 import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
 import type { Itinerary, TodoItem } from '../../../types/database'
 import type { ReasoningEffort } from '../models'
