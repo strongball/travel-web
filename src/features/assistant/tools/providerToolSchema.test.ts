@@ -1,6 +1,6 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { describe, expect, it, vi } from 'vitest'
-import { bindAssistantTools } from '../api/assistantApi'
+import { bindAssistantTools } from '../services/assistantApi'
 import {
   assistantCallableTools,
   assistantBuiltinTools,

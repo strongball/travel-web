@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createAssistantChatService } from './assistantChatService'
 import type { AssistantGraphState, AssistantMessage } from '../types'
-import type { AssistantConversationRuntime } from '../assistantRuntime'
+import type { AssistantConversationRuntime } from './assistantRuntime'
 
 const mocks = vi.hoisted(() => ({
   listAssistantMessages: vi.fn(),

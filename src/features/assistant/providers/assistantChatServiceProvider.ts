@@ -2,7 +2,7 @@ import { providerFamily } from '@stball/react-river'
 import {
   createAssistantChatService,
   type AssistantChatService,
-} from '../features/assistant/api/assistantChatService'
+} from '../services'
 import { assistantRuntimeProvider } from './assistantRuntimeProvider'
 
 export const assistantChatServiceProvider = providerFamily<AssistantChatService, string>(

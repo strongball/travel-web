@@ -1,4 +1,4 @@
-import type { AssistantAttachment } from './types'
+import type { AssistantAttachment } from '../types'
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024
 

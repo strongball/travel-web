@@ -1,6 +1,6 @@
 import React, { type ReactNode, type RefObject } from 'react'
 import { Box, Stack, styled } from '@mui/material'
-import { useActiveTurnScroll } from './useActiveTurnScroll'
+import { useActiveTurnScroll } from '../hooks'
 
 const StyledMessagesContainer = styled(Stack)(({ theme }) => ({
   flex: 1,

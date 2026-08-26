@@ -8,8 +8,8 @@ const assistantGraphMocks = vi.hoisted(() => ({
   summarizeWithGemini: vi.fn(),
 }))
 
-vi.mock('../api', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../api')>()),
+vi.mock('../services', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../services')>()),
   invokeAssistantModel: assistantGraphMocks.invokeAssistantModel,
   summarizeWithGemini: assistantGraphMocks.summarizeWithGemini,
 }))

@@ -13,12 +13,12 @@
 - `src/features/assistant/tools/todo/`：待辦清單提案的 schema、操作套用與顯示。
 - `src/features/assistant/tools/search/`：Tavily 聯網即時搜尋工具（`search_web_information`），將結果轉為結構化 Markdown 供模型閱讀。
 - `src/features/assistant/components/`：展示層直接訂閱 River(graph → river → component)；`AssistantConversationView` 只持有選取、草稿等檢視狀態並觸發使用者命令，不主動載入對話。
-- `src/providers/assistantTurnActionsProvider.ts`：只協調需要同時碰觸 thread collection 與 conversation 的送出、刪除、提案決策與壓縮命令；單一 provider 的 CRUD 直接呼叫其 notifier。
-- `src/providers/assistantRuntimeProvider.ts`：依 itinerary 建立 graph runtime、同步 thread summary、發送系統公告，並在提案套用後直接 refresh 既有的 itinerary/expense/todo providers；runtime 不參與 SSR 序列化。
-- `src/features/assistant/assistantAttachments.ts`：檔案大小/type 判斷與 FileReader 附件轉換；容器負責丟棄已失效的非同步讀取結果。
-- `src/features/assistant/assistantTurnFlow.ts`：回合流程的純函數(request 建構、checkpoint 缺漏訊息推導、自動命名),不依賴 React 與 River。
-- `src/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接儲存快取。
-- `src/providers/assistantConversationsProvider.ts`：以 `{ itineraryId, threadId }` 為 key 的對話 provider = canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)。`build()` 同時載入 canonical history 與 checkpoint、恢復 pending proposal 並回存缺漏的 assistant message；舊載入結果不可覆蓋已開始的 turn。
+- `src/features/assistant/providers/assistantTurnActionsProvider.ts`：只協調需要同時碰觸 thread collection 與 conversation 的送出、刪除、提案決策與壓縮命令；單一 provider 的 CRUD 直接呼叫其 notifier。
+- `src/features/assistant/providers/assistantRuntimeProvider.ts`：依 itinerary 建立 graph runtime、同步 thread summary、發送系統公告，並在提案套用後直接 refresh 既有的 itinerary/expense/todo providers；runtime 不參與 SSR 序列化。
+- `src/features/assistant/utils/assistantAttachments.ts`：檔案大小/type 判斷與 FileReader 附件轉換；容器負責丟棄已失效的非同步讀取結果。
+- `src/features/assistant/services/assistantTurnFlow.ts`：回合流程的純函數(request 建構、checkpoint 缺漏訊息推導、自動命名),不依賴 React 與 River。
+- `src/features/assistant/providers/assistantThreadsProvider.ts`：以 River `AsyncNotifier` family 管理各 itinerary 的 thread collection；CRUD 成功後直接儲存快取。
+- `src/features/assistant/providers/assistantConversationsProvider.ts`：以 `{ itineraryId, threadId }` 為 key 的對話 provider = canonical messages + 處理中的 `turn` overlay(streaming 文字、等待決策的提案卡、progress、error)。`build()` 同時載入 canonical history 與 checkpoint、恢復 pending proposal 並回存缺漏的 assistant message；舊載入結果不可覆蓋已開始的 turn。
 - 選取中的 `threadId`(sessionStorage 記憶)與輸入草稿是檢視狀態,由容器元件 `AssistantConversationView` 持有;「刪除中」的同步互斥放在 `AssistantThreadsNotifier` 本體(`isDeleting()`),回合錯誤屬於各 thread 的 snapshot。
 - 載入錯誤由 River `AsyncValue` 表達；turn 內錯誤屬於各 thread snapshot；短暫 CRUD/附件錯誤仍是 component-local feedback；runtime 公告由 `assistantNoticeProvider(itineraryId)` 持有。
 - 過期事件防護由 keyed provider 天然隔離:寫入只落在目標 thread 自己的 snapshot 上(切走再回來仍看得到回合錯誤)。

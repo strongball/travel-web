@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
   updateAssistantThreadSummary: vi.fn(),
 }))
 
-vi.mock('../lib/repositories', () => mocks)
+vi.mock('../../../lib/repositories', () => mocks)
 
-import { userIdProvider } from './authProviders'
+import { userIdProvider } from '../../../providers/authProviders'
 import { assistantThreadsProvider } from './assistantThreadsProvider'
-import type { AssistantThread } from '../lib/repositories/assistantRepository'
+import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
 
 const thread = (id: string, title = '測試對話'): AssistantThread => ({
   id,

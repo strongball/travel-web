@@ -1,6 +1,6 @@
 import { AIMessage, HumanMessage } from '@langchain/core/messages'
 import { getWriter, type LangGraphRunnableConfig } from '@langchain/langgraph/web'
-import { buildAssistantPrompt, invokeAssistantModel } from '../../api'
+import { buildAssistantPrompt, invokeAssistantModel } from '../../services'
 import type { AssistantProgressPhase } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
 

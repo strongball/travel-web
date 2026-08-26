@@ -9,9 +9,9 @@ import type {
   AssistantPendingToolCall,
   AssistantTurnRequest,
   AssistantUserDecision,
-} from '../features/assistant/types'
+} from '../types'
 import { assistantChatServiceProvider } from './assistantChatServiceProvider'
-import { userIdProvider } from './authProviders'
+import { userIdProvider } from '../../../providers/authProviders'
 
 export type AssistantTurnOverlay = {
   phase: 'running' | 'paused' | 'error'

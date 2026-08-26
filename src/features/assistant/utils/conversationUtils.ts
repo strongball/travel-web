@@ -1,6 +1,6 @@
-import type { Itinerary } from '../../types/database'
-import { AssistantGraphVersionError } from './graph'
-import type { AssistantProgressPhase } from './types'
+import type { Itinerary } from '../../../types/database'
+import { AssistantGraphVersionError } from '../graph'
+import type { AssistantProgressPhase } from '../types'
 
 export const progressLabels: Record<AssistantProgressPhase, string> = {
   checking_context: '正在確認是否需要整理前文…',

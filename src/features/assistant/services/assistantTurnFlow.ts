@@ -1,11 +1,11 @@
-import type { Itinerary, TodoItem } from '../../types/database'
-import { dayRevisions } from './assistantConversationUtils'
+import type { Itinerary, TodoItem } from '../../../types/database'
+import { dayRevisions } from '../utils/conversationUtils'
 import type {
   AssistantAttachment,
   AssistantGraphState,
   AssistantMessage,
   AssistantTurnRequest,
-} from './types'
+} from '../types'
 
 export const DEFAULT_THREAD_TITLE = '新對話'
 

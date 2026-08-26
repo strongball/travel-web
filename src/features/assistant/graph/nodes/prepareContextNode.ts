@@ -2,7 +2,7 @@ import type {
   AssistantMessage,
   AssistantProgressPhase,
 } from '../../types'
-import { summarizeWithGemini } from '../../api'
+import { summarizeWithGemini } from '../../services'
 import type { AssistantGraphNodeState } from '../graphState'
 
 type PrepareContextNodeOptions = {

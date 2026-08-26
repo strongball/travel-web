@@ -26,7 +26,7 @@ import {
   parseAssistantOperations,
   summarizeWithGemini,
   validateAssistantOperations,
-} from '../api'
+} from '../services'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'

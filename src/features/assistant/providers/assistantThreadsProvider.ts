@@ -13,8 +13,8 @@ import {
   renameAssistantThread,
   updateAssistantThreadSummary,
   type AssistantThread,
-} from '../lib/repositories'
-import { userIdProvider } from './authProviders'
+} from '../../../lib/repositories'
+import { userIdProvider } from '../../../providers/authProviders'
 
 export class AssistantThreadsNotifier extends AsyncNotifier<AssistantThread[]> {
   private loadGeneration = 0

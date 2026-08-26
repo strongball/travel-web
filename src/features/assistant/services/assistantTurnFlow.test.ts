@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { Itinerary } from '../../types/database'
+import type { Itinerary } from '../../../types/database'
 import {
   DEFAULT_THREAD_TITLE,
   buildTurnRequest,
   findRecoveredAssistantMessages,
   nextThreadTitle,
 } from './assistantTurnFlow'
-import type { AssistantAttachment, AssistantGraphState, AssistantMessage } from './types'
+import type { AssistantAttachment, AssistantGraphState, AssistantMessage } from '../types'
 
 const itinerary: Itinerary = {
   id: 'trip-1',

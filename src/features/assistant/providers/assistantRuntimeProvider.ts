@@ -3,11 +3,11 @@ import { providerFamily, stateProviderFamily } from '@stball/react-river'
 import {
   createAssistantRuntime,
   type AssistantConversationRuntime,
-} from '../features/assistant/assistantRuntime'
+} from '../services'
 import { assistantThreadsProvider } from './assistantThreadsProvider'
-import { expensesProvider } from './expensesProvider'
-import { itinerariesProvider } from './itinerariesProvider'
-import { todosProvider } from './todosProvider'
+import { expensesProvider } from '../../../providers/expensesProvider'
+import { itinerariesProvider } from '../../../providers/itinerariesProvider'
+import { todosProvider } from '../../../providers/todosProvider'
 
 export const assistantNoticeProvider = stateProviderFamily<string | null, string>(
   () => null,

@@ -25,7 +25,7 @@ import { assistantConversationsProvider } from '../../../providers'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
 import type { AssistantAttachment } from '../types'
-import { readAssistantAttachments } from '../assistantAttachments'
+import { readAssistantAttachments } from '../utils/assistantAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AttachmentPreviewList } from './AttachmentPreviewList'
 

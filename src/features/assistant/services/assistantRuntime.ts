@@ -1,9 +1,9 @@
-import { applyAssistantOperations } from '../../lib/repositories/assistantRepository'
-import { SupabaseAssistantCheckpointer } from '../../lib/assistantCheckpointer'
-import { supabase } from '../../lib/supabase'
-import { createAssistantGraph } from './graph'
-import { enrichAppliedProposalPlaces } from './tools'
-import type { AssistantProposal } from './types'
+import { applyAssistantOperations } from '../../../lib/repositories/assistantRepository'
+import { SupabaseAssistantCheckpointer } from '../../../lib/assistantCheckpointer'
+import { supabase } from '../../../lib/supabase'
+import { createAssistantGraph } from '../graph'
+import { enrichAppliedProposalPlaces } from '../tools'
+import type { AssistantProposal } from '../types'
 
 export const createAssistantRuntime = (
   refreshWorkspace: () => void | Promise<void>,

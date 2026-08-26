@@ -2,16 +2,16 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { RiverScope, useRiverRef, useRiverWatch } from '@stball/react-river'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { Itinerary } from '../../types/database'
-import type { AssistantGraphState, AssistantMessage, AssistantProposal } from './types'
-import type { AssistantThread } from '../../lib/repositories/assistantRepository'
-import { userIdProvider } from '../../providers/authProviders'
+import type { Itinerary } from '../../../types/database'
+import type { AssistantGraphState, AssistantMessage, AssistantProposal } from '../types'
+import type { AssistantThread } from '../../../lib/repositories/assistantRepository'
+import { userIdProvider } from '../../../providers/authProviders'
 import {
   assistantConversationsProvider,
   assistantThreadsProvider,
   assistantTurnActionsProvider,
-} from '../../providers'
-import { friendlyError } from './assistantConversationUtils'
+} from './index'
+import { friendlyError } from '../utils/conversationUtils'
 
 const mocks = vi.hoisted(() => ({
   applyAssistantOperations: vi.fn(),
@@ -30,7 +30,7 @@ const mocks = vi.hoisted(() => ({
   summarizeThread: vi.fn(),
 }))
 
-vi.mock('../../lib/repositories/assistantRepository', () => ({
+vi.mock('../../../lib/repositories/assistantRepository', () => ({
   applyAssistantOperations: mocks.applyAssistantOperations,
   createAssistantThread: mocks.createAssistantThread,
   deleteAssistantThread: mocks.deleteAssistantThread,
@@ -41,22 +41,22 @@ vi.mock('../../lib/repositories/assistantRepository', () => ({
   updateAssistantThreadSummary: mocks.updateAssistantThreadSummary,
 }))
 
-vi.mock('../../lib/assistantCheckpointer', () => ({
+vi.mock('../../../lib/assistantCheckpointer', () => ({
   SupabaseAssistantCheckpointer: class {
     deleteThread = mocks.deleteCheckpoint
   },
 }))
 
-vi.mock('../../lib/supabase', () => ({
+vi.mock('../../../lib/supabase', () => ({
   supabase: { auth: { getUser: vi.fn(async () => ({ data: { user: { id: 'user-1' } } })) } },
 }))
 
-vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
+vi.mock('../../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
-vi.mock('./tools', () => ({ enrichAppliedProposalPlaces: mocks.enrichAppliedProposalPlaces }))
+vi.mock('../tools', () => ({ enrichAppliedProposalPlaces: mocks.enrichAppliedProposalPlaces }))
 
-vi.mock('./graph', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./graph')>()),
+vi.mock('../graph', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../graph')>()),
   createAssistantGraph: () => ({
     getState: mocks.getState,
     resumeTurn: mocks.resumeTurn,

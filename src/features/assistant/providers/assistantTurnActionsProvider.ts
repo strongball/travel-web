@@ -1,14 +1,14 @@
 import { providerFamily } from '@stball/react-river'
 
-import { friendlyError } from '../features/assistant/assistantConversationUtils'
+import { friendlyError } from '../utils/conversationUtils'
 import {
   buildTurnRequest,
   DEFAULT_THREAD_TITLE,
   nextThreadTitle,
   type AssistantTurnContext,
-} from '../features/assistant/assistantTurnFlow'
-import { getThinkingBudget, type ReasoningEffort } from '../features/assistant/models'
-import type { AssistantAttachment, AssistantProposal } from '../features/assistant/types'
+} from '../services/assistantTurnFlow'
+import { getThinkingBudget, type ReasoningEffort } from '../models'
+import type { AssistantAttachment, AssistantProposal } from '../types'
 import { assistantConversationsProvider } from './assistantConversationsProvider'
 import { assistantThreadsProvider } from './assistantThreadsProvider'
 

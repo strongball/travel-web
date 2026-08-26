@@ -3,7 +3,7 @@ import type { AssistantProposal } from '../../types'
 import {
   parseAssistantOperations,
   validateAssistantOperations,
-} from '../../api/assistantOperations'
+} from '../../services/assistantOperations'
 import { itineraryToolInputSchema } from './itineraryToolSchema'
 import { applyItineraryOperations, changedDays } from './itineraryOperations'
 import {

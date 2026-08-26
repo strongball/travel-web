@@ -12,9 +12,9 @@ import type {
 import {
   isRecoverableGraphStateError,
   visibleProgressLabel,
-} from '../assistantConversationUtils'
-import { findRecoveredAssistantMessages } from '../assistantTurnFlow'
-import type { AssistantConversationRuntime } from '../assistantRuntime'
+} from '../utils/conversationUtils'
+import { findRecoveredAssistantMessages } from './assistantTurnFlow'
+import type { AssistantConversationRuntime } from './assistantRuntime'
 
 export type ChatStreamEvent =
   | { type: 'progress'; label: string | null }

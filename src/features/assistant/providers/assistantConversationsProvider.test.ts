@@ -5,12 +5,12 @@ import type {
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantProposal,
-} from '../features/assistant/types'
+} from '../types'
 import type {
   AssistantChatService,
   ChatStreamEvent,
-} from '../features/assistant/api/assistantChatService'
-import { userIdProvider } from './authProviders'
+} from '../services'
+import { userIdProvider } from '../../../providers/authProviders'
 import {
   assistantConversationsProvider,
   type AssistantConversationSnapshot,

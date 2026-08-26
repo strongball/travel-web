@@ -1,5 +1,5 @@
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
-import { extractMessageText } from '../../api'
+import { extractMessageText } from '../../services'
 import type {
   AssistantCodeExecution,
   AssistantGroundingMetadata,
