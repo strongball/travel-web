@@ -265,6 +265,6 @@ Dynamic interrupt 恢復時會從 tool 開頭重新執行，不是從 `interrupt
 - `src/features/assistant/assistantTurnActionsProvider.test.tsx`：跨 thread/conversation 命令、刪除互斥與切換 thread 的隔離。
 
 ```sh
-npm test -- --run
-npm run build
+pnpm test -- --run
+pnpm run build
 ```

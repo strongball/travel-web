@@ -25,8 +25,8 @@ Requires Node 24 (the same version used by CI).
 
 ```sh
 cp .env.example .env.local
-npm ci
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Only the Supabase project URL, publishable key, browser-restricted Google Maps
@@ -42,9 +42,9 @@ frontend environment.
 Verification:
 
 ```sh
-npm run lint
-npm test
-npm run build
+pnpm lint
+pnpm test
+pnpm build
 ```
 
 ## Supabase
