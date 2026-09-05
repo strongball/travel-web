@@ -74,6 +74,7 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
       content: text(row.content),
       createdAt: text(row.created_at),
       proposal: metadata.proposal as AssistantProposal | undefined,
+      clarifyingQuestion: metadata.clarifyingQuestion as AssistantMessage['clarifyingQuestion'],
       grounding: metadata.grounding as AssistantGroundingMetadata | undefined,
       codeExecutions: metadata.codeExecutions as AssistantCodeExecution[] | undefined,
       attachments: (metadata.attachments as AssistantMessage['attachments']) ?? null,
@@ -84,6 +85,7 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
 export async function saveAssistantMessage(threadId: string, message: AssistantMessage) {
   const metadata: Record<string, unknown> = {}
   if (message.proposal) metadata.proposal = message.proposal
+  if (message.clarifyingQuestion) metadata.clarifyingQuestion = message.clarifyingQuestion
   if (message.grounding) metadata.grounding = message.grounding
   if (message.codeExecutions) metadata.codeExecutions = message.codeExecutions
   if (message.attachments) metadata.attachments = message.attachments

@@ -359,9 +359,9 @@ describe('createAssistantGraph', () => {
     expect(paused.messages[0]?.role).toBe('user')
     expect(paused.pendingToolCall?.id).toBe('proposal-call')
     expect(paused.pendingToolCall?.name).toBe('propose_itinerary_edit')
-    expect(paused.pendingToolCall?.proposal.status).toBe('pending')
-    expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
-    expect(paused.pendingToolCall?.proposal.expectedDayRevisions).toEqual({ 'day-1': 3 })
+    expect(paused.pendingToolCall?.proposal?.status).toBe('pending')
+    expect(paused.pendingToolCall?.proposal?.id).toBe(req.turnId)
+    expect(paused.pendingToolCall?.proposal?.expectedDayRevisions).toEqual({ 'day-1': 3 })
     expect(paused.pendingToolCall?.proposal).not.toHaveProperty('operations')
 
     const resumeEvents: string[] = []
@@ -410,8 +410,8 @@ describe('createAssistantGraph', () => {
     expect(paused.messages[0]?.role).toBe('user')
     expect(paused.pendingToolCall?.id).toBe('proposal-call')
     expect(paused.pendingToolCall?.name).toBe('propose_todo_list')
-    expect(paused.pendingToolCall?.proposal.status).toBe('pending')
-    expect(paused.pendingToolCall?.proposal.id).toBe(req.turnId)
+    expect(paused.pendingToolCall?.proposal?.status).toBe('pending')
+    expect(paused.pendingToolCall?.proposal?.id).toBe(req.turnId)
     const resumed = await graph.resumeTurn(req.threadId, { approved: false, feedback: '我想自己整理' })
     expect(resumed.assistantMessage?.proposal?.status).toBe('rejected')
     expect(resumed.assistantMessage?.content).toBe('好的，我先不套用這份清單。')
@@ -443,4 +443,59 @@ describe('createAssistantGraph', () => {
     await expect(graph.resumeTurn(req.threadId, { approved: true }))
       .rejects.toThrow('模型回傳了空的文字內容')
   })
+
+  it('pauses on ask_clarifying_question and resumes with user answer', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({
+        tool_calls: [{
+          id: 'question-call-1',
+          name: 'ask_clarifying_question',
+          args: {
+            question: '這趟旅行比較偏好哪種步調？',
+            options: [
+              { id: '1', label: '☕ 悠閒慢活', description: '每天 1~2 個景點' },
+              { id: '2', label: '🏃 緊湊充實', description: '熱門地標打卡' },
+            ],
+            multiple: false,
+            allowCustomInput: true,
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({
+        content: '了解！既然偏好悠閒步調，我為您安排寬鬆的散步路線。',
+      }))
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+
+    const req = request()
+    const paused = await graph.sendTurn({ ...req, text: '推薦行程' })
+
+    expect(paused.assistantMessage).toBeNull()
+    expect(paused.pendingToolCall?.id).toBe('question-call-1')
+    expect(paused.pendingToolCall?.name).toBe('ask_clarifying_question')
+    expect(paused.pendingToolCall?.kind).toBe('question')
+    if (paused.pendingToolCall?.kind === 'question') {
+      expect(paused.pendingToolCall.questionData.question).toBe('這趟旅行比較偏好哪種步調？')
+      expect(paused.pendingToolCall.questionData.options).toHaveLength(2)
+    }
+
+    const resumed = await graph.resumeTurn(req.threadId, {
+      selectedOptions: ['☕ 悠閒慢活'],
+      answer: '☕ 悠閒慢活',
+    })
+
+    expect(resumed.assistantMessage?.content).toBe('了解！既然偏好悠閒步調，我為您安排寬鬆的散步路線。')
+    expect(resumed.assistantMessage?.clarifyingQuestion).toEqual({
+      question: '這趟旅行比較偏好哪種步調？',
+      answer: '☕ 悠閒慢活',
+      options: [
+        { id: '1', label: '☕ 悠閒慢活', description: '每天 1~2 個景點' },
+        { id: '2', label: '🏃 緊湊充實', description: '熱門地標打卡' },
+      ],
+    })
+  })
 })
+

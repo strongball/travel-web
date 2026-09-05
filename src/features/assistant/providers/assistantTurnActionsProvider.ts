@@ -8,7 +8,7 @@ import {
   type AssistantTurnContext,
 } from '../services/assistantTurnFlow'
 import { getThinkingBudget, type ReasoningEffort } from '../models'
-import type { AssistantAttachment, AssistantProposal } from '../types'
+import type { AssistantAttachment, AssistantProposal, AssistantQuestionDecision } from '../types'
 import { assistantConversationsProvider } from './assistantConversationsProvider'
 import { assistantThreadsProvider } from './assistantThreadsProvider'
 
@@ -93,6 +93,15 @@ export const assistantTurnActionsProvider = providerFamily(
           input.proposal.itineraryId !== itineraryId) return
         if (!threadAvailable(input.threadId)) return
         await conversationNotifier(input.threadId).resumeProposal({ approved: input.approved })
+      },
+
+      answerQuestion: async (input: {
+        threadId: string | null
+        answer: AssistantQuestionDecision
+      }): Promise<void> => {
+        if (!input.threadId) return
+        if (!threadAvailable(input.threadId)) return
+        await conversationNotifier(input.threadId).resumeQuestion(input.answer)
       },
 
       summarize: async (threadId: string): Promise<void> => {

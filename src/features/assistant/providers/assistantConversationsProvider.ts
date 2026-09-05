@@ -7,10 +7,12 @@ import {
 import type {
   AssistantMessage,
   AssistantPendingToolCall,
+  AssistantQuestionDecision,
   AssistantTurnRequest,
   AssistantUserDecision,
 } from '../types'
 import { assistantChatServiceProvider } from './assistantChatServiceProvider'
+import type { AssistantChatService, ChatStreamEvent } from '../services/assistantChatService'
 import { userIdProvider } from '../../../providers/authProviders'
 
 export type AssistantTurnOverlay = {
@@ -172,6 +174,29 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
   }
 
   async resumeProposal(decision: AssistantUserDecision): Promise<void> {
+    return this.#resumeInterrupt({
+      progressLabel: '正在套用…',
+      errorMessage: '無法處理行程提案',
+      runner: (service, onEvent) => service.resumeProposal(this.threadId, decision, onEvent),
+    })
+  }
+
+  async resumeQuestion(answer: AssistantQuestionDecision): Promise<void> {
+    return this.#resumeInterrupt({
+      progressLabel: '正在根據選擇繼續規劃…',
+      errorMessage: '無法送出回答',
+      runner: (service, onEvent) => service.resumeQuestion(this.threadId, answer, onEvent),
+    })
+  }
+
+  async #resumeInterrupt(options: {
+    progressLabel: string
+    errorMessage: string
+    runner: (
+      service: AssistantChatService,
+      onEvent: (event: ChatStreamEvent) => void,
+    ) => Promise<void>
+  }): Promise<void> {
     const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
     if (!service) return
 
@@ -185,13 +210,13 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           phase: 'running',
           streaming: null,
           pendingToolCall: current.turn?.pendingToolCall ?? null,
-          progressLabel: '正在套用…',
+          progressLabel: options.progressLabel,
           error: null,
         },
       })
 
       try {
-        await service.resumeProposal(this.threadId, decision, (event) => {
+        await options.runner(service, (event) => {
           const cur = this.state.data
           if (!cur) return
 
@@ -247,7 +272,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
             streaming: null,
             pendingToolCall: null,
             progressLabel: null,
-            error: err.message || '無法處理行程提案',
+            error: err.message || options.errorMessage,
           },
         })
       } finally {

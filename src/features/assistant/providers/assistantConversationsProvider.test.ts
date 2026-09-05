@@ -59,6 +59,7 @@ beforeEach(() => {
     fetchHistory: vi.fn().mockResolvedValue({ messages: [], pendingToolCall: null }),
     sendStream: vi.fn().mockResolvedValue(undefined),
     resumeProposal: vi.fn().mockResolvedValue(undefined),
+    resumeQuestion: vi.fn().mockResolvedValue(undefined),
     summarize: vi.fn().mockResolvedValue(undefined),
   }
 })
@@ -146,6 +147,14 @@ describe('AssistantConversationNotifier', () => {
     notifier.dismissFailure()
     snapshot = container.read(provider).data as AssistantConversationSnapshot
     expect(snapshot.turn).toBeNull()
+  })
+
+  it('resumes clarifying question answer through resumeQuestion', async () => {
+    const { notifier } = createTestProvider()
+    const answer = { selectedOptions: ['☕ 悠閒慢活'], answer: '☕ 悠閒慢活' }
+    await notifier.resumeQuestion(answer)
+
+    expect(mockService.resumeQuestion).toHaveBeenCalledWith('thread-1', answer, expect.any(Function))
   })
 })
 

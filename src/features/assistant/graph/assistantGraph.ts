@@ -13,7 +13,7 @@ import type {
   AssistantGraphState,
   AssistantMessage,
   AssistantPendingToolCall,
-  AssistantProposalReviewInterrupt,
+  AssistantQuestionDecision,
   AssistantProgressListener,
   AssistantProgressPhase,
   AssistantStreamEvent,
@@ -22,11 +22,7 @@ import type {
   AssistantUserDecision,
 } from '../types'
 import { ASSISTANT_GRAPH_VERSION } from '../types'
-import {
-  parseAssistantOperations,
-  summarizeWithGemini,
-  validateAssistantOperations,
-} from '../services'
+import { summarizeWithGemini } from '../services'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'
@@ -37,11 +33,7 @@ import { createRespondNode } from './nodes/respondNode'
 import { createToolLimitNode } from './nodes/toolLimitNode'
 import { ensureLangGraphAsyncContext } from '../../../lib/langGraphAsyncContext'
 
-export {
-  ASSISTANT_GRAPH_VERSION,
-  parseAssistantOperations,
-  validateAssistantOperations,
-}
+export { ASSISTANT_GRAPH_VERSION }
 
 export const DEFAULT_SUMMARY_MESSAGE_THRESHOLD = 30
 export const DEFAULT_SUMMARY_CHARACTER_THRESHOLD = 24_000
@@ -120,7 +112,8 @@ export const createAssistantGraph = (
     configurable: {
       thread_id: threadId,
       request: req,
-      applyProposal: dependencies.proposals.apply,
+      ...(dependencies.proposals?.apply ? { applyProposal: dependencies.proposals.apply } : {}),
+      ...(dependencies.toolConfig ?? {}),
     },
     durability: 'exit' as const,
   })
@@ -163,30 +156,35 @@ export const createAssistantGraph = (
   const pendingToolCallFromSnapshot = (
     snapshot: Awaited<ReturnType<typeof workflow.getState>>,
   ): AssistantPendingToolCall | null => {
-    const interruptValue = snapshot.tasks
+    const rawInterrupts = snapshot.tasks
       .flatMap((task) => task.interrupts ?? [])
       .map((item) => item.value)
-      .find((value): value is AssistantProposalReviewInterrupt => (
-        Boolean(value) &&
-        typeof value === 'object' &&
-        (value as { type?: unknown }).type === 'proposal_review' &&
-        typeof (value as { toolCallId?: unknown }).toolCallId === 'string' &&
-        Boolean((value as { proposal?: unknown }).proposal)
-      ))
-    if (!interruptValue?.proposal) return null
+      .filter((val): val is Record<string, unknown> => Boolean(val && typeof val === 'object'))
 
+    const interruptItem = rawInterrupts.find((val) => typeof val.toolCallId === 'string')
+    if (!interruptItem) return null
+
+    const toolCallId = interruptItem.toolCallId as string
     const values = snapshot.values as AssistantGraphState
     const lastAiMessage = values.modelMessages
       .findLast((message) => AIMessage.isInstance(message))
     const toolCall = lastAiMessage && AIMessage.isInstance(lastAiMessage)
-      ? (lastAiMessage.tool_calls ?? []).find((call) => call.id === interruptValue.toolCallId)
+      ? (lastAiMessage.tool_calls ?? []).find((call) => call.id === toolCallId)
       : undefined
 
+    const type = typeof interruptItem.type === 'string' ? interruptItem.type : 'tool_interrupt'
+    const kind = (typeof interruptItem.kind === 'string' ? interruptItem.kind : undefined) ??
+      (type === 'clarifying_question' ? 'question' : 'proposal')
+    const turnId = values.request?.turnId ??
+      (typeof interruptItem.turnId === 'string' ? interruptItem.turnId : undefined)
+
     return {
-      id: interruptValue.toolCallId,
-      name: toolCall?.name ?? 'proposal_review',
-      proposal: interruptValue.proposal,
-    }
+      kind,
+      id: toolCallId,
+      name: toolCall?.name ?? type,
+      turnId,
+      ...interruptItem,
+    } as AssistantPendingToolCall
   }
 
   const stateWithSnapshot = (
@@ -225,7 +223,17 @@ export const createAssistantGraph = (
         // Return cached assistant message if this turn was already completed
         const completed = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'assistant')
         if (completed && previous) return { ...previous, assistantMessage: completed }
-        if (previous?.pendingToolCall?.proposal.turnId === request.turnId) return previous
+        if (previous?.pendingToolCall) {
+          const pendingCall = previous.pendingToolCall as Record<string, unknown>
+          const pendingTurnId = previous.request?.turnId ??
+            (typeof pendingCall.turnId === 'string' ? pendingCall.turnId : undefined) ??
+            (typeof (pendingCall.proposal as { turnId?: string } | undefined)?.turnId === 'string'
+              ? (pendingCall.proposal as { turnId: string }).turnId
+              : undefined)
+          if (pendingTurnId === request.turnId) {
+            return previous
+          }
+        }
 
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??
           request.rehydratedMessages?.find((m) => m.turnId === request.turnId && m.role === 'user')
@@ -266,7 +274,7 @@ export const createAssistantGraph = (
 
   const resumeTurn = async (
     threadId: string,
-    decision: AssistantUserDecision,
+    decision: AssistantUserDecision | AssistantQuestionDecision,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
   ): Promise<AssistantGraphState> => {

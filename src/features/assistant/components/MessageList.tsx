@@ -14,9 +14,16 @@ import {
 } from '@mui/material'
 import { useRiverWatch } from '@stball/react-river'
 import { assistantConversationsProvider, type AssistantTurnOverlay } from '../providers'
-import type { AssistantMessage, AssistantPendingToolCall, AssistantProposal } from '../types'
+import type {
+  AssistantMessage,
+  AssistantPendingToolCall,
+  AssistantProposal,
+  AssistantQuestionDecision,
+} from '../types'
+import { isPendingProposalCall, isPendingQuestionCall } from '../types'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
+import { ClarifyingQuestionCard } from './ClarifyingQuestionCard'
 import { AssistantProgress, ConversationLoading } from './AssistantProgress'
 import { ConversationThread } from './ConversationThread'
 
@@ -126,6 +133,7 @@ export function MessageList({
   online,
   onQuickPrompt,
   onDecision,
+  onQuestionAnswer,
 }: {
   itineraryId: string
   /** 目標對話;訊息與生成中的狀態由此元件自行訂閱(graph → river → component)。 */
@@ -134,6 +142,7 @@ export function MessageList({
   /** 快捷提問寫入輸入草稿。 */
   onQuickPrompt: (text: string) => void
   onDecision: (proposal: AssistantProposal, approved: boolean) => void
+  onQuestionAnswer?: (answer: AssistantQuestionDecision) => void
 }) {
   const conversationState = useRiverWatch(
     assistantConversationsProvider({ itineraryId, threadId: threadId ?? '' }),
@@ -188,6 +197,7 @@ export function MessageList({
       AssistantPendingToolCall,
       { proposal: AssistantProposal; approved: boolean }
     >
+      key={threadId}
       messages={visibleMessages}
       renderHead={
         hasMore && !expanded ? (
@@ -221,6 +231,16 @@ export function MessageList({
       renderMessage={({ message, messageRef }) => (
         <Stack ref={messageRef} data-message-id={message.id} spacing={1.25}>
           <MessageBubble message={message} />
+          {message.role === 'assistant' && message.clarifyingQuestion ? (
+            <ClarifyingQuestionCard
+              questionData={{
+                question: message.clarifyingQuestion.question,
+                options: message.clarifyingQuestion.options ?? [],
+              }}
+              answeredAnswer={message.clarifyingQuestion.answer}
+              isHistory={true}
+            />
+          ) : null}
           {message.role === 'assistant' && message.proposal ? (
             <ProposalCard
               key={message.proposal.id}
@@ -245,19 +265,46 @@ export function MessageList({
         </Stack>
       )}
       interrupt={pendingToolCall}
-      renderInterrupt={({ interrupt, isBusy, resume }) => (
-        <Stack data-tool-call-id={interrupt.id} spacing={1.25}>
-          <ProposalCard
-            proposal={interrupt.proposal}
-            busy={Boolean(isBusy)}
-            online={online}
-            onDecision={(proposal, approved) => resume({ proposal, approved })}
-            isHistory={false}
-          />
-        </Stack>
-      )}
+      renderInterrupt={({ interrupt, isBusy, resume }) => {
+        if (isPendingQuestionCall(interrupt)) {
+          return (
+            <Stack data-tool-call-id={interrupt.id} spacing={1.25}>
+              <ClarifyingQuestionCard
+                questionData={interrupt.questionData}
+                busy={Boolean(isBusy)}
+                online={online}
+                onAnswer={(answer) => {
+                  resume({ type: 'question', answer } as any)
+                }}
+                isHistory={false}
+              />
+            </Stack>
+          )
+        }
+
+        const proposal = isPendingProposalCall(interrupt)
+          ? interrupt.proposal
+          : (interrupt as unknown as { proposal: AssistantProposal }).proposal
+        return (
+          <Stack data-tool-call-id={interrupt.id} spacing={1.25}>
+            <ProposalCard
+              proposal={proposal}
+              busy={Boolean(isBusy)}
+              online={online}
+              onDecision={(prop, approved) => resume({ type: 'proposal', proposal: prop, approved } as any)}
+              isHistory={false}
+            />
+          </Stack>
+        )
+      }}
       isBusy={sending}
-      onResume={({ proposal, approved }) => onDecision(proposal, approved)}
+      onResume={(data: any) => {
+        if (data?.type === 'question' && data.answer) {
+          onQuestionAnswer?.(data.answer)
+        } else if (data?.proposal) {
+          onDecision(data.proposal, data.approved)
+        }
+      }}
     />
   )
 }

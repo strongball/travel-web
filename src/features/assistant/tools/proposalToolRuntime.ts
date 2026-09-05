@@ -39,8 +39,10 @@ export function asProposalReviewInterrupt(
   runtime: AssistantProposalToolRuntime,
 ) {
   return {
+    kind: 'proposal' as const,
     type: 'proposal_review' as const,
     toolCallId: runtime.toolCallId,
+    turnId: runtime.state?.request?.turnId ?? proposal.turnId,
     proposal,
   }
 }

@@ -29,17 +29,18 @@ function collectKeys(value: unknown): string[] {
 
 describe('active Gemini tool declarations', () => {
   it('uses LangChain tools with provider-safe schemas', () => {
-    expect(assistantCallableTools).toHaveLength(3)
+    expect(assistantCallableTools).toHaveLength(4)
     expect(assistantCallableTools.map((tool) => tool.name)).toEqual([
       'propose_itinerary_edit',
       'propose_todo_list',
+      'ask_clarifying_question',
       'search_web_information',
     ])
     expect(assistantBuiltinTools).toEqual([
       { urlContext: {} },
       { codeExecution: {} },
     ])
-    expect(langchainAssistantTools).toHaveLength(5)
+    expect(langchainAssistantTools).toHaveLength(6)
   })
 
   it('passes the shared schemas through ChatGoogleGenerativeAI without a network call', () => {
@@ -59,6 +60,7 @@ describe('active Gemini tool declarations', () => {
     expect(declarations.map((declaration) => declaration.name)).toEqual([
       'propose_itinerary_edit',
       'propose_todo_list',
+      'ask_clarifying_question',
       'search_web_information',
     ])
     for (const declaration of declarations) {

@@ -157,7 +157,10 @@ export function ConversationThread<
 
       <StyledActiveTurnSpacer
         ref={activeTurnSpacerRef}
-        sx={{ height: activeTurnSpacerHeight > 0 ? activeTurnSpacerHeight : 0 }}
+        sx={{
+          height: activeTurnSpacerHeight > 0 ? activeTurnSpacerHeight : (isBusy ? '100%' : 0),
+          minHeight: isBusy ? '100%' : 0,
+        }}
       />
 
       <div ref={messagesEndRef} />

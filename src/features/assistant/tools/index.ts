@@ -19,6 +19,13 @@ import {
   SEARCH_WEB_TOOL_NAME,
   tavilySearchTool,
 } from './search'
+import {
+  ASK_CLARIFYING_QUESTION_TOOL_NAME,
+  askClarifyingQuestionTool,
+  askQuestion,
+  askClarifyingQuestionSchema,
+  questionOptionSchema,
+} from './question'
 
 export {
   PROPOSAL_TOOL_NAME,
@@ -36,12 +43,18 @@ export {
   TodoProposalView,
   SEARCH_WEB_TOOL_NAME,
   tavilySearchTool,
+  ASK_CLARIFYING_QUESTION_TOOL_NAME,
+  askClarifyingQuestionTool,
+  askQuestion,
+  askClarifyingQuestionSchema,
+  questionOptionSchema,
 }
 
-/** 提案 / UI 類工具：執行後中斷模型回合，交由前端 UI 確認 */
+/** 提案 / UI 互動中斷類工具：執行後中斷模型回合，交由前端 UI 確認或選擇 */
 export const assistantProposalTools = [
   proposeItineraryEditTool,
   proposeTodoListTool,
+  askClarifyingQuestionTool,
 ] as const
 
 /** 一般查詢 / 背景類工具：執行後將結果回傳給模型繼續思考 */

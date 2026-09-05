@@ -250,7 +250,7 @@ describe('assistant turn actions', () => {
     mocks.resumeTurn.mockReturnValue(resume.promise)
 
     const { result } = renderHarness()
-    await waitFor(() => expect(result.current.turn?.pendingToolCall?.proposal.id).toBe(proposal.id))
+    await waitFor(() => expect(result.current.turn?.pendingToolCall?.proposal?.id).toBe(proposal.id))
 
     let first!: Promise<void>
     let second!: Promise<void>

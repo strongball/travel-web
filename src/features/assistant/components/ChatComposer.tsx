@@ -25,6 +25,7 @@ import { assistantConversationsProvider } from '../providers'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
 import type { AssistantAttachment } from '../types'
+import { isPendingQuestionCall } from '../types'
 import { readAssistantAttachments } from '../utils/assistantAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AttachmentPreviewList } from './AttachmentPreviewList'
@@ -122,7 +123,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
   const turn = conversationState.data?.turn ?? null
   const sending = Boolean(turn)
-  const hasPendingProposal = !!turn?.pendingToolCall
+  const pendingCall = turn?.pendingToolCall
+  const hasPendingQuestion = Boolean(pendingCall && isPendingQuestionCall(pendingCall))
+  const hasPendingProposal = Boolean(pendingCall && !hasPendingQuestion)
+  const hasPendingInterrupt = Boolean(pendingCall)
   const loading = conversationState.isLoading && !conversationState.hasData
   const unavailable = conversationState.isError && !conversationState.hasData
 
@@ -152,7 +156,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
   }
 
   const canSubmit = (Boolean(text.trim()) || attachments.length > 0) &&
-    !loading && !unavailable && !sending && !hasPendingProposal && online
+    !loading && !unavailable && !sending && !hasPendingInterrupt && online
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -176,11 +180,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     ? '無法載入對話，請切換對話後重試'
     : loading
     ? '正在載入對話…'
+    : hasPendingQuestion
+    ? '請先點選上方偏好選項卡片…'
     : hasPendingProposal
     ? '請先確認或拒絕待處理的行程提案'
     : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
 
-  const disabled = loading || unavailable || sending || hasPendingProposal || !online
+  const disabled = loading || unavailable || sending || hasPendingInterrupt || !online
   const displayError = turn?.error ?? feedbackError ?? localError
 
   return (

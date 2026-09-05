@@ -59,6 +59,12 @@ export type AssistantMessage = {
   createdAt: string
   /** Completed proposal result; pending proposals live on pendingToolCall. */
   proposal?: AssistantProposal | null
+  /** Completed clarifying question result; pending questions live on pendingToolCall. */
+  clarifyingQuestion?: {
+    question: string
+    answer: string
+    options?: AssistantQuestionOption[]
+  } | null
   grounding?: AssistantGroundingMetadata | null
   codeExecutions?: AssistantCodeExecution[] | null
   attachments?: AssistantAttachment[] | null
@@ -143,21 +149,79 @@ export type AssistantUserDecision = {
   feedback?: string
 }
 
+export type AssistantQuestionOption = {
+  id: string
+  label: string
+  description?: string
+}
+
+export type AssistantQuestionData = {
+  question: string
+  options: AssistantQuestionOption[]
+  multiple?: boolean
+  allowCustomInput?: boolean
+}
+
+export type AssistantQuestionDecision = {
+  type?: 'question_answer'
+  selectedOptions?: string[]
+  customAnswer?: string
+  answer?: string
+}
+
+export type AssistantQuestionInterrupt = {
+  kind?: 'question'
+  type: 'clarifying_question'
+  toolCallId: string
+  turnId?: string
+  questionData: AssistantQuestionData
+}
+
 export type AssistantProposalReviewInterrupt = {
+  kind?: 'proposal'
   type: 'proposal_review'
   toolCallId: string
+  turnId?: string
   proposal: AssistantProposal
 }
 
-/**
- * A proposal tool call that is paused at an interrupt and waiting for the
- * user's decision. This is derived from the LangGraph checkpoint; it is not a
- * canonical assistant message.
- */
-export type AssistantPendingToolCall = {
+export type AssistantPendingProposalCall = {
+  kind?: 'proposal'
   id: string
   name: string
+  turnId?: string
   proposal: AssistantProposal
+  questionData?: undefined
+}
+
+export type AssistantPendingQuestionCall = {
+  kind: 'question'
+  id: string
+  name: string
+  turnId?: string
+  questionData: AssistantQuestionData
+  proposal?: undefined
+}
+
+/**
+ * A tool call that is paused at an interrupt and waiting for the
+ * user's decision or input. This is derived from the LangGraph checkpoint; it is not a
+ * canonical assistant message.
+ */
+export type AssistantPendingToolCall =
+  | AssistantPendingProposalCall
+  | AssistantPendingQuestionCall
+
+export function isPendingQuestionCall(
+  call: AssistantPendingToolCall | null | undefined,
+): call is AssistantPendingQuestionCall {
+  return Boolean(call && ('questionData' in call || (call as { kind?: string }).kind === 'question'))
+}
+
+export function isPendingProposalCall(
+  call: AssistantPendingToolCall | null | undefined,
+): call is AssistantPendingProposalCall {
+  return Boolean(call && ('proposal' in call || (call as { kind?: string }).kind === 'proposal'))
 }
 
 export type AssistantProposalExecution = {
@@ -165,7 +229,8 @@ export type AssistantProposalExecution = {
 }
 
 export type AssistantGraphDependencies = {
-  proposals: AssistantProposalExecution
+  proposals?: AssistantProposalExecution
+  toolConfig?: Record<string, unknown>
   graphVersion?: number
   summaryMessageThreshold?: number
   summaryCharacterThreshold?: number
@@ -192,7 +257,7 @@ export type AssistantGraphRunner = {
   ) => Promise<AssistantGraphState>
   resumeTurn: (
     threadId: string,
-    decision: AssistantUserDecision,
+    decision: AssistantUserDecision | AssistantQuestionDecision,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
   ) => Promise<AssistantGraphState>

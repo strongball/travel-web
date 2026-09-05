@@ -156,6 +156,11 @@ export function AssistantConversationView({
     requestAnimationFrame(() => composerRef.current?.focus())
   }, [threadId, turnActions])
 
+  const handleQuestionAnswer = useCallback(async (answer: any) => {
+    await turnActions.answerQuestion({ threadId, answer })
+    requestAnimationFrame(() => composerRef.current?.focus())
+  }, [threadId, turnActions])
+
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
@@ -316,6 +321,7 @@ export function AssistantConversationView({
             online={online}
             onQuickPrompt={(prompt) => composerRef.current?.setText(prompt)}
             onDecision={(proposal, approved) => void handleDecision(proposal, approved)}
+            onQuestionAnswer={(answer) => void handleQuestionAnswer(answer)}
           />
 
           {threadId ? (

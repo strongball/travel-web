@@ -24,15 +24,16 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       throw new Error('模型沒有回傳可完成的訊息')
     }
 
-    const proposalMessage = state.modelMessages
-      .filter((message) => ToolMessage.isInstance(message))
-      .findLast((message) => {
-        const artifact = message.artifact as { proposal?: AssistantProposal } | undefined
-        return artifact?.proposal?.turnId === request.turnId
-      })
-    const completedProposal = (
-      proposalMessage?.artifact as { proposal?: AssistantProposal } | undefined
-    )?.proposal ?? null
+    // Generically collect all tool artifacts produced during this turn
+    const toolArtifacts: Record<string, unknown> = {}
+    for (const msg of state.modelMessages) {
+      if (ToolMessage.isInstance(msg) && msg.artifact && typeof msg.artifact === 'object') {
+        Object.assign(toolArtifacts, msg.artifact)
+      }
+    }
+
+    const completedProposal = (toolArtifacts.proposal as AssistantProposal) ?? null
+    const completedQuestion = (toolArtifacts.questionResult as AssistantMessage['clarifyingQuestion']) ?? null
 
     const reply = extractMessageText(lastAiMessage.content)
     if (!reply) throw new Error('模型回傳了空的文字內容')
@@ -72,6 +73,7 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       content: reply,
       createdAt: new Date().toISOString(),
       proposal: completedProposal,
+      clarifyingQuestion: completedQuestion,
       grounding,
       codeExecutions,
     }

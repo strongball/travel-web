@@ -11,55 +11,94 @@ export function useActiveTurnScroll<T extends { role: string; id: string }>(
   const [activeTurnSpacerHeight, setActiveTurnSpacerHeight] = useState(0)
 
   const lastUserMessageIndex = messages.findLastIndex((m) => m.role === 'user')
+  const lastUserMessage = lastUserMessageIndex >= 0 ? messages[lastUserMessageIndex] : null
+  const lastUserMessageId = lastUserMessage?.id ?? null
+
+  const prevLastUserIdRef = useRef<string | null>(null)
   const prevMessagesLengthRef = useRef(0)
-  const initializedRef = useRef(false)
+  const isInitialMountRef = useRef(true)
+
+  // 捲動至最後一則使用者訊息（將訊息平滑頂至畫面最上方）
+  const scrollToLastUserMessage = (smooth = true) => {
+    const container = messagesAreaRef.current
+    const userMessageEl = lastUserMessageRef.current
+    if (!container || !userMessageEl) return
+
+    // 立即確保 spacer 高度充足，避免因為 scrollHeight 被瀏覽器限制 scrollTop
+    if (activeTurnSpacerRef.current) {
+      activeTurnSpacerRef.current.style.height = `${container.clientHeight}px`
+    }
+
+    const containerRect = container.getBoundingClientRect()
+    const messageRect = userMessageEl.getBoundingClientRect()
+    const offset = messageRect.top - containerRect.top
+    const targetScrollTop = container.scrollTop + offset - 16
+
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({
+        top: Math.max(0, targetScrollTop),
+        behavior: smooth ? 'smooth' : 'auto',
+      })
+    } else {
+      container.scrollTop = Math.max(0, targetScrollTop)
+    }
+  }
 
   // 計算 spacer 高度，確保進行中的回合有足夠的向上捲動空間將使用者訊息頂到最上方
   useLayoutEffect(() => {
     const container = messagesAreaRef.current
     if (!container) return
 
-    if (isBusy) {
-      const containerHeight = container.clientHeight
-      // 提供足夠的 spacer 高度，讓使用者訊息即使在底部也能一路滾動至最頂端
-      setActiveTurnSpacerHeight(Math.max(0, containerHeight))
-    } else {
-      setActiveTurnSpacerHeight(0)
+    const height = isBusy ? Math.max(0, container.clientHeight) : 0
+    setActiveTurnSpacerHeight(height)
+    if (activeTurnSpacerRef.current) {
+      activeTurnSpacerRef.current.style.height = `${height}px`
     }
   }, [isBusy])
 
-  // 新訊息抵達或切換時平滑捲動
+  // 新訊息抵達或切換時捲動
   useLayoutEffect(() => {
     const container = messagesAreaRef.current
     if (!container) return
 
-    // 初始載入時捲動至最底部
-    if (!initializedRef.current && messages.length > 0) {
-      container.scrollTop = container.scrollHeight
-      initializedRef.current = true
+    // 初次載入
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false
       prevMessagesLengthRef.current = messages.length
+      prevLastUserIdRef.current = lastUserMessageId
+
+      if (messages.length > 0) {
+        if (isBusy && lastUserMessage) {
+          // 重整或載入時正處於對話中回合：將使用者訊息頂至上方
+          requestAnimationFrame(() => {
+            scrollToLastUserMessage(false)
+          })
+        } else {
+          // 一般歷史紀錄：捲動至最底部
+          container.scrollTop = container.scrollHeight
+        }
+      }
       return
     }
 
-    if (messages.length > prevMessagesLengthRef.current) {
-      const lastMessage = messages.at(-1)
-      if (lastMessage?.role === 'user') {
-        // 使用者剛傳送訊息：將此訊息平滑拉至畫面最上方
-        requestAnimationFrame(() => {
-          const userMessageEl = lastUserMessageRef.current
-          if (!userMessageEl || !container) return
-          const containerTop = container.getBoundingClientRect().top
-          const messageTop = userMessageEl.getBoundingClientRect().top
-          const targetScrollTop = container.scrollTop + (messageTop - containerTop) - 16
+    // 判斷是否為使用者剛送出的新訊息（比對最新 user message id 是否改變）
+    const isNewUserMessage = Boolean(
+      lastUserMessageId &&
+      lastUserMessageId !== prevLastUserIdRef.current &&
+      messages.at(-1)?.role === 'user',
+    )
 
-          if (typeof container.scrollTo === 'function') {
-            container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' })
-          } else {
-            container.scrollTop = Math.max(0, targetScrollTop)
-          }
-        })
-      } else {
-        // 其他訊息（如 assistant 訊息完成）
+    if (isNewUserMessage) {
+      // 確保 spacer 立即生效，並在下一 frame 將訊息頂到最上方
+      if (activeTurnSpacerRef.current) {
+        activeTurnSpacerRef.current.style.height = `${container.clientHeight}px`
+      }
+      requestAnimationFrame(() => {
+        scrollToLastUserMessage(true)
+      })
+    } else if (messages.length > prevMessagesLengthRef.current) {
+      // 助理訊息完成或對話歷史更新（非正在執行的回合）
+      if (!isBusy) {
         requestAnimationFrame(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
         })
@@ -67,7 +106,8 @@ export function useActiveTurnScroll<T extends { role: string; id: string }>(
     }
 
     prevMessagesLengthRef.current = messages.length
-  }, [messages])
+    prevLastUserIdRef.current = lastUserMessageId
+  }, [messages, lastUserMessageId, isBusy])
 
   return {
     messagesAreaRef,
@@ -76,6 +116,7 @@ export function useActiveTurnScroll<T extends { role: string; id: string }>(
     activeTurnSpacerRef,
     activeTurnSpacerHeight,
     lastUserMessageIndex,
+    scrollToLastUserMessage,
   }
 }
 
