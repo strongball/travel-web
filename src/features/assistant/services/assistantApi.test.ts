@@ -61,5 +61,7 @@ describe('buildAssistantPrompt', () => {
     expect(prompt).toContain('使用者：第一天早上想去淺草寺。')
     expect(prompt).toContain('下午想去晴空塔，怎麼排比較順？')
     expect(prompt).toContain('propose_itinerary_edit')
+    expect(prompt).toContain('善用內建獨立交通欄位')
+    expect(prompt).toContain('切勿單獨新增為一個獨立的行程項目')
   })
 })

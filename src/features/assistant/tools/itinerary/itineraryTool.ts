@@ -58,7 +58,7 @@ export const proposeItineraryEditTool = tool(
   {
     name: PROPOSAL_TOOL_NAME,
     responseFormat: 'content_and_artifact',
-    description: '當本次語意與近期對話表示使用者要執行、接受或調整行程景點時呼叫此工具，提出一組可套用的行程操作。產生的修改會呈現給使用者確認後套用。',
+    description: '當本次語意與近期對話表示使用者要執行、接受或調整行程景點時呼叫此工具，提出一組可套用的行程操作。產生的修改會呈現給使用者確認後套用。注意：一般點對點交通請直接填入景點的 transportMode 與 travelTime 欄位，切勿將一般交通移動建立為獨立景點，除非該交通本身為特殊觀光活動（如觀光列車、破冰船）。',
     schema: itineraryToolInputSchema,
   },
 )
