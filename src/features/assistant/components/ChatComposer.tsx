@@ -122,7 +122,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
   }))
 
   const turn = conversationState.data?.turn ?? null
-  const sending = Boolean(turn)
+  const sending = turn?.phase === 'running'
   const pendingCall = turn?.pendingToolCall
   const hasPendingQuestion = Boolean(pendingCall && isPendingQuestionCall(pendingCall))
   const hasPendingProposal = Boolean(pendingCall && !hasPendingQuestion)

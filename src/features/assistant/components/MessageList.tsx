@@ -152,7 +152,7 @@ export function MessageList({
   const messages = conversationState?.data?.messages ?? []
   const turn = conversationState?.data?.turn ?? null
   const loading = Boolean(conversationState?.isLoading && !conversationState.hasData)
-  const sending = Boolean(turn)
+  const sending = turn?.phase === 'running'
   const isStreaming = Boolean(turn?.streaming || turn?.progressLabel)
   const pendingToolCall = turn?.pendingToolCall ?? null
 

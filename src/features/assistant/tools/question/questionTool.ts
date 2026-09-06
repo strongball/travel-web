@@ -20,11 +20,13 @@ export async function askQuestion(
   questionData: AssistantQuestionData,
   runtime: AssistantQuestionToolRuntime,
 ) {
+  const configured = (runtime.configurable ?? {}) as { request?: AssistantTurnRequest | null }
+  const request = configured.request || runtime.state?.request || undefined
   const answer = interrupt<AssistantQuestionInterrupt, AssistantQuestionDecision>({
     kind: 'question',
     type: 'clarifying_question',
     toolCallId: runtime.toolCallId ?? 'question-interrupt',
-    turnId: runtime.state?.request?.turnId,
+    turnId: request?.turnId,
     questionData,
   })
 

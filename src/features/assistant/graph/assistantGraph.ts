@@ -87,7 +87,14 @@ export const createAssistantGraph = (
     }))
     .addNode('respond', createRespondNode({ emitProgress }))
     .addNode('execute_tools', async (state, config) => {
-      const result = await toolNode.invoke({ ...state, messages: state.modelMessages }, config) as {
+      const toolConfig = {
+        ...config,
+        configurable: {
+          ...config?.configurable,
+          request: state.request ?? config?.configurable?.request,
+        },
+      }
+      const result = await toolNode.invoke({ ...state, messages: state.modelMessages }, toolConfig) as {
         messages: typeof state.modelMessages
       }
       return { modelMessages: [...state.modelMessages, ...result.messages] }

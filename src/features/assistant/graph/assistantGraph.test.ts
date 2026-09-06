@@ -497,5 +497,75 @@ describe('createAssistantGraph', () => {
       ],
     })
   })
+
+  it('allows model to propose an itinerary edit after user answers clarifying question', async () => {
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({
+        content: '',
+        tool_calls: [{
+          id: 'question-call-2',
+          name: 'ask_clarifying_question',
+          args: {
+            question: '預算傾向？',
+            options: [
+              { id: '1', label: '經濟實惠' },
+              { id: '2', label: '豪華享受' },
+            ],
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({
+        content: '好的，正在為您安排經濟實惠的行程：',
+        tool_calls: [{
+          id: 'proposal-call-chained',
+          name: 'propose_itinerary_edit',
+          args: {
+            title: '推薦平價行程',
+            operations: [{
+              type: 'add_attraction',
+              dayId: 'day-1',
+              attraction: {
+                id: 'attr-budget',
+                name: '免費觀景台',
+                cost: 0,
+                duration: 60,
+              },
+            }],
+          },
+          type: 'tool_call',
+        }],
+      }))
+      .mockResolvedValueOnce(new AIMessage({
+        content: '已成功為您更新平價行程！',
+      }))
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+
+    const req = request()
+    const pausedForQuestion = await graph.sendTurn({ ...req, text: '推薦行程' })
+
+    expect(pausedForQuestion.pendingToolCall?.kind).toBe('question')
+
+    // Resume question: model now calls propose_itinerary_edit
+    const pausedForProposal = await graph.resumeTurn(req.threadId, {
+      selectedOptions: ['經濟實惠'],
+      answer: '經濟實惠',
+    })
+
+    expect(pausedForProposal.pendingToolCall?.kind).toBe('proposal')
+    expect(pausedForProposal.pendingToolCall?.name).toBe('propose_itinerary_edit')
+    expect(pausedForProposal.pendingToolCall?.proposal?.title).toBe('推薦平價行程')
+
+    // Resume proposal: user approves
+    const finalized = await graph.resumeTurn(req.threadId, {
+      approved: true,
+    })
+
+    expect(finalized.assistantMessage?.content).toBe('已成功為您更新平價行程！')
+    expect(finalized.assistantMessage?.proposal?.status).toBe('applied')
+  })
 })
 

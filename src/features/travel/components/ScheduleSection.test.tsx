@@ -75,7 +75,7 @@ describe('ScheduleSection', () => {
     expect(screen.queryByText('金閣寺')).not.toBeInTheDocument()
   })
 
-  it('switches to Day 2 when next day button is clicked', () => {
+  it('switches to Day 2 when Day 2 tab is clicked', () => {
     render(
       <ScheduleSection
         days={sampleDays}
@@ -89,8 +89,8 @@ describe('ScheduleSection', () => {
       />,
     )
 
-    const nextBtn = screen.getByRole('button', { name: '切換至下一天' })
-    fireEvent.click(nextBtn)
+    const day2Tab = screen.getByText('DAY 2')
+    fireEvent.click(day2Tab)
 
     expect(screen.getByText('金閣寺')).toBeInTheDocument()
     expect(screen.queryByText('清水寺')).not.toBeInTheDocument()
@@ -139,9 +139,8 @@ describe('ScheduleSection', () => {
       />,
     )
 
-    // Switch to Day 2 first
-    const nextBtn = screen.getByRole('button', { name: '切換至下一天' })
-    fireEvent.click(nextBtn)
+    // Switch to Day 2 first via tab
+    fireEvent.click(screen.getByText('DAY 2'))
     expect(screen.getByText('金閣寺')).toBeInTheDocument()
 
     // Swipe right (clientX from 100 to 250)

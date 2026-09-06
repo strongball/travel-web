@@ -72,7 +72,7 @@ export function AssistantConversationView({
 
   const messages = conversationState?.data?.messages ?? []
   const turn = conversationState?.data?.turn ?? null
-  const sending = Boolean(turn)
+  const sending = turn?.phase === 'running'
 
   const select = useCallback((next: string | null) => {
     if (threadIdRef.current !== next) selectionGenerationRef.current += 1

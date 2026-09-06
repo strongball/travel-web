@@ -1,7 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
-import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
@@ -172,35 +170,6 @@ export function ScheduleSection({
             </Stack>
 
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
-              {days.length > 1 ? (
-                <>
-                  <Tooltip title="上一天 (可向右滑動)">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label="切換至上一天"
-                        disabled={activeDayIndex === 0}
-                        onClick={goToPrevDay}
-                      >
-                        <ChevronLeftRoundedIcon />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="下一天 (可向左滑動)">
-                    <span>
-                      <IconButton
-                        size="small"
-                        aria-label="切換至下一天"
-                        disabled={activeDayIndex === days.length - 1}
-                        onClick={goToNextDay}
-                      >
-                        <ChevronRightRoundedIcon />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                </>
-              ) : null}
-
               <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
                 <IconButton
                   aria-label={`查看 ${formatDate(activeDay.date)} 景點地圖`}

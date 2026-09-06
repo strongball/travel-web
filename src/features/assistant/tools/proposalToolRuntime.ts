@@ -27,7 +27,7 @@ export function proposalIdForRequest(request: AssistantTurnRequest | undefined) 
 
 export function proposalRuntimeContext(runtime: AssistantProposalToolRuntime) {
   const configured = (runtime.configurable ?? {}) as ProposalRuntimeConfig
-  const request = runtime.state?.request ?? configured.request ?? undefined
+  const request = configured.request || runtime.state?.request || undefined
   return {
     request,
     applyProposal: configured.applyProposal,
