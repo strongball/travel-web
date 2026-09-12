@@ -80,5 +80,62 @@ describe('MessageBubble', () => {
     expect(screen.getByText(/total = 1000/)).toBeInTheDocument()
     expect(screen.getByText('1629')).toBeInTheDocument()
   })
+
+  it('renders tool call badge and details when message has toolCalls', () => {
+    const msgWithTools: AssistantMessage = {
+      ...assistantMessage,
+      toolCalls: [
+        {
+          name: 'view_itinerary',
+          label: '檢視第 1 天行程',
+          args: { dayNumber: 1 },
+        },
+      ],
+    }
+
+    render(<MessageBubble message={msgWithTools} />)
+
+    const badgeButton = screen.getByRole('button', { name: '查看工具調用細節' })
+    expect(badgeButton).toBeInTheDocument()
+    expect(badgeButton).toHaveTextContent('🛠️ 呼叫了工具：檢視第 1 天行程')
+
+    fireEvent.click(badgeButton)
+
+    expect(screen.getByText('調用工具 (1)')).toBeInTheDocument()
+    expect(screen.getByText('檢視第 1 天行程')).toBeInTheDocument()
+    expect(screen.getByText('view_itinerary')).toBeInTheDocument()
+    expect(screen.getByText(/dayNumber: 1/)).toBeInTheDocument()
+  })
+
+  it('renders combined label and multiple tools when multiple toolCalls exist', () => {
+    const msgWithMultipleTools: AssistantMessage = {
+      ...assistantMessage,
+      toolCalls: [
+        {
+          name: 'view_itinerary',
+          label: '檢視第 1 天行程',
+          args: { dayNumber: 1 },
+        },
+        {
+          name: 'search_web_information',
+          label: '搜尋「晴空塔 門票」',
+          args: { query: '晴空塔 門票' },
+        },
+      ],
+    }
+
+    render(<MessageBubble message={msgWithMultipleTools} />)
+
+    const badgeButton = screen.getByRole('button', { name: '查看工具調用細節' })
+    expect(badgeButton).toHaveTextContent('🛠️ 呼叫了 2 個工具')
+
+    fireEvent.click(badgeButton)
+
+    expect(screen.getByText('調用工具 (2)')).toBeInTheDocument()
+    expect(screen.getByText('檢視第 1 天行程')).toBeInTheDocument()
+    expect(screen.getByText('搜尋「晴空塔 門票」')).toBeInTheDocument()
+    expect(screen.getByText(/query: "晴空塔 門票"/)).toBeInTheDocument()
+  })
 })
+
 

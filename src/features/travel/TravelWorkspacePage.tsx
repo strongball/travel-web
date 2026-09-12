@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -112,8 +113,21 @@ export function TravelWorkspacePage({
   const [saving, setSaving] = useState(false)
   const [todoSaving, setTodoSaving] = useState(false)
   const [assistantToolbar, setAssistantToolbar] = useState<ReactNode>(null)
+  const [assistantThreadId, setAssistantThreadId] = useState<string | null>(null)
+  const [assistantThreadTitle, setAssistantThreadTitle] = useState<string | undefined>(undefined)
+  const assistantBackHandlerRef = useRef<(() => boolean) | null>(null)
+
   const handleAssistantToolbarChange = useCallback((toolbar: ReactNode) => {
     setAssistantToolbar(toolbar)
+  }, [])
+
+  const handleRegisterAssistantBack = useCallback((handler: (() => boolean) | null) => {
+    assistantBackHandlerRef.current = handler
+  }, [])
+
+  const handleAssistantThreadChange = useCallback((id: string | null, title?: string) => {
+    setAssistantThreadId(id)
+    setAssistantThreadTitle(title)
   }, [])
 
   const updateWorkspaceRoute = useCallback((
@@ -155,6 +169,9 @@ export function TravelWorkspacePage({
         return true
       }
       if (workspaceView === 'detail' && section === 'assistant') {
+        if (assistantBackHandlerRef.current?.()) {
+          return true
+        }
         updateWorkspaceRoute({ section: 'schedule' })
         return true
       }
@@ -436,19 +453,39 @@ export function TravelWorkspacePage({
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default' }}>
       <TravelWorkspaceHeader
-        title={workspaceView === 'detail' && section === 'assistant' ? '旅程助理' : workspaceView === 'detail' ? selectedItinerary?.title ?? 'Travel' : 'Travel'}
-        subtitle={workspaceView === 'detail' && section === 'assistant'
-          ? selectedItinerary?.title ?? 'Travel'
-          : workspaceView === 'detail'
-          ? `${formatDate(selectedItinerary?.startDate)} — ${formatDate(selectedItinerary?.endDate)} · ${selectedItinerary?.currency ?? ''}`
-          : '把每一段旅程放在同一個地方'}
+        title={
+          workspaceView === 'detail' && section === 'assistant'
+            ? (assistantThreadId && assistantThreadTitle ? assistantThreadTitle : '旅程助理')
+            : workspaceView === 'detail'
+            ? selectedItinerary?.title ?? 'Travel'
+            : 'Travel'
+        }
+        subtitle={
+          workspaceView === 'detail' && section === 'assistant'
+            ? (assistantThreadId && assistantThreadTitle ? (selectedItinerary?.title ?? 'Travel') : (selectedItinerary?.title ?? '把每一段旅程放在同一個地方'))
+            : workspaceView === 'detail'
+            ? `${formatDate(selectedItinerary?.startDate)} — ${formatDate(selectedItinerary?.endDate)} · ${selectedItinerary?.currency ?? ''}`
+            : '把每一段旅程放在同一個地方'
+        }
+        backLabel={
+          section === 'assistant' && assistantThreadId
+            ? '返回對話列表'
+            : '返回我的行程'
+        }
         loading={loading}
         showBack={workspaceView === 'detail'}
         canEdit={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
         canOpenAssistant={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
         assistantMode={workspaceView === 'detail' && section === 'assistant'}
         assistantActions={assistantToolbar}
-        onBack={() => section === 'assistant' ? updateWorkspaceRoute({ section: 'schedule' }) : updateWorkspaceRoute({ workspaceView: 'trips' })}
+        onBack={() => {
+          if (section === 'assistant') {
+            if (assistantBackHandlerRef.current?.()) return
+            updateWorkspaceRoute({ section: 'schedule' })
+          } else {
+            updateWorkspaceRoute({ workspaceView: 'trips' })
+          }
+        }}
         onEdit={() => selectedItinerary && setTripEditor(selectedItinerary)}
         onOpenAssistant={() => updateWorkspaceRoute({ section: 'assistant' })}
         onOpenGoogleMapsTest={onOpenGoogleMapsTest}
@@ -498,6 +535,8 @@ export function TravelWorkspacePage({
                     todoCategories={categories}
                     fullPage
                     onAssistantToolbarChange={handleAssistantToolbarChange}
+                    onThreadChange={handleAssistantThreadChange}
+                    onRegisterBackHandler={handleRegisterAssistantBack}
                   />
                 </Suspense>
               ) : null}

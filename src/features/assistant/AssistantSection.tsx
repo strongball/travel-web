@@ -9,12 +9,16 @@ export function AssistantSection({
   todoCategories,
   fullPage = false,
   onAssistantToolbarChange,
+  onThreadChange,
+  onRegisterBackHandler,
 }: {
   itinerary: Itinerary
   todos: TodoItem[]
   todoCategories: string[]
   fullPage?: boolean
   onAssistantToolbarChange?: (toolbar: ReactNode) => void
+  onThreadChange?: (threadId: string | null, threadTitle?: string) => void
+  onRegisterBackHandler?: (handler: (() => boolean) | null) => void
 }) {
   return (
     <AssistantConversationView
@@ -25,6 +29,8 @@ export function AssistantSection({
       todoCategories={todoCategories}
       fullPage={fullPage}
       onAssistantToolbarChange={onAssistantToolbarChange}
+      onThreadChange={onThreadChange}
+      onRegisterBackHandler={onRegisterBackHandler}
     />
   )
 }

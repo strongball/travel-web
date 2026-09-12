@@ -15,6 +15,7 @@ interface TravelWorkspaceHeaderProps {
   subtitle: string
   loading: boolean
   showBack: boolean
+  backLabel?: string
   canEdit: boolean
   canOpenAssistant: boolean
   assistantMode: boolean
@@ -32,6 +33,7 @@ export function TravelWorkspaceHeader({
   subtitle,
   loading,
   showBack,
+  backLabel,
   canEdit,
   canOpenAssistant,
   assistantMode,
@@ -51,7 +53,7 @@ export function TravelWorkspaceHeader({
       title={title}
       subtitle={subtitle}
       onBack={showBack ? onBack : undefined}
-      backLabel="返回我的行程"
+      backLabel={backLabel ?? '返回我的行程'}
       actions={(
         assistantMode ? (
           assistantActions

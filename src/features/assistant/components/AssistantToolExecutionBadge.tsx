@@ -1,7 +1,14 @@
 import { useState } from 'react'
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded'
+import ChecklistRoundedIcon from '@mui/icons-material/ChecklistRounded'
 import CodeRoundedIcon from '@mui/icons-material/CodeRounded'
+import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
+import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
+import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
+import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import TerminalRoundedIcon from '@mui/icons-material/TerminalRounded'
 import {
@@ -17,27 +24,80 @@ import {
 import type {
   AssistantCodeExecution,
   AssistantGroundingMetadata,
+  AssistantToolCallRecord,
 } from '../types'
+
+function getToolIcon(name: string) {
+  switch (name) {
+    case 'view_itinerary':
+      return <MapRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'view_todo_categories':
+      return <CategoryRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'view_todo_list':
+      return <ChecklistRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'search_web_information':
+      return <SearchRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'propose_itinerary_edit':
+      return <EditCalendarRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'propose_todo_list':
+      return <PlaylistAddCheckRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    case 'ask_clarifying_question':
+      return <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+    default:
+      return <BuildRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+  }
+}
+
+function formatToolArgs(args?: Record<string, unknown>): string | null {
+  if (!args || Object.keys(args).length === 0) return null
+  return Object.entries(args)
+    .map(([key, val]) => {
+      if (typeof val === 'string') {
+        const preview = val.length > 40 ? `${val.slice(0, 40)}…` : val
+        return `${key}: "${preview}"`
+      }
+      if (typeof val === 'number' || typeof val === 'boolean') {
+        return `${key}: ${val}`
+      }
+      if (Array.isArray(val)) {
+        return `${key}: [${val.length} 項]`
+      }
+      return `${key}: {…}`
+    })
+    .join(', ')
+}
 
 export function AssistantToolExecutionBadge({
   grounding,
   codeExecutions,
+  toolCalls,
 }: {
   grounding?: AssistantGroundingMetadata | null
   codeExecutions?: AssistantCodeExecution[] | null
+  toolCalls?: AssistantToolCallRecord[] | null
 }) {
   const [expanded, setExpanded] = useState(false)
 
   const queries = grounding?.webSearchQueries ?? []
   const sources = (grounding?.sources ?? []).filter((s) => s.uri || s.title)
   const executions = (codeExecutions ?? []).filter((c) => c.code || c.output)
+  const calls = toolCalls ?? []
 
   const hasSearch = queries.length > 0 || sources.length > 0
   const hasCode = executions.length > 0
+  const hasTools = calls.length > 0
 
-  if (!hasSearch && !hasCode) return null
+  if (!hasSearch && !hasCode && !hasTools) return null
 
   const getLabel = () => {
+    if (hasTools) {
+      const toolText = calls.length === 1
+        ? `🛠️ 呼叫了工具：${calls[0].label}`
+        : `🛠️ 呼叫了 ${calls.length} 個工具`
+      if (sources.length > 0) return `${toolText} · 參考了 ${sources.length} 個來源`
+      if (hasCode) return `${toolText} · 執行了計算`
+      return toolText
+    }
     if (sources.length > 0 && hasCode) {
       return `⚡ 參考了 ${sources.length} 個來源 · 執行了計算`
     }
@@ -114,6 +174,73 @@ export function AssistantToolExecutionBadge({
           }}
         >
           <Stack spacing={1.25}>
+            {/* 調用工具 */}
+            {calls.length > 0 ? (
+              <Box>
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
+                  <BuildRoundedIcon sx={{ fontSize: 13, color: '#0f766e' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.72rem' }}>
+                    調用工具 ({calls.length})
+                  </Typography>
+                </Stack>
+                <Stack spacing={0.5}>
+                  {calls.map((call, idx) => {
+                    const argsStr = formatToolArgs(call.args)
+                    return (
+                      <Box
+                        key={call.id ?? `${call.name}-${idx}`}
+                        sx={{
+                          p: 0.75,
+                          borderRadius: '6px',
+                          bgcolor: 'rgba(15, 118, 110, 0.05)',
+                          border: '1px solid rgba(15, 118, 110, 0.12)',
+                        }}
+                      >
+                        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                          {getToolIcon(call.name)}
+                          <Typography
+                            sx={{
+                              fontSize: '0.74rem',
+                              fontWeight: 600,
+                              color: '#0f766e',
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {call.label}
+                          </Typography>
+                          <Typography
+                            component="span"
+                            sx={{
+                              fontSize: '0.68rem',
+                              color: 'text.disabled',
+                              fontFamily: 'ui-monospace, monospace',
+                            }}
+                          >
+                            {call.name}
+                          </Typography>
+                        </Stack>
+                        {argsStr ? (
+                          <Typography
+                            sx={{
+                              mt: 0.25,
+                              pl: 2.5,
+                              fontSize: '0.68rem',
+                              color: 'text.secondary',
+                              fontFamily: 'ui-monospace, monospace',
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {argsStr}
+                          </Typography>
+                        ) : null}
+                      </Box>
+                    )
+                  })}
+                </Stack>
+              </Box>
+            ) : null}
+
             {/* 搜尋關鍵字 */}
             {queries.length > 0 ? (
               <Box>

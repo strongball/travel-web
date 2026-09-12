@@ -7,6 +7,7 @@ export type AssistantProgressPhase =
   | 'checking_context'
   | 'summarizing_context'
   | 'generating_response'
+  | 'executing_tools'
   | 'validating_response'
   | 'applying_proposal'
   | 'saving_checkpoint'
@@ -51,6 +52,13 @@ export type AssistantAttachment = {
   textContent?: string
 }
 
+export type AssistantToolCallRecord = {
+  id?: string
+  name: string
+  label: string
+  args?: Record<string, unknown>
+}
+
 export type AssistantMessage = {
   id: string
   turnId: string
@@ -68,6 +76,7 @@ export type AssistantMessage = {
   grounding?: AssistantGroundingMetadata | null
   codeExecutions?: AssistantCodeExecution[] | null
   attachments?: AssistantAttachment[] | null
+  toolCalls?: AssistantToolCallRecord[] | null
 }
 
 export type AssistantAttractionDraft = {

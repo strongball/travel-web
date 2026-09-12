@@ -260,7 +260,7 @@ export function MessageList({
           {state?.streaming ? (
             <MessageBubble message={state.streaming} streaming />
           ) : (
-            <AssistantProgress label={state?.progressLabel || '正在根據行程整理回覆…'} />
+            <AssistantProgress label={state?.progressLabel || '正在思考並產生回覆…'} />
           )}
         </Stack>
       )}

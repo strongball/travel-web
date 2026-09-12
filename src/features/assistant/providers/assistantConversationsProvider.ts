@@ -183,7 +183,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
   async resumeQuestion(answer: AssistantQuestionDecision): Promise<void> {
     return this.#resumeInterrupt({
-      progressLabel: '正在根據選擇繼續規劃…',
+      progressLabel: '正在處理您的回答…',
       errorMessage: '無法送出回答',
       runner: (service, onEvent) => service.resumeQuestion(this.threadId, answer, onEvent),
     })

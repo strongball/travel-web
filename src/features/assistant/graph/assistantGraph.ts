@@ -87,6 +87,9 @@ export const createAssistantGraph = (
     }))
     .addNode('respond', createRespondNode({ emitProgress }))
     .addNode('execute_tools', async (state, config) => {
+      if (state.request?.threadId) {
+        emitProgress(state.request.threadId, 'executing_tools')
+      }
       const toolConfig = {
         ...config,
         configurable: {

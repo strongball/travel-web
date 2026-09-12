@@ -5,9 +5,10 @@ import type { AssistantProgressPhase } from '../types'
 export const progressLabels: Record<AssistantProgressPhase, string> = {
   checking_context: '正在確認是否需要整理前文…',
   summarizing_context: '正在整理先前對話…',
-  generating_response: '正在根據行程與對話產生回覆…',
-  validating_response: '正在驗證回覆與時間安排…',
-  applying_proposal: '正在套用行程修改…',
+  generating_response: '正在思考並產生回覆…',
+  executing_tools: '正在調用工具查詢資訊…',
+  validating_response: '正在驗證回覆內容…',
+  applying_proposal: '正在套用調整…',
   saving_checkpoint: '正在儲存對話進度…',
   saving_response: '正在儲存助理回覆…',
   syncing_conversation: '正在更新對話畫面…',
@@ -75,3 +76,38 @@ export const rememberThread = (key: string, threadId: string | null) => {
 export const dayRevisions = (itinerary: Itinerary) => Object.fromEntries(
   (itinerary.days ?? []).map((day) => [day.id, day.revision]),
 )
+
+/**
+ * 將工具名稱與參數轉為適合在 UI 呈現的友善繁體中文標籤
+ */
+export function formatToolCallLabel(name: string, args?: Record<string, unknown>): string {
+  switch (name) {
+    case 'view_itinerary': {
+      const day = args?.dayNumber
+      return typeof day === 'number' ? `檢視第 ${day} 天行程` : '檢視全體行程總覽'
+    }
+    case 'view_todo_categories':
+      return '查詢待辦分類清單'
+    case 'view_todo_list': {
+      const cat = typeof args?.category === 'string' ? args.category.trim() : ''
+      return cat ? `讀取【${cat}】待辦清單` : '讀取待辦事項清單'
+    }
+    case 'search_web_information': {
+      const q = typeof args?.query === 'string' ? args.query.trim() : ''
+      return q ? `搜尋「${q}」` : '聯網搜尋即時資訊'
+    }
+    case 'propose_itinerary_edit': {
+      const title = typeof args?.title === 'string' ? args.title.trim() : ''
+      return title ? `行程修改提案：${title}` : '規劃行程修改提案'
+    }
+    case 'propose_todo_list': {
+      const title = typeof args?.title === 'string' ? args.title.trim() : ''
+      return title ? `待辦清單提案：${title}` : '規劃待辦清單提案'
+    }
+    case 'ask_clarifying_question':
+      return '向使用者確認偏好'
+    default:
+      return name
+  }
+}
+

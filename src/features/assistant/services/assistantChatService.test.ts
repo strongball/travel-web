@@ -86,7 +86,7 @@ describe('AssistantChatService', () => {
     )
     expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', assistant)
     expect(events).toEqual([
-      { type: 'progress', label: '正在根據行程與對話產生回覆…' },
+      { type: 'progress', label: '正在思考並產生回覆…' },
       { type: 'content', text: '回答', turnId: 'turn-1' },
       { type: 'content', text: '內容', turnId: 'turn-1' },
       { type: 'progress', label: null },

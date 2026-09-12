@@ -39,6 +39,8 @@ export function AssistantConversationView({
   todoCategories,
   fullPage,
   onAssistantToolbarChange,
+  onThreadChange,
+  onRegisterBackHandler,
 }: {
   itineraryId: string
   itinerary: Itinerary
@@ -46,6 +48,8 @@ export function AssistantConversationView({
   todoCategories: string[]
   fullPage: boolean
   onAssistantToolbarChange?: (toolbar: ReactNode) => void
+  onThreadChange?: (threadId: string | null, threadTitle?: string) => void
+  onRegisterBackHandler?: (handler: (() => boolean) | null) => void
 }) {
   const ref = useRiverRef()
   const online = useOnlineStatus()
@@ -55,6 +59,11 @@ export function AssistantConversationView({
   const selectionGenerationRef = useRef(0)
   const threadIdRef = useRef(threadId)
   const composerRef = useRef<ChatComposerHandle | null>(null)
+  const initialSyncedRef = useRef(false)
+
+  useEffect(() => {
+    initialSyncedRef.current = false
+  }, [itineraryId])
 
   useEffect(() => () => {
     selectionGenerationRef.current += 1
@@ -82,14 +91,45 @@ export function AssistantConversationView({
     rememberThread(threadStorageKey, next)
   }, [threadStorageKey])
 
-  // 清單載入後,選取無效或未選時退回記住的/第一個執行緒。
+  // 清單載入後：
+  // 1. 初次載入時，若有記住的或既有對話，選取有效的對話（或第一個對話）。
+  // 2. 後續若當前選取的對話被刪除（在清單中不存在），則退回第一個對話或 null。
+  // 3. 若使用者主動切換至對話清單 (threadId === null)，絕不強制覆蓋選取。
   useEffect(() => {
     if (!threadsState.hasData) return
     const list = threadsState.data ?? []
-    const currentValid = threadId && list.some((thread) => thread.id === threadId) ? threadId : null
-    const next = currentValid ?? list[0]?.id ?? null
-    if (next !== threadId) select(next)
+
+    if (!initialSyncedRef.current) {
+      initialSyncedRef.current = true
+      const currentValid = threadId && list.some((thread) => thread.id === threadId) ? threadId : null
+      const next = currentValid ?? list[0]?.id ?? null
+      if (next !== threadId) select(next)
+      return
+    }
+
+    // 已完成初次同步後：僅在目前選取的 threadId 已失效（被刪除）時，才退回第一個對話
+    if (threadId && !list.some((thread) => thread.id === threadId)) {
+      select(list[0]?.id ?? null)
+    }
   }, [select, threadId, threadsState])
+
+  useEffect(() => {
+    const currentThread = threadsState.data?.find((t) => t.id === threadId)
+    onThreadChange?.(threadId, currentThread?.title)
+  }, [onThreadChange, threadId, threadsState.data])
+
+  useEffect(() => {
+    if (!onRegisterBackHandler) return
+    if (threadId) {
+      onRegisterBackHandler(() => {
+        select(null)
+        return true
+      })
+    } else {
+      onRegisterBackHandler(null)
+    }
+    return () => onRegisterBackHandler(null)
+  }, [onRegisterBackHandler, select, threadId])
 
   // ---- 使用者命令 ----
 
@@ -175,6 +215,7 @@ export function AssistantConversationView({
         onConversationList={() => select(null)}
         onSummarize={handleSummarize}
         onDelete={(targetId) => void handleDeleteThread(targetId)}
+        showConversationList={Boolean(threadId)}
       />,
     )
   }, [

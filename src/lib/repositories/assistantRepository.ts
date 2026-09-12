@@ -3,6 +3,7 @@ import type {
   AssistantGroundingMetadata,
   AssistantMessage,
   AssistantProposal,
+  AssistantToolCallRecord,
 } from '../../features/assistant/types'
 import { ASSISTANT_GRAPH_VERSION } from '../../features/assistant/types'
 import { supabase } from '../supabase'
@@ -77,6 +78,7 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
       clarifyingQuestion: metadata.clarifyingQuestion as AssistantMessage['clarifyingQuestion'],
       grounding: metadata.grounding as AssistantGroundingMetadata | undefined,
       codeExecutions: metadata.codeExecutions as AssistantCodeExecution[] | undefined,
+      toolCalls: (metadata.toolCalls as AssistantToolCallRecord[]) ?? null,
       attachments: (metadata.attachments as AssistantMessage['attachments']) ?? null,
     }
   })
@@ -88,6 +90,7 @@ export async function saveAssistantMessage(threadId: string, message: AssistantM
   if (message.clarifyingQuestion) metadata.clarifyingQuestion = message.clarifyingQuestion
   if (message.grounding) metadata.grounding = message.grounding
   if (message.codeExecutions) metadata.codeExecutions = message.codeExecutions
+  if (message.toolCalls && message.toolCalls.length > 0) metadata.toolCalls = message.toolCalls
   if (message.attachments) metadata.attachments = message.attachments
 
   const { error } = await supabase.from('assistant_messages').upsert({

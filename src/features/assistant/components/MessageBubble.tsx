@@ -43,10 +43,11 @@ export function MessageBubble({
         </Avatar>
       ) : null}
       <Box sx={{ maxWidth: { xs: '88%', sm: '78%' } }}>
-        {!user && (message.grounding || message.codeExecutions) ? (
+        {!user && (message.grounding || message.codeExecutions || (message.toolCalls && message.toolCalls.length > 0)) ? (
           <AssistantToolExecutionBadge
             grounding={message.grounding}
             codeExecutions={message.codeExecutions}
+            toolCalls={message.toolCalls}
           />
         ) : null}
         <Paper

@@ -1,11 +1,13 @@
 import { AIMessage, ToolMessage } from '@langchain/core/messages'
 import { extractMessageText } from '../../services'
+import { formatToolCallLabel } from '../../utils/conversationUtils'
 import type {
   AssistantCodeExecution,
   AssistantGroundingMetadata,
   AssistantMessage,
   AssistantProgressPhase,
   AssistantProposal,
+  AssistantToolCallRecord,
 } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
 
@@ -66,6 +68,21 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       : null
     const codeExecutions: AssistantCodeExecution[] | null = allCodeExecutions.length > 0 ? allCodeExecutions : null
 
+    const allToolCalls: AssistantToolCallRecord[] = []
+    for (const msg of state.modelMessages) {
+      if (AIMessage.isInstance(msg) && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+        for (const tc of msg.tool_calls) {
+          allToolCalls.push({
+            id: tc.id,
+            name: tc.name,
+            label: formatToolCallLabel(tc.name, tc.args as Record<string, unknown>),
+            args: (tc.args as Record<string, unknown>) ?? {},
+          })
+        }
+      }
+    }
+    const toolCalls: AssistantToolCallRecord[] | null = allToolCalls.length > 0 ? allToolCalls : null
+
     const assistantMessage: AssistantMessage = {
       id: crypto.randomUUID(),
       turnId: request.turnId,
@@ -76,6 +93,7 @@ export function createFinalizeResponseNode(options: FinalizeResponseNodeOptions 
       clarifyingQuestion: completedQuestion,
       grounding,
       codeExecutions,
+      toolCalls,
     }
 
     if (request.threadId) options.emitProgress?.(request.threadId, 'saving_checkpoint')
