@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
+import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
@@ -10,9 +12,18 @@ import {
   Box,
   Button,
   Card,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   IconButton,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Stack,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -67,6 +78,9 @@ export function ScheduleSection({
   const [mapOpen, setMapOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [headerMenuAnchorEl, setHeaderMenuAnchorEl] = useState<null | HTMLElement>(null)
+  const [startTimeDialogOpen, setStartTimeDialogOpen] = useState(false)
+  const [editStartTime, setEditStartTime] = useState('09:00')
   const visibleDaysRef = useRef(visibleDays)
   const saveQueue = useRef(Promise.resolve())
 
@@ -165,8 +179,15 @@ export function ScheduleSection({
             },
           }}
         >
-          {/* Day Header with Quick Navigation */}
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Day Header with Quick Navigation & Actions */}
+          <Stack
+            direction="row"
+            spacing={1}
+            sx={{
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
             <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', minWidth: 0, flex: 1 }}>
               <Avatar
                 sx={{
@@ -175,55 +196,137 @@ export function ScheduleSection({
                   width: 38,
                   height: 38,
                   fontWeight: 900,
+                  fontSize: '0.95rem',
+                  flexShrink: 0,
+                  boxShadow: (theme) => theme.palette.cardShadow,
                 }}
               >
                 {activeDayIndex + 1}
               </Avatar>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 900 }} noWrap>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 850, lineHeight: 1.25 }} noWrap>
                   {formatDate(activeDay.date)}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {activeDay.startTime?.slice(11, 16) ?? '09:00'} 開始 · 共 {activeDay.attractions.length} 個景點
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  onClick={() => {
+                    setEditStartTime(activeDay.startTime?.slice(11, 16) ?? '09:00')
+                    setStartTimeDialogOpen(true)
+                  }}
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.4,
+                    fontWeight: 650,
+                    cursor: 'pointer',
+                    mt: 0.2,
+                    borderRadius: 1,
+                    px: 0.5,
+                    py: 0.1,
+                    ml: -0.5,
+                    transition: 'background-color 150ms ease, color 150ms ease',
+                    '&:hover': {
+                      bgcolor: 'action.hover',
+                      color: 'primary.main',
+                    },
+                  }}
+                  title="點擊修改每日出發時間"
+                >
+                  <AccessTimeRoundedIcon sx={{ fontSize: 13, opacity: 0.75 }} />
+                  <span>{activeDay.startTime?.slice(11, 16) ?? '09:00'} 出發</span>
+                  <span>·</span>
+                  <span>{activeDay.attractions.length} 個景點</span>
                 </Typography>
               </Box>
             </Stack>
 
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
-              {itinerary ? (
-                <Tooltip title="分享 / 匯出行程文字">
-                  <IconButton
-                    aria-label="分享 / 匯出行程文字"
-                    onClick={() => setShareOpen(true)}
-                  >
-                    <ShareRoundedIcon />
-                  </IconButton>
-                </Tooltip>
-              ) : null}
-              <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
+              <Tooltip title="新增景點">
                 <IconButton
-                  aria-label={`查看 ${formatDate(activeDay.date)} 景點地圖`}
-                  disabled={activeDay.attractions.length === 0}
-                  onClick={() => setMapOpen(true)}
+                  size="small"
+                  color="primary"
+                  aria-label="新增景點"
+                  onClick={() => onAddAttraction(activeDay.id)}
                 >
-                  <MapRoundedIcon />
+                  <AddRoundedIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="調整景點順序">
+
+              <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
                 <span>
                   <IconButton
-                    aria-label="調整景點順序"
-                    disabled={activeDay.attractions.length < 2}
-                    onClick={() => setSortOpen(true)}
+                    size="small"
+                    aria-label={`查看 ${formatDate(activeDay.date)} 景點地圖`}
+                    disabled={activeDay.attractions.length === 0}
+                    onClick={() => setMapOpen(true)}
                   >
-                    <SortRoundedIcon />
+                    <MapRoundedIcon fontSize="small" />
                   </IconButton>
                 </span>
               </Tooltip>
+
+              <Tooltip title="更多選項">
+                <IconButton
+                  size="small"
+                  aria-label="更多日程選項"
+                  aria-haspopup="true"
+                  aria-expanded={Boolean(headerMenuAnchorEl)}
+                  onClick={(e) => setHeaderMenuAnchorEl(e.currentTarget)}
+                >
+                  <MoreVertRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+
+              <Menu
+                anchorEl={headerMenuAnchorEl}
+                open={Boolean(headerMenuAnchorEl)}
+                onClose={() => setHeaderMenuAnchorEl(null)}
+                transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+              >
+                <MenuItem
+                  onClick={() => {
+                    setHeaderMenuAnchorEl(null)
+                    setEditStartTime(activeDay.startTime?.slice(11, 16) ?? '09:00')
+                    setStartTimeDialogOpen(true)
+                  }}
+                >
+                  <ListItemIcon>
+                    <AccessTimeRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>設定出發時間</ListItemText>
+                </MenuItem>
+                <MenuItem
+                  disabled={activeDay.attractions.length < 2}
+                  onClick={() => {
+                    setHeaderMenuAnchorEl(null)
+                    setSortOpen(true)
+                  }}
+                >
+                  <ListItemIcon>
+                    <SortRoundedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>調整景點順序</ListItemText>
+                </MenuItem>
+                {itinerary ? (
+                  <MenuItem
+                    onClick={() => {
+                      setHeaderMenuAnchorEl(null)
+                      setShareOpen(true)
+                    }}
+                  >
+                    <ListItemIcon>
+                      <ShareRoundedIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>分享 / 匯出行程文字</ListItemText>
+                  </MenuItem>
+                ) : null}
+              </Menu>
             </Stack>
           </Stack>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 1.5 }} />
 
           {activeDay.attractions.length === 0 ? (
             <Box sx={{ py: 4, textAlign: 'center' }}>
@@ -246,7 +349,6 @@ export function ScheduleSection({
                   onDuplicateAttraction={onDuplicateAttraction}
                   onEditTravelInfo={onEditTravelInfo}
                   onDeleteAttraction={onDeleteAttraction}
-                  onStartTimeChange={onStartTimeChange}
                 />
               ))}
             </Stack>
@@ -259,9 +361,18 @@ export function ScheduleSection({
             onClick={() => onAddAttraction(activeDay.id)}
             sx={{
               mt: 2,
+              py: 0.9,
+              borderRadius: 2.5,
+              fontWeight: 750,
+              fontSize: '0.86rem',
               borderStyle: 'dashed',
+              bgcolor: 'surfaceSubtle',
+              borderColor: 'surfaceSubtleBorder',
+              color: 'primary.main',
               '&:hover': {
                 borderStyle: 'dashed',
+                bgcolor: 'surfaceSubtleHover',
+                borderColor: 'primary.main',
               },
             }}
           >
@@ -282,6 +393,38 @@ export function ScheduleSection({
           onClose={() => setShareOpen(false)}
         />
       ) : null}
+
+      <Dialog
+        open={startTimeDialogOpen}
+        onClose={() => setStartTimeDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>設定出發時間</DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <TextField
+            type="time"
+            fullWidth
+            label="每日開始出發時間"
+            value={editStartTime}
+            onChange={(e) => setEditStartTime(e.target.value)}
+            slotProps={{ htmlInput: { step: 300 } }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStartTimeDialogOpen(false)}>取消</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              onStartTimeChange(activeDay.id, editStartTime)
+              setStartTimeDialogOpen(false)
+            }}
+          >
+            儲存
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   )
 }

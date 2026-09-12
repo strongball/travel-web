@@ -6,28 +6,23 @@ describe('MobileFloatingAction', () => {
   it('renders nothing when visible is false', () => {
     render(
       <MobileFloatingAction
-        section="schedule"
+        section="todos"
         visible={false}
-        onAddAttraction={vi.fn()}
+        onFocusTodoInput={vi.fn()}
       />,
     )
-    expect(screen.queryByRole('button', { name: '新增景點' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新增待辦' })).not.toBeInTheDocument()
   })
 
-  it('renders "新增景點" button for schedule section and triggers callback', () => {
-    const onAddAttraction = vi.fn()
+  it('renders nothing for schedule section to avoid blocking cards', () => {
     render(
       <MobileFloatingAction
         section="schedule"
         visible={true}
-        onAddAttraction={onAddAttraction}
+        onAddAttraction={vi.fn()}
       />,
     )
-
-    const btn = screen.getByRole('button', { name: '新增景點' })
-    expect(btn).toBeInTheDocument()
-    fireEvent.click(btn)
-    expect(onAddAttraction).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
   it('renders "新增待辦" button for todos section and triggers callback', () => {

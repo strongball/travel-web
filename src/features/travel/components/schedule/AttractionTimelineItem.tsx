@@ -1,7 +1,8 @@
-import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
+import { useState } from 'react'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
+import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import {
   Box,
@@ -9,9 +10,11 @@ import {
   CardContent,
   Chip,
   IconButton,
-  Paper,
+  ListItemIcon,
+  ListItemText,
+  Menu,
+  MenuItem,
   Stack,
-  TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -30,7 +33,6 @@ interface AttractionTimelineItemProps {
   onDuplicateAttraction?: (day: TripDay, attraction: Attraction) => void
   onEditTravelInfo: (origin: Attraction, attraction: Attraction) => void
   onDeleteAttraction: (day: TripDay, id: string) => void
-  onStartTimeChange: (dayId: string, time: string) => void
 }
 
 export function AttractionTimelineItem({
@@ -43,59 +45,26 @@ export function AttractionTimelineItem({
   onDuplicateAttraction,
   onEditTravelInfo,
   onDeleteAttraction,
-  onStartTimeChange,
 }: AttractionTimelineItemProps) {
+  const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
   const mapPoint = attractionMapPoint(attraction)
+
+  const showLocation = Boolean(
+    attraction.locationName &&
+      attraction.locationName.trim().toLowerCase() !== attraction.name.trim().toLowerCase(),
+  )
+
+  const handleOpenMenu = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation()
+    setMenuAnchorEl(e.currentTarget)
+  }
+
+  const handleCloseMenu = () => {
+    setMenuAnchorEl(null)
+  }
 
   return (
     <Box>
-      {index === 0 ? (
-        <Paper
-          variant="outlined"
-          sx={{
-            width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
-            ml: { xs: '46px', sm: '60px' },
-            mb: 1.25,
-            p: 1,
-            bgcolor: 'action.hover',
-          }}
-        >
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Box
-              sx={{
-                width: 26,
-                height: 26,
-                display: 'grid',
-                placeItems: 'center',
-                borderRadius: '50%',
-                bgcolor: 'primary.main',
-                color: 'common.white',
-                flexShrink: 0,
-              }}
-            >
-              <AccessTimeRoundedIcon sx={{ fontSize: 16 }} />
-            </Box>
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                variant="caption"
-                color="primary.main"
-                sx={{ display: 'block', fontWeight: 900 }}
-              >
-                出發時間
-              </Typography>
-            </Box>
-            <TextField
-              size="small"
-              type="time"
-              value={day.startTime?.slice(11, 16) ?? '09:00'}
-              slotProps={{ htmlInput: { step: 300, 'aria-label': '每日開始時間' } }}
-              onChange={(event) => onStartTimeChange(day.id, event.target.value)}
-              sx={{ width: { xs: 130, sm: 150 } }}
-            />
-          </Stack>
-        </Paper>
-      ) : null}
-
       {index > 0 && previousAttraction ? (
         <TravelInfoCard
           origin={previousAttraction}
@@ -105,7 +74,7 @@ export function AttractionTimelineItem({
       ) : null}
 
       <Stack direction="row" spacing={1.25} sx={{ alignItems: 'stretch' }}>
-        <Box sx={{ width: { xs: 38, sm: 52 }, pt: 1, textAlign: 'right', flexShrink: 0 }}>
+        <Box sx={{ width: { xs: 38, sm: 52 }, pt: 0.75, textAlign: 'right', flexShrink: 0 }}>
           <Typography
             variant="caption"
             color="text.secondary"
@@ -138,7 +107,7 @@ export function AttractionTimelineItem({
             },
           }}
         >
-          <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+          <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
             <Stack
               direction="row"
               spacing={1}
@@ -146,61 +115,32 @@ export function AttractionTimelineItem({
             >
               <Box sx={{ minWidth: 0, flex: 1 }}>
                 <Typography
+                  variant="subtitle2"
                   sx={{
-                    fontWeight: 850,
+                    fontWeight: 800,
+                    lineHeight: 1.3,
                     overflowWrap: 'anywhere',
                   }}
                 >
                   {attraction.name}
                 </Typography>
 
-                {attraction.locationName ? (
+                {showLocation ? (
                   <Typography
-                    variant="body2"
+                    variant="caption"
                     color="text.secondary"
+                    noWrap
                     sx={{
-                      overflowWrap: 'anywhere',
-                      mt: 0.3,
-                      fontSize: '0.82rem',
+                      display: 'block',
+                      mt: 0.25,
+                      fontSize: '0.78rem',
                     }}
                   >
                     📍 {attraction.locationName}
                   </Typography>
                 ) : null}
-
-                {attraction.description ? (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                      overflowWrap: 'anywhere',
-                      mt: 0.4,
-                      fontSize: '0.82rem',
-                      bgcolor: 'action.hover',
-                      p: 0.5,
-                      px: 0.75,
-                      borderRadius: 1,
-                      display: 'inline-block',
-                    }}
-                  >
-                    📝 {attraction.description}
-                  </Typography>
-                ) : null}
-
-                {!attraction.locationName && !attraction.description ? (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{
-                      overflowWrap: 'anywhere',
-                      mt: 0.2,
-                      fontSize: '0.82rem',
-                    }}
-                  >
-                    停留約 {attraction.duration} 分鐘
-                  </Typography>
-                ) : null}
               </Box>
+
               <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
                 {mapPoint ? (
                   <Tooltip title="在 Google 地圖查看景點">
@@ -218,51 +158,94 @@ export function AttractionTimelineItem({
                     </IconButton>
                   </Tooltip>
                 ) : null}
-                {onDuplicateAttraction ? (
-                  <Tooltip title="複製此景點">
-                    <IconButton
-                      size="small"
-                      aria-label={`複製 ${attraction.name}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onDuplicateAttraction(day, attraction)
-                      }}
-                    >
-                      <ContentCopyRoundedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                ) : null}
-                <Tooltip title="編輯景點">
+
+                <Tooltip title="更多選項">
                   <IconButton
                     size="small"
-                    aria-label={`編輯 ${attraction.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
+                    aria-label={`更多選項 - ${attraction.name}`}
+                    aria-haspopup="true"
+                    aria-expanded={Boolean(menuAnchorEl)}
+                    onClick={handleOpenMenu}
+                  >
+                    <MoreVertRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+
+                <Menu
+                  anchorEl={menuAnchorEl}
+                  open={Boolean(menuAnchorEl)}
+                  onClose={handleCloseMenu}
+                  onClick={(e) => e.stopPropagation()}
+                  transformOrigin={{ horizontal: 'right', vertical: 'top' }}
+                  anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
+                >
+                  <MenuItem
+                    onClick={() => {
+                      setMenuAnchorEl(null)
                       onEditAttraction(day, attraction)
                     }}
                   >
-                    <EditRoundedIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="刪除景點">
-                  <IconButton
-                    size="small"
-                    color="error"
-                    aria-label={`刪除 ${attraction.name}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
+                    <ListItemIcon>
+                      <EditRoundedIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>編輯景點</ListItemText>
+                  </MenuItem>
+                  {onDuplicateAttraction ? (
+                    <MenuItem
+                      onClick={() => {
+                        setMenuAnchorEl(null)
+                        onDuplicateAttraction(day, attraction)
+                      }}
+                    >
+                      <ListItemIcon>
+                        <ContentCopyRoundedIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>複製景點</ListItemText>
+                    </MenuItem>
+                  ) : null}
+                  <MenuItem
+                    onClick={() => {
+                      setMenuAnchorEl(null)
                       onDeleteAttraction(day, attraction.id)
                     }}
+                    sx={{ color: 'error.main' }}
                   >
-                    <DeleteOutlineRoundedIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                    <ListItemIcon sx={{ color: 'error.main' }}>
+                      <DeleteOutlineRoundedIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText>刪除景點</ListItemText>
+                  </MenuItem>
+                </Menu>
               </Stack>
             </Stack>
-            <Stack direction="row" spacing={0.75} sx={{ mt: 1.25, flexWrap: 'wrap', gap: 0.5 }}>
+
+            {attraction.description ? (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  overflowWrap: 'anywhere',
+                  mt: 0.75,
+                  fontSize: '0.8rem',
+                  lineHeight: 1.45,
+                  bgcolor: 'action.hover',
+                  p: 0.6,
+                  px: 0.85,
+                  borderRadius: 1,
+                  display: 'block',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                }}
+              >
+                📝 {attraction.description}
+              </Typography>
+            ) : null}
+
+            <Stack direction="row" spacing={0.75} sx={{ mt: 0.75, alignItems: 'center' }}>
               <Chip
                 size="small"
                 label={`${attraction.duration} 分鐘`}
+                sx={{ height: 22, fontSize: '0.75rem' }}
               />
               {attraction.cost > 0 ? (
                 <Chip
@@ -270,6 +253,7 @@ export function AttractionTimelineItem({
                   color="primary"
                   variant="outlined"
                   label={formatAmount(attraction.cost, currency)}
+                  sx={{ height: 22, fontSize: '0.75rem' }}
                 />
               ) : null}
             </Stack>

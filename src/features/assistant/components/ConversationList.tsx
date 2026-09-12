@@ -90,7 +90,7 @@ export function ConversationList({
         borderRightColor: { md: 'divider' },
         borderBottom: { xs: '1px solid', md: 0 },
         borderBottomColor: { xs: 'divider', md: 'transparent' },
-        display: { xs: threadId ? 'none' : 'block', md: 'block' },
+        display: 'block',
         bgcolor: 'background.paper',
       }}
     >

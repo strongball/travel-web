@@ -47,6 +47,7 @@ export function AssistantConversationView({
   const online = useOnlineStatus()
   const threadStorageKey = `assistant-active-thread:${itineraryId}`
   const [threadId, setThreadId] = useState<string | null>(() => rememberedThread(threadStorageKey))
+  const [showConversationList, setShowConversationList] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const selectionGenerationRef = useRef(0)
   const threadIdRef = useRef(threadId)
@@ -83,6 +84,13 @@ export function AssistantConversationView({
     rememberThread(threadStorageKey, next)
   }, [threadStorageKey])
 
+  const handleSelectThreadFromList = useCallback((targetId: string | null) => {
+    if (targetId) {
+      select(targetId)
+    }
+    setShowConversationList(false)
+  }, [select])
+
   // 清單載入後：
   // 1. 初次載入時，若有記住的或既有對話，選取有效的對話（或第一個對話）。
   // 2. 後續若當前選取的對話被刪除（在清單中不存在），則退回第一個對話或 null。
@@ -104,19 +112,23 @@ export function AssistantConversationView({
     }
   }, [select, threadId, threadsState])
 
-  // 瀏覽器上一頁/手勢支援：在對話中優先返回對話清單
+  // 瀏覽器上一頁/手勢支援：在對話清單子頁面時返回對話，在對話時返回行程
   useEffect(() => {
     if (!onRegisterBrowserBackHandler) return
     const handleBack = () => {
-      if (threadId) {
-        select(null)
+      if (showConversationList) {
+        setShowConversationList(false)
+        return true
+      }
+      if (onBack) {
+        onBack()
         return true
       }
       return false
     }
     onRegisterBrowserBackHandler(handleBack)
     return () => onRegisterBrowserBackHandler(null)
-  }, [onRegisterBrowserBackHandler, select, threadId])
+  }, [onBack, onRegisterBrowserBackHandler, showConversationList])
 
   // ---- 使用者命令 ----
 
@@ -124,6 +136,7 @@ export function AssistantConversationView({
     try {
       const thread = await ref.read(threadProvider.notifier).create()
       select(thread.id)
+      setShowConversationList(false)
     } catch (createError) {
       setError(friendlyError(createError, '無法建立新對話'))
     }
@@ -218,24 +231,23 @@ export function AssistantConversationView({
   return (
     <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
       <PageHeader
-        title={currentThread?.title ?? '旅程助理'}
+        title={showConversationList ? '對話清單' : (currentThread?.title ?? '旅程助理')}
         subtitle={itinerary.title}
-        onBack={() => {
-          if (threadId) select(null)
-          else onBack?.()
-        }}
-        backLabel={threadId ? '返回對話列表' : '返回我的行程'}
+        onBack={showConversationList ? () => setShowConversationList(false) : onBack}
+        backLabel={showConversationList ? '返回對話' : '返回我的行程'}
         actions={
-          <AssistantAppBarActions
-            thread={currentThread}
-            sending={sending}
-            messageCount={messages.length}
-            online={online}
-            onConversationList={() => select(null)}
-            onSummarize={handleSummarize}
-            onDelete={(targetId) => void handleDeleteThread(targetId)}
-            showConversationList={Boolean(threadId)}
-          />
+          showConversationList ? null : (
+            <AssistantAppBarActions
+              thread={currentThread}
+              sending={sending}
+              messageCount={messages.length}
+              online={online}
+              onConversationList={() => setShowConversationList(true)}
+              onSummarize={handleSummarize}
+              onDelete={(targetId) => void handleDeleteThread(targetId)}
+              showConversationList={true}
+            />
+          )
         }
       />
 
@@ -253,20 +265,28 @@ export function AssistantConversationView({
           bgcolor: 'background.paper',
         }}
       >
-        <ConversationList
-          itineraryId={itineraryId}
-          threadId={threadId}
-          onSelectThread={select}
-          onCreateThread={() => void handleCreateThread()}
-          onRenameThread={(id, title) => void handleRenameThread(id, title)}
-          onDeleteThread={(id) => void handleDeleteThread(id)}
-        />
+        <Box
+          sx={{
+            display: { xs: showConversationList ? 'block' : 'none', md: 'block' },
+            height: '100%',
+            overflow: 'hidden',
+          }}
+        >
+          <ConversationList
+            itineraryId={itineraryId}
+            threadId={threadId}
+            onSelectThread={handleSelectThreadFromList}
+            onCreateThread={() => void handleCreateThread()}
+            onRenameThread={(id, title) => void handleRenameThread(id, title)}
+            onDeleteThread={(id) => void handleDeleteThread(id)}
+          />
+        </Box>
 
         <Stack
           sx={{
             minWidth: 0,
             minHeight: 0,
-            display: { xs: threadId ? 'flex' : 'none', md: 'flex' },
+            display: { xs: showConversationList ? 'none' : 'flex', md: 'flex' },
             bgcolor: 'background.default',
           }}
         >

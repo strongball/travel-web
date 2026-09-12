@@ -14,21 +14,17 @@ interface MobileFloatingActionProps {
 export function MobileFloatingAction({
   section,
   visible,
-  onAddAttraction,
   onFocusTodoInput,
   onAddExpense,
 }: MobileFloatingActionProps) {
-  if (!visible || section === 'overview' || section === 'assistant') {
+  if (!visible || section === 'overview' || section === 'assistant' || section === 'schedule') {
     return null
   }
 
   let label = ''
   let onClick: (() => void) | undefined
 
-  if (section === 'schedule') {
-    label = '新增景點'
-    onClick = onAddAttraction
-  } else if (section === 'todos') {
+  if (section === 'todos') {
     label = '新增待辦'
     onClick = onFocusTodoInput
   } else if (section === 'expenses') {

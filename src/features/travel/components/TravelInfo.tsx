@@ -176,11 +176,14 @@ export function TravelInfoCard({
         display: 'block',
         width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
         ml: { xs: '46px', sm: '60px' },
-        mb: 1.25,
-        p: 1,
+        my: 0.75,
+        py: 0.4,
+        px: 1,
         borderStyle: 'dashed',
+        borderColor: 'divider',
         bgcolor: 'action.hover',
         cursor: 'pointer',
+        borderRadius: 1.5,
         transition: 'border-color 150ms ease, background-color 150ms ease',
         '&:hover': {
           borderColor: 'primary.main',
@@ -188,41 +191,48 @@ export function TravelInfoCard({
         },
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
         <Box
           sx={{
             color: 'primary.main',
             display: 'grid',
             placeItems: 'center',
-            width: 28,
-            height: 28,
+            width: 22,
+            height: 22,
             borderRadius: '50%',
             bgcolor: 'action.selected',
             flexShrink: 0,
-            '& svg': { fontSize: 16 },
+            '& svg': { fontSize: 13 },
           }}
         >
           {transportIcon(attraction.transportMode)}
         </Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Stack
+          direction="row"
+          spacing={0.5}
+          sx={{ flex: 1, minWidth: 0, alignItems: 'center', overflow: 'hidden' }}
+        >
           <Typography
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', fontWeight: 700 }}
+            sx={{ fontWeight: 750, flexShrink: 0, fontSize: '0.75rem' }}
           >
             {transportLabel(attraction.transportMode)}
           </Typography>
           <Typography
-            variant="body2"
+            variant="caption"
             sx={{
-              fontWeight: 750,
-              color: attraction.travelTime !== null ? 'primary.main' : 'text.secondary',
-              overflowWrap: 'anywhere',
+              fontWeight: 700,
+              fontSize: '0.75rem',
+              color: attraction.travelTime !== null ? 'primary.main' : 'text.disabled',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {attraction.travelTime !== null ? `車程約 ${attraction.travelTime} 分鐘` : '尚未估算移動時間'}
+            {attraction.travelTime !== null ? `· 約 ${attraction.travelTime} 分鐘` : '· 點擊估算'}
           </Typography>
-        </Box>
+        </Stack>
         {canNavigate && destinationPoint ? (
           <Tooltip title={originPoint ? '在 Google 地圖開啟導航' : '在 Google 地圖開啟導航（使用目前位置）'}>
             <IconButton
@@ -238,22 +248,24 @@ export function TravelInfoCard({
               rel="noreferrer"
               color="primary"
               size="small"
+              sx={{ p: 0.25 }}
               aria-label="在 Google 地圖開啟導航"
               onClick={(e) => e.stopPropagation()}
             >
-              <NavigationRoundedIcon fontSize="small" />
+              <NavigationRoundedIcon sx={{ fontSize: 15 }} />
             </IconButton>
           </Tooltip>
         ) : null}
         <IconButton
           size="small"
+          sx={{ p: 0.25 }}
           aria-label="編輯交通方式"
           onClick={(e) => {
             e.stopPropagation()
             onEdit()
           }}
         >
-          <EditRoundedIcon fontSize="small" />
+          <EditRoundedIcon sx={{ fontSize: 15 }} />
         </IconButton>
       </Stack>
     </Paper>
