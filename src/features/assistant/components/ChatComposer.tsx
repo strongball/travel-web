@@ -207,7 +207,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         <Alert
           severity="info"
           variant="outlined"
-          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
+          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: 'background.paper' }}
         >
           助理與行程確認需要網路連線。
         </Alert>
@@ -219,7 +219,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
           severity="warning"
           variant="outlined"
           onClose={onClearNotice}
-          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
+          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: 'background.paper' }}
         >
           {notice}
         </Alert>
@@ -234,7 +234,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
             setLocalError(null)
             onClearError()
           }}
-          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
+          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.8rem', borderRadius: 2.5, bgcolor: 'background.paper' }}
         >
           {displayError}
         </Alert>
@@ -245,7 +245,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         <Alert
           severity="warning"
           onClose={clearSpeechError}
-          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.78rem', borderRadius: 2.5, bgcolor: '#ffffff' }}
+          sx={{ mb: 1, py: 0.25, px: 1.5, fontSize: '0.78rem', borderRadius: 2.5, bgcolor: 'background.paper' }}
         >
           {speechError}
         </Alert>
@@ -259,13 +259,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
           flexDirection: 'column',
           p: { xs: 1.2, sm: 1.4 },
           borderRadius: '24px',
-          bgcolor: '#ffffff',
-          border: '1px solid rgba(13, 118, 110, 0.16)',
-          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.06)',
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: 'surfaceSubtleBorder',
+          boxShadow: (theme) => theme.palette.cardShadow,
           transition: 'all 160ms ease',
           '&:focus-within': {
-            borderColor: '#0d766e',
-            boxShadow: '0 4px 24px rgba(13, 118, 110, 0.14)',
+            borderColor: 'primary.main',
+            boxShadow: (theme) => theme.palette.cardShadowHover,
           },
         }}
       >
@@ -338,8 +339,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                     height: 30,
                     color: 'text.secondary',
                     '&:hover': {
-                      color: '#0d766e',
-                      bgcolor: 'rgba(13, 118, 110, 0.08)',
+                      color: 'primary.main',
+                      bgcolor: 'action.hover',
                     },
                   }}
                 >
@@ -371,11 +372,11 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                     width: 32,
                     height: 32,
                     color: isListening ? '#ffffff' : 'text.secondary',
-                    bgcolor: isListening ? '#ef4444' : 'transparent',
+                    bgcolor: isListening ? 'error.main' : 'transparent',
                     animation: isListening ? 'assistant-pulse 1.5s infinite' : 'none',
                     '&:hover': {
-                      color: isListening ? '#ffffff' : '#0d766e',
-                      bgcolor: isListening ? '#dc2626' : 'rgba(13, 118, 110, 0.08)',
+                      color: isListening ? '#ffffff' : 'primary.main',
+                      bgcolor: isListening ? 'error.dark' : 'action.hover',
                     },
                     '@keyframes assistant-pulse': {
                       '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(239, 68, 68, 0.4)' },
@@ -400,16 +401,16 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
               sx={{
                 width: 32,
                 height: 32,
-                bgcolor: sending ? 'rgba(13, 118, 110, 0.12)' : !canSubmit ? 'rgba(0, 0, 0, 0.08)' : '#0d766e',
-                color: sending ? 'primary.main' : '#ffffff',
-                boxShadow: !canSubmit ? 'none' : '0 2px 8px rgba(13, 118, 110, 0.3)',
+                bgcolor: sending ? 'action.hover' : !canSubmit ? 'action.disabledBackground' : 'primary.main',
+                color: sending ? 'primary.main' : 'primary.contrastText',
+                boxShadow: !canSubmit ? 'none' : (theme) => theme.palette.cardShadow,
                 transition: 'all 160ms ease',
                 '&:hover': {
-                  bgcolor: '#075c57',
+                  bgcolor: 'primary.dark',
                   transform: 'scale(1.04)',
                 },
                 '&.Mui-disabled': {
-                  bgcolor: sending ? 'rgba(13, 118, 110, 0.12)' : 'action.disabledBackground',
+                  bgcolor: sending ? 'action.hover' : 'action.disabledBackground',
                   color: sending ? 'primary.main' : 'action.disabled',
                 },
               }}

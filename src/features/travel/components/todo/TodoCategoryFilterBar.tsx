@@ -1,5 +1,6 @@
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded'
+import PlaylistAddCheckRoundedIcon from '@mui/icons-material/PlaylistAddCheckRounded'
 import { Button, Card, Chip, Stack } from '@mui/material'
 import type { TodoItem } from '../../../../types/database'
 
@@ -10,6 +11,7 @@ interface TodoCategoryFilterBarProps {
   selectedFilterCategory: string
   onSelectCategory: (category: string) => void
   onOpenManager: () => void
+  onOpenTemplates?: () => void
   onClearCompleted?: () => void
 }
 
@@ -20,6 +22,7 @@ export function TodoCategoryFilterBar({
   selectedFilterCategory,
   onSelectCategory,
   onOpenManager,
+  onOpenTemplates,
   onClearCompleted,
 }: TodoCategoryFilterBarProps) {
   const totalCompleted = todos.filter((t) => t.isCompleted).length
@@ -83,6 +86,16 @@ export function TodoCategoryFilterBar({
               sx={{ fontWeight: 700 }}
             >
               清除已完成 ({totalCompleted})
+            </Button>
+          ) : null}
+          {onOpenTemplates ? (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<PlaylistAddCheckRoundedIcon />}
+              onClick={onOpenTemplates}
+            >
+              常備清單範本
             </Button>
           ) : null}
           <Button

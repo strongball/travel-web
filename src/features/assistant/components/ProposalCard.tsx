@@ -106,14 +106,15 @@ export function ProposalCard({
           alignSelf: 'flex-start',
           width: 'min(100%, 680px)',
           borderRadius: 3,
-          border: '1px solid rgba(13, 118, 110, 0.12)',
-          bgcolor: '#ffffff',
-          boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+          border: '1px solid',
+          borderColor: 'surfaceSubtleBorder',
+          bgcolor: 'background.paper',
+          boxShadow: (theme) => theme.palette.cardShadow,
           overflow: 'hidden',
           transition: 'box-shadow 200ms ease, border-color 200ms ease',
           '&:hover': {
-            borderColor: 'rgba(13, 118, 110, 0.25)',
-            boxShadow: '0 4px 14px rgba(13, 118, 110, 0.08)',
+            borderColor: 'primary.main',
+            boxShadow: (theme) => theme.palette.cardShadowHover,
           },
         }}
       >
@@ -234,8 +235,8 @@ export function ProposalCard({
         borderRadius: 3.5,
         borderWidth: '1.5px',
         borderColor: 'primary.main',
-        boxShadow: '0 6px 24px rgba(13, 118, 110, 0.12)',
-        bgcolor: '#ffffff',
+        boxShadow: (theme) => theme.palette.cardShadowHover,
+        bgcolor: 'background.paper',
       }}
     >
       <Stack

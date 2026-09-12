@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import DragHandleRoundedIcon from '@mui/icons-material/DragHandleRounded'
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded'
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded'
 import { Alert, Avatar, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Paper, Stack, Typography } from '@mui/material'
 import type { Attraction, TripDay } from '../../../types/database'
 
@@ -29,6 +31,26 @@ export function AttractionSortDialog({
   }, [day, open])
 
   useEffect(() => () => cleanupDrag.current?.(), [])
+
+  const moveUp = (index: number) => {
+    if (index <= 0) return
+    const next = [...draftAttractions]
+    const temp = next[index - 1]
+    next[index - 1] = next[index]
+    next[index] = temp
+    draftRef.current = next
+    setDraftAttractions(next)
+  }
+
+  const moveDown = (index: number) => {
+    if (index >= draftAttractions.length - 1) return
+    const next = [...draftAttractions]
+    const temp = next[index + 1]
+    next[index + 1] = next[index]
+    next[index] = temp
+    draftRef.current = next
+    setDraftAttractions(next)
+  }
 
   const moveDraft = (attractionId: string, overId: string, after: boolean) => {
     const current = draftRef.current
@@ -79,7 +101,7 @@ export function AttractionSortDialog({
       <DialogTitle sx={{ pb: 1 }}>編排景點順序</DialogTitle>
       <DialogContent dividers>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          這裡先預覽新的順序，按「套用排序」後才會更新行程。
+          拖曳左側圖示或點擊右側箭頭微調順序，按「套用排序」後生效。
         </Typography>
         {draftAttractions.length === 0 ? (
           <Alert severity="info">這天還沒有可以排序的景點。</Alert>
@@ -103,17 +125,37 @@ export function AttractionSortDialog({
                     size="small"
                     aria-label={`拖曳排序 ${attraction.name}`}
                     onPointerDown={(event) => beginPointerDrag(event, attraction.id)}
-                    sx={{ width: 42, height: 42, touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', color: 'primary.main', bgcolor: 'rgba(13, 118, 110, 0.08)' }}
+                    sx={{ width: 38, height: 38, touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', color: 'primary.main', bgcolor: 'rgba(13, 118, 110, 0.08)' }}
                   >
                     <DragHandleRoundedIcon />
                   </IconButton>
-                  <Avatar sx={{ width: 28, height: 28, fontSize: '0.8rem', bgcolor: 'action.hover', color: 'text.secondary' }}>{index + 1}</Avatar>
+                  <Avatar sx={{ width: 26, height: 26, fontSize: '0.75rem', bgcolor: 'action.hover', color: 'text.secondary' }}>{index + 1}</Avatar>
                   <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography sx={{ fontWeight: 800, overflowWrap: 'anywhere' }}>{attraction.name || '未命名景點'}</Typography>
+                    <Typography sx={{ fontWeight: 800, fontSize: '0.9rem', overflowWrap: 'anywhere' }}>{attraction.name || '未命名景點'}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
                       {attraction.startTime?.slice(11, 16) ?? '尚未安排時間'} · {attraction.duration} 分鐘
                     </Typography>
                   </Box>
+                  <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
+                    <IconButton
+                      size="small"
+                      aria-label="向上移動"
+                      disabled={index === 0}
+                      onClick={() => moveUp(index)}
+                      sx={{ width: 32, height: 32 }}
+                    >
+                      <KeyboardArrowUpRoundedIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      aria-label="向下移動"
+                      disabled={index === draftAttractions.length - 1}
+                      onClick={() => moveDown(index)}
+                      sx={{ width: 32, height: 32 }}
+                    >
+                      <KeyboardArrowDownRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Stack>
                 </Stack>
               </Paper>
             ))}

@@ -59,13 +59,15 @@ export function MessageBubble({
             py: 1.25,
             borderRadius: user ? '20px 20px 4px 20px' : '20px 20px 20px 4px',
             background: user
-              ? 'linear-gradient(135deg, #0d766e 0%, #095953 100%)'
-              : '#ffffff',
+              ? (theme) => theme.palette.primaryGradient
+              : undefined,
+            bgcolor: user ? undefined : 'background.paper',
             color: user ? '#ffffff' : 'text.primary',
-            border: user ? 'none' : '1px solid rgba(13, 118, 110, 0.1)',
+            border: user ? 'none' : '1px solid',
+            borderColor: user ? 'transparent' : 'surfaceSubtleBorder',
             boxShadow: user
               ? '0 3px 12px rgba(13, 118, 110, 0.22)'
-              : '0 2px 12px rgba(15, 23, 42, 0.05)',
+              : (theme) => theme.palette.cardShadow,
             overflowWrap: 'anywhere',
             fontSize: { xs: '0.9rem', sm: '0.94rem' },
             lineHeight: 1.68,
@@ -97,10 +99,10 @@ export function MessageBubble({
             },
             '& strong': {
               fontWeight: 700,
-              color: user ? '#ffffff' : '#0f172a',
+              color: user ? '#ffffff' : 'text.primary',
             },
             '& a': {
-              color: user ? '#5eead4' : '#0d766e',
+              color: user ? '#5eead4' : 'primary.main',
               textDecoration: 'underline',
               '&:hover': { opacity: 0.85 },
             },
@@ -110,15 +112,15 @@ export function MessageBubble({
               px: 0.6,
               py: 0.15,
               borderRadius: '4px',
-              background: user ? 'rgba(255, 255, 255, 0.2)' : '#f1f5f9',
-              color: user ? '#ffffff' : '#0f766e',
+              background: user ? 'rgba(255, 255, 255, 0.2)' : 'action.hover',
+              color: user ? '#ffffff' : 'primary.main',
             },
             '& pre': {
               m: 0,
               my: 0.75,
               p: 1.25,
               borderRadius: '8px',
-              background: user ? 'rgba(0, 0, 0, 0.35)' : '#0f172a',
+              background: user ? 'rgba(0, 0, 0, 0.35)' : (theme) => theme.palette.codeBackground,
               color: '#f8fafc',
               overflowX: 'auto',
               fontSize: '0.84em',
@@ -133,15 +135,15 @@ export function MessageBubble({
               my: 0.75,
               pl: 1.25,
               py: 0.25,
-              borderLeft: `3px solid ${user ? '#5eead4' : '#0d766e'}`,
-              background: user ? 'rgba(255, 255, 255, 0.08)' : '#f0fdfa',
+              borderLeft: (theme) => `3px solid ${user ? '#5eead4' : theme.palette.primary.main}`,
+              background: user ? 'rgba(255, 255, 255, 0.08)' : (theme) => theme.palette.quoteBackground,
               borderRadius: '0 6px 6px 0',
               fontStyle: 'italic',
             },
             '& hr': {
               my: 1,
               border: 'none',
-              borderTop: `1px solid ${user ? 'rgba(255, 255, 255, 0.2)' : '#e2e8f0'}`,
+              borderTop: (theme) => `1px solid ${user ? 'rgba(255, 255, 255, 0.2)' : theme.palette.divider}`,
             },
             '& table': {
               width: '100%',
@@ -149,19 +151,19 @@ export function MessageBubble({
               borderCollapse: 'collapse',
               fontSize: '0.88em',
               '& th, & td': {
-                border: `1px solid ${user ? 'rgba(255, 255, 255, 0.25)' : '#e2e8f0'}`,
+                border: (theme) => `1px solid ${user ? 'rgba(255, 255, 255, 0.25)' : theme.palette.divider}`,
                 p: 0.6,
                 textAlign: 'left',
               },
               '& th': {
-                background: user ? 'rgba(255, 255, 255, 0.15)' : '#f8fafc',
+                background: user ? 'rgba(255, 255, 255, 0.15)' : 'action.hover',
                 fontWeight: 600,
               },
             },
             '& .assistant-typing-caret': {
               display: 'inline-block',
               ml: 0.25,
-              color: user ? '#99f6e4' : '#0d766e',
+              color: user ? '#99f6e4' : 'primary.main',
               fontWeight: 800,
               animation: 'assistant-caret-blink 1s steps(2, start) infinite',
             },
@@ -185,8 +187,9 @@ export function MessageBubble({
                         maxHeight: 280,
                         borderRadius: 2,
                         objectFit: 'contain',
-                        bgcolor: 'rgba(0,0,0,0.05)',
-                        border: user ? '1px solid rgba(255,255,255,0.2)' : '1px solid rgba(0,0,0,0.08)',
+                        bgcolor: 'action.hover',
+                        border: '1px solid',
+                        borderColor: user ? 'rgba(255,255,255,0.2)' : 'divider',
                       }}
                     />
                   ) : (
@@ -198,7 +201,7 @@ export function MessageBubble({
                         p: 0.75,
                         px: 1.25,
                         borderRadius: 2,
-                        bgcolor: user ? 'rgba(255,255,255,0.15)' : 'rgba(13, 118, 110, 0.08)',
+                        bgcolor: user ? 'rgba(255,255,255,0.15)' : 'action.hover',
                         fontSize: '0.82rem',
                         fontWeight: 600,
                       }}

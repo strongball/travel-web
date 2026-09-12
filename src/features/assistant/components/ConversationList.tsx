@@ -86,10 +86,12 @@ export function ConversationList({
         minHeight: 0,
         height: '100%',
         overflowY: 'auto',
-        borderRight: { md: '1px solid rgba(13, 118, 110, 0.1)' },
-        borderBottom: { xs: '1px solid rgba(13, 118, 110, 0.1)', md: 0 },
+        borderRight: { md: '1px solid' },
+        borderRightColor: { md: 'divider' },
+        borderBottom: { xs: '1px solid', md: 0 },
+        borderBottomColor: { xs: 'divider', md: 'transparent' },
         display: { xs: threadId ? 'none' : 'block', md: 'block' },
-        bgcolor: '#ffffff',
+        bgcolor: 'background.paper',
       }}
     >
       <Stack
@@ -97,10 +99,11 @@ export function ConversationList({
         sx={{
           p: 1.75,
           alignItems: 'center',
-          borderBottom: '1px solid rgba(13, 118, 110, 0.08)',
+          borderBottom: '1px solid',
+          borderBottomColor: 'divider',
           position: 'sticky',
           top: 0,
-          bgcolor: 'rgba(255, 255, 255, 0.95)',
+          bgcolor: 'background.paper',
           backdropFilter: 'blur(8px)',
           zIndex: 1,
         }}

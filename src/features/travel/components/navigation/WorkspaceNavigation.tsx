@@ -86,10 +86,10 @@ export function WorkspaceBottomNav({
         bottom: 0,
         zIndex: 30,
         borderRadius: 0,
-        bgcolor: 'rgba(255, 255, 255, 0.88)',
-        backdropFilter: 'blur(20px)',
-        borderTop: '1px solid rgba(13, 118, 110, 0.1)',
-        boxShadow: '0 -4px 20px rgba(15, 23, 42, 0.06)',
+        bgcolor: 'background.paper',
+        borderTop: '1px solid',
+        borderColor: 'divider',
+        boxShadow: (theme) => theme.palette.navShadow,
         pb: 'max(8px, env(safe-area-inset-bottom))',
         pt: 0.5,
       }}
@@ -104,10 +104,10 @@ export function WorkspaceBottomNav({
           '& .MuiBottomNavigationAction-root': {
             minWidth: 0,
             py: 0.5,
-            color: '#64748b',
+            color: 'text.secondary',
             transition: 'all 180ms ease',
             '&.Mui-selected': {
-              color: '#0d766e',
+              color: 'primary.main',
               fontWeight: 800,
               '& .MuiSvgIcon-root': {
                 transform: 'translateY(-2px) scale(1.12)',

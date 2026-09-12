@@ -267,7 +267,7 @@ export function AssistantConversationView({
             minWidth: 0,
             minHeight: 0,
             display: { xs: threadId ? 'flex' : 'none', md: 'flex' },
-            bgcolor: '#f8faf9',
+            bgcolor: 'background.default',
           }}
         >
           <MessageList

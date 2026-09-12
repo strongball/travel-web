@@ -1,5 +1,34 @@
 import { createTheme } from '@mui/material/styles'
 
+declare module '@mui/material/styles' {
+  interface Palette {
+    surfaceSubtle: string
+    surfaceSubtleHover: string
+    surfaceSubtleBorder: string
+    overlayBackdrop: string
+    codeBackground: string
+    codeOutputBackground: string
+    quoteBackground: string
+    primaryGradient: string
+    navShadow: string
+    cardShadow: string
+    cardShadowHover: string
+  }
+  interface PaletteOptions {
+    surfaceSubtle?: string
+    surfaceSubtleHover?: string
+    surfaceSubtleBorder?: string
+    overlayBackdrop?: string
+    codeBackground?: string
+    codeOutputBackground?: string
+    quoteBackground?: string
+    primaryGradient?: string
+    navShadow?: string
+    cardShadow?: string
+    cardShadowHover?: string
+  }
+}
+
 export type ThemeMode = 'light' | 'dark'
 
 export function createAppTheme(mode: ThemeMode = 'light') {
@@ -21,6 +50,25 @@ export function createAppTheme(mode: ThemeMode = 'light') {
         secondary: isDark ? '#94a3b8' : '#53615d',
       },
       divider: isDark ? 'rgba(20, 184, 166, 0.15)' : 'rgba(13, 118, 110, 0.12)',
+      surfaceSubtle: isDark ? 'rgba(20, 184, 166, 0.12)' : 'rgba(13, 118, 110, 0.08)',
+      surfaceSubtleHover: isDark ? 'rgba(20, 184, 166, 0.2)' : 'rgba(13, 118, 110, 0.14)',
+      surfaceSubtleBorder: isDark ? 'rgba(20, 184, 166, 0.25)' : 'rgba(13, 118, 110, 0.16)',
+      overlayBackdrop: isDark ? 'rgba(19, 32, 29, 0.72)' : 'rgba(255, 255, 255, 0.72)',
+      codeBackground: isDark ? '#0b1120' : '#0f172a',
+      codeOutputBackground: isDark ? 'rgba(255, 255, 255, 0.06)' : '#e2e8f0',
+      quoteBackground: isDark ? 'rgba(20, 184, 166, 0.08)' : '#f0fdfa',
+      primaryGradient: isDark
+        ? 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)'
+        : 'linear-gradient(135deg, #0d766e 0%, #095953 100%)',
+      navShadow: isDark
+        ? '0 -6px 20px rgba(0, 0, 0, 0.45)'
+        : '0 -6px 20px rgba(15, 23, 42, 0.05)',
+      cardShadow: isDark
+        ? '0 4px 20px rgba(0, 0, 0, 0.4)'
+        : '0 4px 20px rgba(15, 23, 42, 0.06)',
+      cardShadowHover: isDark
+        ? '0 4px 24px rgba(20, 184, 166, 0.25)'
+        : '0 4px 24px rgba(13, 118, 110, 0.14)',
     },
     shape: { borderRadius: 6 },
     typography: {

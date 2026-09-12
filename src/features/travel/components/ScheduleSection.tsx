@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
+import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
 import {
   Alert,
@@ -15,34 +16,39 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import type { Attraction, TripDay } from '../../../types/database'
+import type { Attraction, Itinerary, TripDay } from '../../../types/database'
 import { triggerHaptic } from '../../../lib/haptics'
 import { SwipeContainer } from '../../../components/SwipeContainer'
 import { formatDate, recalculateDayTimes } from '../travelWorkspaceUtils'
 import { AttractionSortDialog } from './AttractionSortDialog'
 import { DaySelectorTabs } from './schedule/DaySelectorTabs'
 import { AttractionTimelineItem } from './schedule/AttractionTimelineItem'
+import { ItineraryShareDialog } from './schedule/ItineraryShareDialog'
 
 const GoogleItineraryMapDialog = lazy(() => import('../GoogleItineraryMapDialog'))
 
 export function ScheduleSection({
+  itinerary,
   days,
   currency,
   activeDayIndex: controlledActiveDayIndex,
   onActiveDayChange,
   onAddAttraction,
   onEditAttraction,
+  onDuplicateAttraction,
   onEditTravelInfo,
   onDeleteAttraction,
   onStartTimeChange,
   onReorder,
 }: {
+  itinerary?: Itinerary
   days: TripDay[]
   currency: string
   activeDayIndex?: number
   onActiveDayChange?: (index: number) => void
   onAddAttraction: (dayId: string) => void
   onEditAttraction: (day: TripDay, attraction: Attraction) => void
+  onDuplicateAttraction?: (day: TripDay, attraction: Attraction) => void
   onEditTravelInfo: (origin: Attraction, attraction: Attraction) => void
   onDeleteAttraction: (day: TripDay, id: string) => void
   onStartTimeChange: (dayId: string, time: string) => void
@@ -60,6 +66,7 @@ export function ScheduleSection({
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const visibleDaysRef = useRef(visibleDays)
   const saveQueue = useRef(Promise.resolve())
 
@@ -183,6 +190,16 @@ export function ScheduleSection({
             </Stack>
 
             <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0 }}>
+              {itinerary ? (
+                <Tooltip title="分享 / 匯出行程文字">
+                  <IconButton
+                    aria-label="分享 / 匯出行程文字"
+                    onClick={() => setShareOpen(true)}
+                  >
+                    <ShareRoundedIcon />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
               <Tooltip title={`查看 ${formatDate(activeDay.date)} 景點地圖`}>
                 <IconButton
                   aria-label={`查看 ${formatDate(activeDay.date)} 景點地圖`}
@@ -226,6 +243,7 @@ export function ScheduleSection({
                   previousAttraction={attractionIndex > 0 ? activeDay.attractions[attractionIndex - 1] : undefined}
                   currency={currency}
                   onEditAttraction={onEditAttraction}
+                  onDuplicateAttraction={onDuplicateAttraction}
                   onEditTravelInfo={onEditTravelInfo}
                   onDeleteAttraction={onDeleteAttraction}
                   onStartTimeChange={onStartTimeChange}
@@ -256,6 +274,14 @@ export function ScheduleSection({
       <Suspense fallback={null}>
         <GoogleItineraryMapDialog open={mapOpen} day={activeDay} onClose={() => setMapOpen(false)} />
       </Suspense>
+      {itinerary ? (
+        <ItineraryShareDialog
+          open={shareOpen}
+          itinerary={itinerary}
+          activeDayIndex={activeDayIndex}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
     </Stack>
   )
 }

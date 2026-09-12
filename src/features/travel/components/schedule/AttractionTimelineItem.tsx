@@ -1,4 +1,5 @@
 import AccessTimeRoundedIcon from '@mui/icons-material/AccessTimeRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
@@ -26,6 +27,7 @@ interface AttractionTimelineItemProps {
   previousAttraction?: Attraction
   currency: string
   onEditAttraction: (day: TripDay, attraction: Attraction) => void
+  onDuplicateAttraction?: (day: TripDay, attraction: Attraction) => void
   onEditTravelInfo: (origin: Attraction, attraction: Attraction) => void
   onDeleteAttraction: (day: TripDay, id: string) => void
   onStartTimeChange: (dayId: string, time: string) => void
@@ -38,6 +40,7 @@ export function AttractionTimelineItem({
   previousAttraction,
   currency,
   onEditAttraction,
+  onDuplicateAttraction,
   onEditTravelInfo,
   onDeleteAttraction,
   onStartTimeChange,
@@ -124,10 +127,14 @@ export function AttractionTimelineItem({
         />
         <Card
           variant="outlined"
+          onClick={() => onEditAttraction(day, attraction)}
           sx={{
             flex: 1,
+            cursor: 'pointer',
+            transition: 'border-color 150ms ease, box-shadow 150ms ease',
             '&:hover': {
               borderColor: 'primary.main',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
             },
           }}
         >
@@ -146,18 +153,53 @@ export function AttractionTimelineItem({
                 >
                   {attraction.name}
                 </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{
-                    overflowWrap: 'anywhere',
-                    mt: 0.2,
-                  }}
-                >
-                  {attraction.locationName ||
-                    attraction.description ||
-                    `停留約 ${attraction.duration} 分鐘`}
-                </Typography>
+
+                {attraction.locationName ? (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      overflowWrap: 'anywhere',
+                      mt: 0.3,
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    📍 {attraction.locationName}
+                  </Typography>
+                ) : null}
+
+                {attraction.description ? (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      overflowWrap: 'anywhere',
+                      mt: 0.4,
+                      fontSize: '0.82rem',
+                      bgcolor: 'action.hover',
+                      p: 0.5,
+                      px: 0.75,
+                      borderRadius: 1,
+                      display: 'inline-block',
+                    }}
+                  >
+                    📝 {attraction.description}
+                  </Typography>
+                ) : null}
+
+                {!attraction.locationName && !attraction.description ? (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      overflowWrap: 'anywhere',
+                      mt: 0.2,
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    停留約 {attraction.duration} 分鐘
+                  </Typography>
+                ) : null}
               </Box>
               <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', flexShrink: 0 }}>
                 {mapPoint ? (
@@ -170,26 +212,51 @@ export function AttractionTimelineItem({
                       rel="noreferrer"
                       color="primary"
                       aria-label={`在 Google 地圖查看 ${attraction.name}`}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <PlaceRoundedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                 ) : null}
-                <IconButton
-                  size="small"
-                  aria-label={`編輯 ${attraction.name}`}
-                  onClick={() => onEditAttraction(day, attraction)}
-                >
-                  <EditRoundedIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  color="error"
-                  aria-label={`刪除 ${attraction.name}`}
-                  onClick={() => onDeleteAttraction(day, attraction.id)}
-                >
-                  <DeleteOutlineRoundedIcon fontSize="small" />
-                </IconButton>
+                {onDuplicateAttraction ? (
+                  <Tooltip title="複製此景點">
+                    <IconButton
+                      size="small"
+                      aria-label={`複製 ${attraction.name}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDuplicateAttraction(day, attraction)
+                      }}
+                    >
+                      <ContentCopyRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
+                <Tooltip title="編輯景點">
+                  <IconButton
+                    size="small"
+                    aria-label={`編輯 ${attraction.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onEditAttraction(day, attraction)
+                    }}
+                  >
+                    <EditRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="刪除景點">
+                  <IconButton
+                    size="small"
+                    color="error"
+                    aria-label={`刪除 ${attraction.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDeleteAttraction(day, attraction.id)
+                    }}
+                  >
+                    <DeleteOutlineRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               </Stack>
             </Stack>
             <Stack direction="row" spacing={0.75} sx={{ mt: 1.25, flexWrap: 'wrap', gap: 0.5 }}>

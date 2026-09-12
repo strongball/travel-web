@@ -67,24 +67,25 @@ export function DaySelectorTabs({
                 py: 1,
                 px: 2,
                 borderRadius: 3,
-                border: isSelected
-                  ? '1.5px solid #0d766e'
+                border: isSelected ? '1.5px solid' : '1px solid',
+                borderColor: isSelected
+                  ? 'primary.main'
                   : isToday
-                  ? '1px solid rgba(13, 118, 110, 0.4)'
-                  : '1px solid rgba(13, 118, 110, 0.12)',
+                  ? 'primary.main'
+                  : 'divider',
                 bgcolor: isSelected
-                  ? 'rgba(13, 118, 110, 0.08)'
+                  ? 'action.selected'
                   : isToday
-                  ? 'rgba(13, 118, 110, 0.03)'
-                  : '#ffffff',
+                  ? 'action.hover'
+                  : 'background.paper',
                 boxShadow: isSelected
-                  ? '0 4px 14px rgba(13, 118, 110, 0.12)'
+                  ? '0 4px 14px rgba(0, 0, 0, 0.08)'
                   : '0 2px 6px rgba(0, 0, 0, 0.02)',
                 textAlign: 'center',
                 transition: 'all 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
                 minWidth: { xs: 92, sm: 104 },
                 '&:hover': {
-                  bgcolor: isSelected ? 'rgba(13, 118, 110, 0.12)' : 'rgba(13, 118, 110, 0.04)',
+                  bgcolor: isSelected ? 'action.selected' : 'action.hover',
                   transform: 'translateY(-1px)',
                 },
               }}
@@ -96,7 +97,7 @@ export function DaySelectorTabs({
                     display: 'block',
                     fontWeight: 900,
                     fontSize: '0.78rem',
-                    color: isSelected ? '#0d766e' : 'text.secondary',
+                    color: isSelected ? 'primary.main' : 'text.secondary',
                     letterSpacing: '0.02em',
                   }}
                 >
@@ -110,8 +111,8 @@ export function DaySelectorTabs({
                       height: 16,
                       fontSize: '0.65rem',
                       fontWeight: 800,
-                      bgcolor: isSelected ? '#0d766e' : 'rgba(13, 118, 110, 0.15)',
-                      color: isSelected ? '#ffffff' : '#0d766e',
+                      bgcolor: isSelected ? 'primary.main' : 'action.hover',
+                      color: isSelected ? 'primary.contrastText' : 'primary.main',
                       px: 0.25,
                       '& .MuiChip-label': { px: 0.5 },
                     }}
@@ -122,7 +123,7 @@ export function DaySelectorTabs({
                 variant="body2"
                 sx={{
                   fontWeight: isSelected ? 800 : 600,
-                  color: isSelected ? '#075c57' : 'text.primary',
+                  color: isSelected ? 'primary.main' : 'text.primary',
                   fontSize: '0.86rem',
                   mt: 0.2,
                   whiteSpace: 'nowrap',
@@ -135,7 +136,7 @@ export function DaySelectorTabs({
                     ml: 0.5,
                     fontSize: '0.74rem',
                     fontWeight: 700,
-                    color: isSelected ? '#0d766e' : 'text.secondary',
+                    color: isSelected ? 'primary.main' : 'text.secondary',
                   }}
                 >
                   ({['週日', '週一', '週二', '週三', '週四', '週五', '週六'][new Date(day.date.slice(0, 10) + 'T00:00:00').getDay()]})

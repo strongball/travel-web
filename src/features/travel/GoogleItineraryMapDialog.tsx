@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, CircularProgress, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
+import { Alert, Box, CircularProgress, Dialog, DialogContent, DialogTitle, Typography, useTheme } from '@mui/material'
 import type { Attraction, TripDay } from '../../types/database'
 import { googleMapsApiKey, loadGoogleMaps } from './googleMaps'
 
@@ -17,6 +17,7 @@ const attractionSearchText = (attraction: Attraction) =>
   attraction.locationName?.trim() || attraction.name.trim()
 
 export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean; day: TripDay; onClose: () => void }) {
+  const theme = useTheme()
   const [mapElement, setMapElement] = useState<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const markerRefs = useRef<google.maps.Marker[]>([])
@@ -169,7 +170,7 @@ export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean
         polylineRef.current = new Polyline({
           path: pathCoordinates,
           geodesic: true,
-          strokeColor: '#0d766e',
+          strokeColor: theme.palette.primary.main,
           strokeOpacity: 0.85,
           strokeWeight: 4,
           map: mapRef.current,
@@ -178,7 +179,7 @@ export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean
 
       if (!bounds.isEmpty()) mapRef.current.fitBounds(bounds, 56)
     })
-  }, [mappedAttractions, mapReady, open])
+  }, [mappedAttractions, mapReady, open, theme.palette.primary.main])
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="md">
@@ -188,7 +189,19 @@ export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean
         {error ? <Alert severity="error" sx={{ mb: 1.5 }}>{error}</Alert> : null}
         <Box sx={{ height: { xs: 360, sm: 520 }, position: 'relative', overflow: 'hidden', borderRadius: 2, border: 1, borderColor: 'divider' }}>
           <Box ref={setMapElement} sx={{ height: '100%', width: '100%' }} />
-          {loading ? <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,0.72)' }}><CircularProgress /></Box> : null}
+          {loading ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                bgcolor: 'overlayBackdrop',
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          ) : null}
         </Box>
         {dayAttractions.length === 0 ? <Typography color="text.secondary" sx={{ mt: 1.5 }}>這天還沒有景點。</Typography> : null}
         {dayAttractions.length > 0 && mappedAttractions.length < dayAttractions.length ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>部分景點沒有座標，請在景點編輯中從 Google 地圖選擇位置。</Typography> : null}

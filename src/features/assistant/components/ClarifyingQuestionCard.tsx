@@ -99,9 +99,9 @@ export function ClarifyingQuestionCard({
         sx={{
           borderRadius: 3,
           p: { xs: 1.5, sm: 2 },
-          bgcolor: 'rgba(240, 253, 250, 0.65)',
-          borderColor: 'rgba(13, 118, 110, 0.18)',
-          boxShadow: '0 2px 10px rgba(13, 118, 110, 0.04)',
+          bgcolor: 'surfaceSubtle',
+          borderColor: 'surfaceSubtleBorder',
+          boxShadow: (theme) => theme.palette.cardShadow,
         }}
       >
         <Stack direction="row" spacing={1.25} sx={{ alignItems: 'flex-start' }}>
@@ -109,8 +109,8 @@ export function ClarifyingQuestionCard({
             sx={{
               width: 28,
               height: 28,
-              bgcolor: 'rgba(13, 118, 110, 0.12)',
-              color: '#0d766e',
+              bgcolor: 'surfaceSubtleHover',
+              color: 'primary.main',
               flexShrink: 0,
             }}
           >
@@ -120,7 +120,7 @@ export function ClarifyingQuestionCard({
             <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', display: 'block' }}>
               先前偏好確認
             </Typography>
-            <Typography sx={{ fontWeight: 700, fontSize: '0.92rem', color: '#0f172a', mt: 0.25 }}>
+            <Typography sx={{ fontWeight: 700, fontSize: '0.92rem', color: 'text.primary', mt: 0.25 }}>
               {questionData.question}
             </Typography>
             {answeredAnswer ? (
@@ -132,8 +132,8 @@ export function ClarifyingQuestionCard({
                   size="small"
                   label={answeredAnswer}
                   sx={{
-                    bgcolor: '#0d766e',
-                    color: '#ffffff',
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
                     fontWeight: 700,
                     fontSize: '0.78rem',
                     height: 24,
@@ -154,9 +154,9 @@ export function ClarifyingQuestionCard({
       sx={{
         borderRadius: 3.5,
         p: { xs: 2, sm: 2.5 },
-        bgcolor: '#ffffff',
-        borderColor: '#0d766e',
-        boxShadow: '0 6px 24px rgba(13, 118, 110, 0.12)',
+        bgcolor: 'background.paper',
+        borderColor: 'primary.main',
+        boxShadow: (theme) => theme.palette.cardShadowHover,
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -186,7 +186,7 @@ export function ClarifyingQuestionCard({
             <HelpOutlineRoundedIcon sx={{ fontSize: 20, color: '#ffffff' }} />
           </Avatar>
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontWeight: 800, fontSize: '0.94rem', color: '#0d766e', letterSpacing: '-0.01em' }}>
+            <Typography sx={{ fontWeight: 800, fontSize: '0.94rem', color: 'primary.main', letterSpacing: '-0.01em' }}>
               旅程助理 想先確認你的偏好
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
@@ -200,7 +200,7 @@ export function ClarifyingQuestionCard({
           sx={{
             fontWeight: 800,
             fontSize: { xs: '1rem', sm: '1.05rem' },
-            color: '#0f172a',
+            color: 'text.primary',
             lineHeight: 1.5,
             px: 0.25,
           }}
@@ -238,20 +238,20 @@ export function ClarifyingQuestionCard({
                   py: { xs: 1, sm: 1.25 },
                   borderRadius: 3,
                   border: '1.5px solid',
-                  borderColor: isSelected ? '#0d766e' : 'rgba(13, 118, 110, 0.22)',
-                  bgcolor: isSelected ? 'rgba(13, 118, 110, 0.08)' : '#ffffff',
-                  color: isSelected ? '#0d766e' : '#1e293b',
+                  borderColor: isSelected ? 'primary.main' : 'divider',
+                  bgcolor: isSelected ? 'action.selected' : 'background.paper',
+                  color: isSelected ? 'primary.main' : 'text.primary',
                   boxShadow: isSelected
-                    ? '0 2px 10px rgba(13, 118, 110, 0.15)'
-                    : '0 2px 6px rgba(15, 23, 42, 0.04)',
+                    ? (theme) => theme.palette.cardShadow
+                    : 'none',
                   transition: 'all 160ms cubic-bezier(0.4, 0, 0.2, 1)',
                   textAlign: 'left',
                   cursor: busy || !online ? 'not-allowed' : 'pointer',
                   '&:hover': {
-                    borderColor: '#0d766e',
-                    bgcolor: 'rgba(13, 118, 110, 0.06)',
+                    borderColor: 'primary.main',
+                    bgcolor: 'action.hover',
                     transform: 'translateY(-1.5px)',
-                    boxShadow: '0 4px 14px rgba(13, 118, 110, 0.18)',
+                    boxShadow: (theme) => theme.palette.cardShadowHover,
                   },
                   '&:active': {
                     transform: 'scale(0.98)',
@@ -259,9 +259,9 @@ export function ClarifyingQuestionCard({
                 }}
               >
                 {isThisSubmitting ? (
-                  <CircularProgress size={16} sx={{ color: '#0d766e', flexShrink: 0 }} />
+                  <CircularProgress size={16} sx={{ color: 'primary.main', flexShrink: 0 }} />
                 ) : isSelected ? (
-                  <CheckCircleRoundedIcon sx={{ fontSize: 18, color: '#0d766e', flexShrink: 0 }} />
+                  <CheckCircleRoundedIcon sx={{ fontSize: 18, color: 'primary.main', flexShrink: 0 }} />
                 ) : null}
 
                 <Box>
@@ -305,12 +305,13 @@ export function ClarifyingQuestionCard({
               startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <CheckCircleRoundedIcon />}
               sx={{
                 borderRadius: 2.5,
-                bgcolor: '#0d766e',
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
                 fontWeight: 700,
                 fontSize: '0.84rem',
                 px: 2,
                 py: 0.75,
-                '&:hover': { bgcolor: '#095953' },
+                '&:hover': { bgcolor: 'primary.dark' },
               }}
             >
               確認選擇 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
@@ -330,12 +331,12 @@ export function ClarifyingQuestionCard({
               px: 1.25,
               py: 0.5,
               borderRadius: 2.5,
-              borderColor: 'rgba(13, 118, 110, 0.16)',
-              bgcolor: 'rgba(248, 250, 249, 0.8)',
+              borderColor: 'divider',
+              bgcolor: 'action.hover',
               mt: 0.5,
               '&:focus-within': {
-                borderColor: '#0d766e',
-                bgcolor: '#ffffff',
+                borderColor: 'primary.main',
+                bgcolor: 'background.paper',
               },
             }}
           >
@@ -359,10 +360,10 @@ export function ClarifyingQuestionCard({
               sx={{
                 width: 28,
                 height: 28,
-                color: customText.trim() ? '#ffffff' : 'text.disabled',
-                bgcolor: customText.trim() ? '#0d766e' : 'transparent',
+                color: customText.trim() ? 'primary.contrastText' : 'text.disabled',
+                bgcolor: customText.trim() ? 'primary.main' : 'transparent',
                 '&:hover': {
-                  bgcolor: customText.trim() ? '#095953' : 'transparent',
+                  bgcolor: customText.trim() ? 'primary.dark' : 'transparent',
                 },
               }}
             >

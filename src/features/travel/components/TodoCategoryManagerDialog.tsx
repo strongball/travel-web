@@ -228,7 +228,7 @@ export function TodoCategoryManagerDialog({
                             cancelEdit()
                           }
                         }}
-                        sx={{ flex: 1, bgcolor: '#ffffff' }}
+                        sx={{ flex: 1, bgcolor: 'background.paper' }}
                       />
                       <IconButton
                         size="small"
@@ -260,8 +260,8 @@ export function TodoCategoryManagerDialog({
                               sx={{
                                 height: 20,
                                 fontSize: '0.72rem',
-                                bgcolor: count > 0 ? 'rgba(13, 118, 110, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-                                color: count > 0 ? '#0d766e' : 'text.secondary',
+                                bgcolor: count > 0 ? 'action.hover' : 'transparent',
+                                color: count > 0 ? 'primary.main' : 'text.secondary',
                                 fontWeight: 700,
                               }}
                             />

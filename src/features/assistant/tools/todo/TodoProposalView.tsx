@@ -19,14 +19,15 @@ export function TodoProposalView({
     <Box
       sx={{
         p: 1.5,
-        bgcolor: '#f8faf9',
+        bgcolor: 'action.hover',
         borderRadius: 2.5,
-        border: '1px solid rgba(13, 118, 110, 0.12)',
+        border: '1px solid',
+        borderColor: 'divider',
       }}
     >
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1.25 }}>
-        <TaskAltRoundedIcon fontSize="small" sx={{ color: '#0d766e' }} />
-        <Typography sx={{ fontWeight: 850, fontSize: '0.9rem', color: '#0d766e' }}>
+        <TaskAltRoundedIcon fontSize="small" color="primary" />
+        <Typography color="primary.main" sx={{ fontWeight: 850, fontSize: '0.9rem' }}>
           建議新增待辦項目
         </Typography>
         <Chip
@@ -36,8 +37,8 @@ export function TodoProposalView({
             height: 20,
             fontSize: '0.72rem',
             fontWeight: 700,
-            bgcolor: 'rgba(13, 118, 110, 0.1)',
-            color: '#0d766e',
+            bgcolor: 'surfaceSubtle',
+            color: 'primary.main',
           }}
         />
       </Stack>
@@ -48,8 +49,9 @@ export function TodoProposalView({
             sx={{
               p: 1.2,
               borderRadius: 2,
-              bgcolor: '#ffffff',
-              border: '1px solid rgba(13, 118, 110, 0.08)',
+              bgcolor: 'background.paper',
+              border: '1px solid',
+              borderColor: 'divider',
             }}
           >
             <Chip
@@ -59,8 +61,8 @@ export function TodoProposalView({
                 height: 20,
                 fontSize: '0.72rem',
                 fontWeight: 800,
-                bgcolor: 'rgba(13, 118, 110, 0.08)',
-                color: '#0d766e',
+                bgcolor: 'surfaceSubtle',
+                color: 'primary.main',
                 mb: 0.75,
               }}
             />
@@ -73,7 +75,7 @@ export function TodoProposalView({
                   sx={{ alignItems: 'center', px: 0.5 }}
                 >
                   <CheckCircleOutlineRoundedIcon
-                    sx={{ fontSize: 16, color: '#0d766e', opacity: 0.7 }}
+                    sx={{ fontSize: 16, color: 'primary.main', opacity: 0.7 }}
                   />
                   <Typography
                     variant="body2"

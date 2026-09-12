@@ -1,7 +1,23 @@
+import { useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import FlightTakeoffRoundedIcon from '@mui/icons-material/FlightTakeoffRounded'
-import { Avatar, Box, Button, Card, CardActionArea, CardContent, Chip, Stack, Typography } from '@mui/material'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import {
+  Avatar,
+  Box,
+  Button,
+  Card,
+  CardActionArea,
+  CardContent,
+  Chip,
+  IconButton,
+  InputAdornment,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material'
 import type { Itinerary } from '../../../types/database'
 import { formatDate } from '../travelWorkspaceUtils'
 
@@ -41,6 +57,18 @@ export function TripListPage({
   onOpen: (id: string) => void
   onNew: () => void
 }) {
+  const [searchQuery, setSearchQuery] = useState('')
+
+  const filteredItineraries = itineraries.filter((it) => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.trim().toLowerCase()
+    return (
+      it.title?.toLowerCase().includes(q) ||
+      it.currency?.toLowerCase().includes(q) ||
+      it.startDate?.includes(q) ||
+      it.endDate?.includes(q)
+    )
+  })
   return (
     <Stack spacing={{ xs: 2.5, md: 3.5 }}>
       <Stack
@@ -71,6 +99,37 @@ export function TripListPage({
           新增行程
         </Button>
       </Stack>
+
+      {itineraries.length > 0 ? (
+        <TextField
+          size="small"
+          placeholder="搜尋行程名稱、幣別或日期…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchRoundedIcon fontSize="small" color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    aria-label="清除搜尋"
+                    onClick={() => setSearchQuery('')}
+                    edge="end"
+                  >
+                    <ClearRoundedIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+            },
+          }}
+          sx={{ maxWidth: { xs: '100%', sm: 360 } }}
+        />
+      ) : null}
 
       {loading && itineraries.length === 0 ? (
         <Card sx={{ p: 4, textAlign: 'center' }}>
@@ -106,6 +165,15 @@ export function TripListPage({
             建立第一個行程
           </Button>
         </Card>
+      ) : filteredItineraries.length === 0 ? (
+        <Card sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+            找不到符合「{searchQuery}」的行程
+          </Typography>
+          <Button size="small" variant="outlined" onClick={() => setSearchQuery('')}>
+            清除搜尋
+          </Button>
+        </Card>
       ) : (
         <Box
           sx={{
@@ -118,7 +186,7 @@ export function TripListPage({
             gap: { xs: 1.75, md: 2.5 },
           }}
         >
-          {itineraries.map((itinerary) => {
+          {filteredItineraries.map((itinerary) => {
             const isSelected = itinerary.id === selectedItineraryId
             return (
               <Card
@@ -167,7 +235,7 @@ export function TripListPage({
                             height: 22,
                             fontSize: '0.72rem',
                             fontWeight: 800,
-                            bgcolor: 'rgba(13, 118, 110, 0.1)',
+                            bgcolor: 'rgba(13, 118, 110, 0.12)',
                             color: 'primary.main',
                           }}
                         />
@@ -188,7 +256,7 @@ export function TripListPage({
                               fontSize: '0.72rem',
                               fontWeight: 800,
                               ...(status.color === 'default'
-                                ? { bgcolor: '#f1f5f4', color: 'text.secondary', borderColor: 'transparent' }
+                                ? { bgcolor: 'action.hover', color: 'text.secondary', borderColor: 'divider' }
                                 : {}),
                             }}
                           />
@@ -202,7 +270,7 @@ export function TripListPage({
                           height: 24,
                           fontSize: '0.74rem',
                           fontWeight: 700,
-                          bgcolor: '#f1f5f4',
+                          bgcolor: 'action.hover',
                         }}
                       />
                       <Chip
@@ -212,8 +280,8 @@ export function TripListPage({
                           height: 24,
                           fontSize: '0.74rem',
                           fontWeight: 800,
-                          bgcolor: 'rgba(238, 124, 69, 0.08)',
-                          color: '#d95a1c',
+                          bgcolor: 'rgba(238, 124, 69, 0.12)',
+                          color: 'secondary.main',
                         }}
                       />
                     </Stack>

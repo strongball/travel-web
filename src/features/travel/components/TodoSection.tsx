@@ -18,6 +18,7 @@ import { TodoAddForm } from './todo/TodoAddForm'
 import { TodoGroupCard } from './todo/TodoGroupCard'
 import { QuickAddCategoryDialog } from './todo/QuickAddCategoryDialog'
 import { RenameCategoryDialog } from './todo/RenameCategoryDialog'
+import { TodoPackingTemplatesDialog } from './todo/TodoPackingTemplatesDialog'
 
 export interface TodoSectionProps {
   todos: TodoItem[]
@@ -31,6 +32,7 @@ export interface TodoSectionProps {
   onToggle: (todo: TodoItem) => void
   onDelete: (todo: TodoItem) => void
   onSaveTodo?: (todo: TodoItem) => void | Promise<void>
+  onBatchAddTodos?: (items: { title: string; category: string }[]) => void | Promise<void>
   onSaveCategories: (categories: string[]) => void | Promise<void>
   onRenameCategory: (oldName: string, newName: string) => void | Promise<void>
   onDeleteCategory: (categoryName: string) => void | Promise<void>
@@ -49,6 +51,7 @@ export function TodoSection({
   onToggle,
   onDelete,
   onSaveTodo,
+  onBatchAddTodos,
   onSaveCategories,
   onRenameCategory,
   onDeleteCategory,
@@ -56,6 +59,7 @@ export function TodoSection({
 }: TodoSectionProps) {
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('all')
   const [managerOpen, setManagerOpen] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
   const [editingTodo, setEditingTodo] = useState<TodoItem | null>(null)
   const [quickAddCatOpen, setQuickAddCatOpen] = useState(false)
   const [quickCatName, setQuickCatName] = useState('')
@@ -165,6 +169,7 @@ export function TodoSection({
         selectedFilterCategory={selectedFilterCategory}
         onSelectCategory={setSelectedFilterCategory}
         onOpenManager={() => setManagerOpen(true)}
+        onOpenTemplates={() => setTemplatesOpen(true)}
         onClearCompleted={onClearCompleted}
       />
 
@@ -292,6 +297,15 @@ export function TodoSection({
         onOpenCategoryManager={() => {
           setEditingTodo(null)
           setManagerOpen(true)
+        }}
+      />
+
+      {/* Packing List Templates Dialog */}
+      <TodoPackingTemplatesDialog
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        onImport={(items) => {
+          void onBatchAddTodos?.(items)
         }}
       />
     </Stack>

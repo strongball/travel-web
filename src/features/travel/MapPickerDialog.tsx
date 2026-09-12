@@ -210,8 +210,19 @@ export function MapPickerDialog({
             </Box>
           </ClickAwayListener>
           <Box sx={{ height: { xs: 300, sm: 420 }, overflow: 'hidden', borderRadius: 2, border: 1, borderColor: 'divider', position: 'relative' }}>
-            <Box ref={mapElement} sx={{ height: '100%', width: '100%' }} />
-            {loading ? <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,0.72)' }}><CircularProgress /></Box> : null}
+            {loading ? (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  bgcolor: 'overlayBackdrop',
+                }}
+              >
+                <CircularProgress />
+              </Box>
+            ) : null}
           </Box>
           <Typography variant="body2" color="text.secondary">{message}</Typography>
           <Typography variant="caption" color="text.secondary">座標：{position.lat.toFixed(5)}, {position.lng.toFixed(5)}{label ? ` · ${label}` : ''}</Typography>

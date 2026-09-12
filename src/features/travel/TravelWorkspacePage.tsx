@@ -385,6 +385,20 @@ export function TravelWorkspacePage({
     await onSaveItinerary({ ...selectedItinerary, days: nextDays })
   }
 
+  const duplicateAttraction = async (day: TripDay, attraction: Attraction) => {
+    if (!selectedItinerary) return
+    const duplicated: Attraction = {
+      ...attraction,
+      id: crypto.randomUUID(),
+      name: `${attraction.name} (副本)`,
+    }
+    const nextDays = days.map((item) => {
+      if (item.id !== day.id) return item
+      return recalculateDayTimes(item, [...item.attractions, duplicated])
+    })
+    await onSaveItinerary({ ...selectedItinerary, days: nextDays })
+  }
+
   const updateDayStartTime = async (dayId: string, time: string) => {
     if (!selectedItinerary || !time) return
     const nextDays = days.map((day) => {
@@ -425,6 +439,37 @@ export function TravelWorkspacePage({
     if (!window.confirm(`確定要清除已完成的 ${completedList.length} 個待辦事項嗎？`)) return
     for (const item of completedList) {
       await onDeleteTodo(item.id)
+    }
+  }
+
+  const handleBatchAddTodos = async (items: { title: string; category: string }[]) => {
+    if (!selectedItinerary || items.length === 0) return
+    setTodoSaving(true)
+    try {
+      const importedCategories = Array.from(new Set(items.map((it) => it.category)))
+      const existingCategories = selectedItinerary.todoCategories ?? ['行前準備', '旅途中', '其他']
+      const mergedCategories = Array.from(new Set([...existingCategories, ...importedCategories]))
+
+      if (mergedCategories.length > existingCategories.length) {
+        await onSaveItinerary({
+          ...selectedItinerary,
+          todoCategories: mergedCategories,
+        })
+      }
+
+      for (const item of items) {
+        await onSaveTodo({
+          id: crypto.randomUUID(),
+          itineraryId: selectedItinerary.id,
+          title: item.title,
+          isCompleted: false,
+          category: item.category,
+          imagePath: null,
+          images: [],
+        })
+      }
+    } finally {
+      setTodoSaving(false)
     }
   }
 
@@ -497,12 +542,14 @@ export function TravelWorkspacePage({
               <Box sx={{ mt: { xs: 0, md: 2 } }}>
                 {section === 'schedule' ? (
                   <ScheduleSection
+                    itinerary={selectedItinerary}
                     days={days}
                     currency={selectedItinerary.currency}
                     activeDayIndex={activeDayIndex}
                     onActiveDayChange={setActiveDayIndex}
                     onAddAttraction={openNewAttraction}
                     onEditAttraction={openEditAttraction}
+                    onDuplicateAttraction={duplicateAttraction}
                     onEditTravelInfo={openTravelEditor}
                     onDeleteAttraction={(day, id) => void deleteAttraction(day, id)}
                     onStartTimeChange={(dayId, time) => void updateDayStartTime(dayId, time)}
@@ -522,6 +569,7 @@ export function TravelWorkspacePage({
                   onToggle={(todo) => void onSaveTodo({ ...todo, isCompleted: !todo.isCompleted })}
                   onDelete={(todo) => void onDeleteTodo(todo.id)}
                   onSaveTodo={(todo) => void onSaveTodo(todo)}
+                  onBatchAddTodos={(items) => void handleBatchAddTodos(items)}
                   onSaveCategories={(cats) => void handleSaveCategories(cats)}
                   onRenameCategory={(oldName, newName) => void handleRenameCategory(oldName, newName)}
                   onDeleteCategory={(cat) => void handleDeleteCategory(cat)}

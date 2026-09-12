@@ -30,21 +30,21 @@ import type {
 function getToolIcon(name: string) {
   switch (name) {
     case 'view_itinerary':
-      return <MapRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <MapRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'view_todo_categories':
-      return <CategoryRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <CategoryRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'view_todo_list':
-      return <ChecklistRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <ChecklistRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'search_web_information':
-      return <SearchRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <SearchRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'propose_itinerary_edit':
-      return <EditCalendarRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <EditCalendarRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'propose_todo_list':
-      return <PlaylistAddCheckRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <PlaylistAddCheckRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     case 'ask_clarifying_question':
-      return <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <HelpOutlineRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
     default:
-      return <BuildRoundedIcon sx={{ fontSize: 14, color: '#0f766e' }} />
+      return <BuildRoundedIcon sx={{ fontSize: 14, color: 'primary.main' }} />
   }
 }
 
@@ -138,15 +138,16 @@ export function AssistantToolExecutionBadge({
           borderRadius: '12px',
           fontSize: '0.74rem',
           fontWeight: 500,
-          color: '#0f766e',
-          bgcolor: 'rgba(15, 118, 110, 0.08)',
-          border: '1px solid rgba(15, 118, 110, 0.16)',
+          color: 'primary.main',
+          bgcolor: 'surfaceSubtle',
+          border: '1px solid',
+          borderColor: 'surfaceSubtleBorder',
           cursor: 'pointer',
           userSelect: 'none',
           transition: 'all 0.18s ease-in-out',
           '&:hover': {
-            bgcolor: 'rgba(15, 118, 110, 0.14)',
-            borderColor: 'rgba(15, 118, 110, 0.28)',
+            bgcolor: 'surfaceSubtleHover',
+            borderColor: 'primary.main',
           },
         }}
       >
@@ -176,9 +177,10 @@ export function AssistantToolExecutionBadge({
             mt: 0.75,
             p: 1.25,
             borderRadius: '10px',
-            bgcolor: '#f8fafc',
-            border: '1px solid rgba(15, 118, 110, 0.15)',
-            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+            bgcolor: 'background.paper',
+            border: '1px solid',
+            borderColor: 'divider',
+            boxShadow: (theme) => theme.palette.cardShadow,
             fontSize: '0.78rem',
             maxWidth: 480,
           }}
@@ -188,7 +190,7 @@ export function AssistantToolExecutionBadge({
             {calls.length > 0 ? (
               <Box>
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
-                  <BuildRoundedIcon sx={{ fontSize: 13, color: '#0f766e' }} />
+                  <BuildRoundedIcon sx={{ fontSize: 13, color: 'primary.main' }} />
                   <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.72rem' }}>
                     調用工具 ({calls.length})
                   </Typography>
@@ -202,8 +204,9 @@ export function AssistantToolExecutionBadge({
                         sx={{
                           p: 0.75,
                           borderRadius: '6px',
-                          bgcolor: 'rgba(15, 118, 110, 0.05)',
-                          border: '1px solid rgba(15, 118, 110, 0.12)',
+                          bgcolor: 'action.hover',
+                          border: '1px solid',
+                          borderColor: 'divider',
                         }}
                       >
                         <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
@@ -212,7 +215,7 @@ export function AssistantToolExecutionBadge({
                             sx={{
                               fontSize: '0.74rem',
                               fontWeight: 600,
-                              color: '#0f766e',
+                              color: 'primary.main',
                               lineHeight: 1.3,
                             }}
                           >
@@ -255,7 +258,7 @@ export function AssistantToolExecutionBadge({
             {queries.length > 0 ? (
               <Box>
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
-                  <SearchRoundedIcon sx={{ fontSize: 13, color: '#0f766e' }} />
+                  <SearchRoundedIcon sx={{ fontSize: 13, color: 'primary.main' }} />
                   <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.72rem' }}>
                     搜尋關鍵字
                   </Typography>
@@ -269,9 +272,10 @@ export function AssistantToolExecutionBadge({
                       sx={{
                         height: 20,
                         fontSize: '0.7rem',
-                        bgcolor: 'rgba(15, 118, 110, 0.08)',
-                        color: '#0f766e',
-                        border: '1px solid rgba(15, 118, 110, 0.18)',
+                        bgcolor: 'surfaceSubtle',
+                        color: 'primary.main',
+                        border: '1px solid',
+                        borderColor: 'surfaceSubtleBorder',
                       }}
                     />
                   ))}
@@ -316,7 +320,7 @@ export function AssistantToolExecutionBadge({
                           display: 'flex',
                           alignItems: 'center',
                           gap: 0.5,
-                          color: '#0d766e',
+                          color: 'primary.main',
                           fontSize: '0.75rem',
                           textDecoration: 'none',
                           overflow: 'hidden',
@@ -324,7 +328,7 @@ export function AssistantToolExecutionBadge({
                           whiteSpace: 'nowrap',
                           '&:hover': {
                             textDecoration: 'underline',
-                            color: '#0f766e',
+                            color: 'primary.dark',
                           },
                         }}
                       >
@@ -343,7 +347,7 @@ export function AssistantToolExecutionBadge({
             {executions.length > 0 ? (
               <Box>
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', mb: 0.5 }}>
-                  <TerminalRoundedIcon sx={{ fontSize: 13, color: '#0f766e' }} />
+                  <TerminalRoundedIcon sx={{ fontSize: 13, color: 'primary.main' }} />
                   <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary', fontSize: '0.72rem' }}>
                     Python 沙盒運算
                   </Typography>
@@ -357,7 +361,7 @@ export function AssistantToolExecutionBadge({
                           sx={{
                             m: 0,
                             p: 1,
-                            bgcolor: '#0f172a',
+                            bgcolor: 'codeBackground',
                             color: '#e2e8f0',
                             fontFamily: 'ui-monospace, monospace',
                             fontSize: '0.72rem',
@@ -375,14 +379,15 @@ export function AssistantToolExecutionBadge({
                         <Box
                           sx={{
                             p: 0.75,
-                            bgcolor: '#e2e8f0',
-                            color: '#1e293b',
+                            bgcolor: 'codeOutputBackground',
+                            color: 'text.primary',
                             fontFamily: 'ui-monospace, monospace',
                             fontSize: '0.7rem',
-                            borderLeft: '3px solid #0d766e',
+                            borderLeft: '3px solid',
+                            borderLeftColor: 'primary.main',
                           }}
                         >
-                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: '#475569', fontSize: '0.66rem' }}>
+                          <Typography variant="caption" sx={{ display: 'block', fontWeight: 600, color: 'text.secondary', fontSize: '0.66rem' }}>
                             輸出結果：
                           </Typography>
                           <Box component="span" sx={{ whiteSpace: 'pre-wrap' }}>

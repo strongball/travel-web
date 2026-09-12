@@ -37,9 +37,10 @@ export function ItineraryProposalView({
             key={after.id}
             sx={{
               p: 1.5,
-              bgcolor: '#f8faf9',
+              bgcolor: 'background.paper',
               borderRadius: 2.5,
-              border: '1px solid rgba(13, 118, 110, 0.08)',
+              border: '1px solid',
+              borderColor: 'divider',
             }}
           >
             <Chip
@@ -47,13 +48,13 @@ export function ItineraryProposalView({
               label={dateLabel(after)}
               sx={{
                 fontWeight: 850,
-                bgcolor: 'rgba(13, 118, 110, 0.08)',
+                bgcolor: 'surfaceSubtle',
                 color: 'primary.main',
                 mb: 1,
               }}
             />
             <Stack spacing={0.75}>
-              <Box sx={{ p: 1, borderRadius: 2, bgcolor: '#f1f5f4' }}>
+              <Box sx={{ p: 1, borderRadius: 2, bgcolor: 'action.hover' }}>
                 <Typography
                   variant="caption"
                   color="text.secondary"
@@ -69,19 +70,24 @@ export function ItineraryProposalView({
                 sx={{
                   p: 1,
                   borderRadius: 2,
-                  bgcolor: 'rgba(13, 118, 110, 0.08)',
-                  border: '1px solid rgba(13, 118, 110, 0.15)',
+                  bgcolor: 'surfaceSubtle',
+                  border: '1px solid',
+                  borderColor: 'surfaceSubtleBorder',
                 }}
               >
                 <Typography
                   variant="caption"
-                  sx={{ display: 'block', fontWeight: 900, color: '#0d766e', mb: 0.2 }}
+                  sx={{ display: 'block', fontWeight: 900, color: 'primary.main', mb: 0.2 }}
                 >
                   建議新安排：
                 </Typography>
                 <Typography
                   variant="body2"
-                  sx={{ fontWeight: 650, color: '#075c57', fontSize: '0.86rem' }}
+                  sx={{
+                    fontWeight: 650,
+                    color: 'primary.main',
+                    fontSize: '0.86rem',
+                  }}
                 >
                   {after.attractions.map(itineraryItemLabel).join(' → ') || '（沒有景點）'}
                 </Typography>
