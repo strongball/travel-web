@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next'
 
 import { LoginPage, type AuthMode } from './features/auth/LoginPage'
 import { SyncNotice } from './components/SyncNotice'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import {
   TravelWorkspacePage,
 } from './features/travel/TravelWorkspacePage'
@@ -147,6 +148,7 @@ function App() {
   const {
     enqueue: enqueueOfflineMutation,
     flush: flushOfflineMutations,
+    skipCurrent: skipOfflineMutation,
     pendingCount,
     syncError,
     syncState,
@@ -343,65 +345,68 @@ function App() {
 
   return (
     <>
-      <Suspense fallback={<ScreenLoader label={t('list.loading')} />}>
-        {view === 'workspace' ? (
-          <TravelWorkspacePage
-            itineraries={itineraries}
-            expenses={expenses}
-            todos={todos}
-            selectedItineraryId={selectedItineraryId}
-            loading={loading || isRefreshing}
-            error={error}
-            onSelectItinerary={setSelectedItineraryId}
-            onSaveItinerary={handleSaveItinerary}
-            onSaveTodo={handleSaveTodo}
-            onDeleteTodo={handleDeleteTodo}
-            onDeleteItinerary={handleDeleteItinerary}
-            onAddExpense={() => handleAdd()}
-            onEditExpense={handleEdit}
-            onDeleteExpense={handleDeleteExpense}
-            onRefresh={handleRefresh}
-            onSignOut={signOut}
-            onOpenGoogleMapsTest={() => navigateView('google-maps-test')}
-            onRegisterBrowserBackHandler={registerBrowserBackHandler}
-            initialSection={workspaceRoute.section}
-            initialWorkspaceView={workspaceRoute.workspaceView}
-            onWorkspaceRouteChange={rememberWorkspaceRoute}
-          />
-        ) : null}
-        {view === 'editor' && draft ? (
-          <ExpenseEditorPage
-            draft={draft}
-            itineraries={itineraries}
-            attractions={itineraries.find((itinerary) => itinerary.id === draft.itineraryId)?.days?.flatMap((day) => day.attractions) ?? []}
-            onChange={setDraft}
-            onScan={handleScan}
-            onSave={handleSave}
-            onCancel={cancelEditor}
-            storedImageUrls={storedImageUrls}
-            isScanning={isScanning}
-            isSaving={isSaving}
-            error={error}
-          />
-        ) : null}
-        {view === 'review' && receiptResult && draft ? (
-          <ReceiptReviewPage
-            result={receiptResult}
-            currency={draft.currency}
-            onApply={applyReceipt}
-            onCancel={cancelReview}
-          />
-        ) : null}
-        {isDev && view === 'google-maps-test' && GoogleMapsApiTestPage ? (
-          <GoogleMapsApiTestPage onBack={() => navigateView('workspace')} />
-        ) : null}
-      </Suspense>
+      <ErrorBoundary>
+        <Suspense fallback={<ScreenLoader label={t('list.loading')} />}>
+          {view === 'workspace' ? (
+            <TravelWorkspacePage
+              itineraries={itineraries}
+              expenses={expenses}
+              todos={todos}
+              selectedItineraryId={selectedItineraryId}
+              loading={loading || isRefreshing}
+              error={error}
+              onSelectItinerary={setSelectedItineraryId}
+              onSaveItinerary={handleSaveItinerary}
+              onSaveTodo={handleSaveTodo}
+              onDeleteTodo={handleDeleteTodo}
+              onDeleteItinerary={handleDeleteItinerary}
+              onAddExpense={() => handleAdd()}
+              onEditExpense={handleEdit}
+              onDeleteExpense={handleDeleteExpense}
+              onRefresh={handleRefresh}
+              onSignOut={signOut}
+              onOpenGoogleMapsTest={() => navigateView('google-maps-test')}
+              onRegisterBrowserBackHandler={registerBrowserBackHandler}
+              initialSection={workspaceRoute.section}
+              initialWorkspaceView={workspaceRoute.workspaceView}
+              onWorkspaceRouteChange={rememberWorkspaceRoute}
+            />
+          ) : null}
+          {view === 'editor' && draft ? (
+            <ExpenseEditorPage
+              draft={draft}
+              itineraries={itineraries}
+              attractions={itineraries.find((itinerary) => itinerary.id === draft.itineraryId)?.days?.flatMap((day) => day.attractions) ?? []}
+              onChange={setDraft}
+              onScan={handleScan}
+              onSave={handleSave}
+              onCancel={cancelEditor}
+              storedImageUrls={storedImageUrls}
+              isScanning={isScanning}
+              isSaving={isSaving}
+              error={error}
+            />
+          ) : null}
+          {view === 'review' && receiptResult && draft ? (
+            <ReceiptReviewPage
+              result={receiptResult}
+              currency={draft.currency}
+              onApply={applyReceipt}
+              onCancel={cancelReview}
+            />
+          ) : null}
+          {isDev && view === 'google-maps-test' && GoogleMapsApiTestPage ? (
+            <GoogleMapsApiTestPage onBack={() => navigateView('workspace')} />
+          ) : null}
+        </Suspense>
+      </ErrorBoundary>
       <Notice value={notice} onClose={() => setNotice(null)} />
       <SyncNotice
         count={pendingCount}
         state={syncState}
         error={syncError}
         onRetry={() => void flushOfflineMutations()}
+        onSkip={() => void skipOfflineMutation()}
       />
     </>
   )

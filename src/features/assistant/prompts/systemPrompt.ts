@@ -44,6 +44,17 @@ export interface SystemPromptTemplateVariables {
 }
 
 /**
+ * 轉義使用者字串中的 XML/HTML 標籤，防止輸入之變數跳脫自訂標籤或破壞 System Prompt 結構
+ */
+export function escapePromptText(text?: string | null): string {
+  if (!text) return ''
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+}
+
+/**
  * 將旅程狀態轉為結構化的 <trip_context> 區塊純文字
  */
 export function formatTripContext(itinerary?: Itinerary): string {
@@ -51,12 +62,14 @@ export function formatTripContext(itinerary?: Itinerary): string {
 
   const daysCount = itinerary.days?.length ?? 0
   const start = itinerary.startDate ? `${itinerary.startDate} 出發` : '出發日期未設定'
+  const safeTitle = escapePromptText(itinerary.title)
+  const safeCurrency = escapePromptText(itinerary.currency)
 
   return `\n<trip_context>
 ## 當前旅程設定
-- 標題：${itinerary.title}
+- 標題：${safeTitle}
 - 天數：共 ${daysCount} 天（${start}）
-- 幣別：${itinerary.currency}
+- 幣別：${safeCurrency}
 </trip_context>`
 }
 
@@ -65,10 +78,11 @@ export function formatTripContext(itinerary?: Itinerary): string {
  */
 export function formatConversationSummary(summary?: string | null): string {
   if (!summary?.trim()) return ''
+  const safeSummary = escapePromptText(summary.trim())
 
   return `\n<conversation_summary>
 ## 先前對話摘要
-${summary.trim()}
+${safeSummary}
 </conversation_summary>`
 }
 

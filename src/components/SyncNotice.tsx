@@ -1,4 +1,4 @@
-import { Alert, Button, Snackbar } from '@mui/material'
+import { Alert, Button, Snackbar, Stack } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import type { SyncState } from '../hooks/useOfflineSync'
 
@@ -7,9 +7,10 @@ interface SyncNoticeProps {
   state: SyncState
   error: string | null
   onRetry: () => void
+  onSkip?: () => void
 }
 
-export function SyncNotice({ count, state, error, onRetry }: SyncNoticeProps) {
+export function SyncNotice({ count, state, error, onRetry, onSkip }: SyncNoticeProps) {
   const { t } = useTranslation()
   if (count === 0) return null
   const message = state === 'syncing'
@@ -22,7 +23,18 @@ export function SyncNotice({ count, state, error, onRetry }: SyncNoticeProps) {
       <Alert
         severity={state === 'error' ? 'error' : state === 'offline' ? 'warning' : 'info'}
         action={state === 'error'
-          ? <Button color="inherit" size="small" onClick={onRetry}>{t('common.retry')}</Button>
+          ? (
+            <Stack direction="row" spacing={0.5}>
+              {onSkip ? (
+                <Button color="inherit" size="small" onClick={onSkip}>
+                  {t('common.skip', '略過此筆')}
+                </Button>
+              ) : null}
+              <Button color="inherit" size="small" onClick={onRetry}>
+                {t('common.retry')}
+              </Button>
+            </Stack>
+          )
           : undefined}
         sx={{ width: '100%' }}
       >

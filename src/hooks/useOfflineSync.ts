@@ -82,7 +82,9 @@ export function useOfflineSync(
     return count
   }, [userId])
 
-  const flush = useCallback(async () => {
+    const failedMutationRef = useRef<StoredMutation | null>(null)
+
+    const flush = useCallback(async () => {
     if (!userId || flushing.current) return
     if (!navigator.onLine) {
       setSyncState('offline')
@@ -99,11 +101,17 @@ export function useOfflineSync(
     try {
       const mutations = await listMutations(userId)
       for (const mutation of mutations) {
-        await executeMutation(mutation)
-        await removeMutation(mutation)
-        completedAny = true
-        setPendingCount((count) => Math.max(0, count - 1))
+        try {
+          await executeMutation(mutation)
+          await removeMutation(mutation)
+          completedAny = true
+          setPendingCount((count) => Math.max(0, count - 1))
+        } catch (itemError) {
+          failedMutationRef.current = mutation
+          throw itemError
+        }
       }
+      failedMutationRef.current = null
       remaining = await refreshCount()
       completedCleanly = true
       setSyncState(remaining > 0 ? 'syncing' : 'idle')
@@ -119,6 +127,24 @@ export function useOfflineSync(
       }
     }
   }, [refreshCount, userId])
+
+  const skipCurrent = useCallback(async () => {
+    if (!userId || !failedMutationRef.current) return
+    const badMutation = failedMutationRef.current
+    try {
+      await removeMutation(badMutation)
+      failedMutationRef.current = null
+      setSyncError(null)
+      await refreshCount()
+      if (navigator.onLine) {
+        void flush()
+      } else {
+        setSyncState('offline')
+      }
+    } catch (err) {
+      console.error('Failed to skip mutation:', err)
+    }
+  }, [flush, refreshCount, userId])
 
   const enqueue = useCallback(async (mutation: OfflineMutation) => {
     if (!userId) throw new Error('請先登入')
@@ -143,5 +169,5 @@ export function useOfflineSync(
     }
   }, [flush, refreshCount, userId])
 
-  return { enqueue, flush, pendingCount, syncError, syncState }
+  return { enqueue, flush, skipCurrent, pendingCount, syncError, syncState }
 }
