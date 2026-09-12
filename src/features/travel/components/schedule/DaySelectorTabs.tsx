@@ -71,16 +71,16 @@ export function DaySelectorTabs({
                 borderColor: isSelected
                   ? 'primary.main'
                   : isToday
-                  ? 'primary.main'
+                  ? 'accentWarm'
                   : 'divider',
                 bgcolor: isSelected
                   ? 'action.selected'
                   : isToday
-                  ? 'action.hover'
+                  ? 'surfaceSubtle'
                   : 'background.paper',
                 boxShadow: isSelected
-                  ? '0 4px 14px rgba(0, 0, 0, 0.08)'
-                  : '0 2px 6px rgba(0, 0, 0, 0.02)',
+                  ? (theme) => theme.palette.cardShadowHover
+                  : (theme) => theme.palette.cardShadow,
                 textAlign: 'center',
                 transition: 'all 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
                 minWidth: { xs: 92, sm: 104 },
@@ -111,8 +111,10 @@ export function DaySelectorTabs({
                       height: 16,
                       fontSize: '0.65rem',
                       fontWeight: 800,
-                      bgcolor: isSelected ? 'primary.main' : 'action.hover',
-                      color: isSelected ? 'primary.contrastText' : 'primary.main',
+                      bgcolor: 'accentWarmBg',
+                      color: 'accentWarm',
+                      border: '1px solid',
+                      borderColor: 'accentWarmBorder',
                       px: 0.25,
                       '& .MuiChip-label': { px: 0.5 },
                     }}

@@ -27,7 +27,7 @@ export function PageHeader({
         position: 'sticky',
         top: 0,
         zIndex: 20,
-        bgcolor: 'rgba(255, 255, 255, 0.92)',
+        bgcolor: 'headerBackground',
         backdropFilter: 'blur(16px)',
         borderBottom: 1,
         borderColor: 'divider',

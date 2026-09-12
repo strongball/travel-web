@@ -54,9 +54,9 @@ export function AttachmentPreviewList({
               p: 0.75,
               pr: 1,
               borderRadius: 2.5,
-              bgcolor: 'rgba(255, 255, 255, 0.9)',
-              borderColor: 'rgba(13, 118, 110, 0.2)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+              bgcolor: 'background.paper',
+              borderColor: 'surfaceSubtleBorder',
+              boxShadow: (theme) => theme.palette.cardShadow,
               flexShrink: 0,
               maxWidth: 220,
             }}

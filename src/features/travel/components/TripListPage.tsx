@@ -193,19 +193,23 @@ export function TripListPage({
                 key={itinerary.id}
                 sx={{
                   borderWidth: isSelected ? '1.5px' : '1px',
-                  borderColor: isSelected ? 'primary.main' : undefined,
+                  borderColor: isSelected ? 'primary.main' : 'divider',
+                  boxShadow: (theme) => isSelected ? theme.palette.cardShadowHover : theme.palette.cardShadow,
                   overflow: 'hidden',
+                  transition: 'all 220ms cubic-bezier(0.4, 0, 0.2, 1)',
                   '&:hover': {
                     borderColor: 'primary.main',
+                    transform: 'translateY(-3px)',
+                    boxShadow: (theme) => theme.palette.cardShadowHover,
                   },
                 }}
               >
                 <CardActionArea onClick={() => onOpen(itinerary.id)} sx={{ height: '100%' }}>
                   <Box
                     sx={{
-                      height: 6,
+                      height: 5,
                       background: isSelected
-                        ? 'linear-gradient(90deg, #0d766e 0%, #14b8a6 100%)'
+                        ? (theme) => theme.palette.primaryGradient
                         : 'linear-gradient(90deg, #ee7c45 0%, #f97316 100%)',
                     }}
                   />
@@ -235,8 +239,9 @@ export function TripListPage({
                             height: 22,
                             fontSize: '0.72rem',
                             fontWeight: 800,
-                            bgcolor: 'rgba(13, 118, 110, 0.12)',
+                            bgcolor: 'surfaceSubtle',
                             color: 'primary.main',
+                            borderColor: 'surfaceSubtleBorder',
                           }}
                         />
                       ) : null}
@@ -245,22 +250,32 @@ export function TripListPage({
                     <Stack direction="row" spacing={0.75} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 0.5 }}>
                       {(() => {
                         const status = getTripStatus(itinerary.startDate, itinerary.endDate)
-                        return status ? (
+                        if (!status) return null
+                        const isCountdown = status.label.includes('天出發')
+                        const isOngoing = status.label.includes('進行中')
+                        return (
                           <Chip
                             size="small"
-                            color={status.color === 'default' ? undefined : status.color}
-                            variant={status.color === 'default' ? 'outlined' : 'filled'}
+                            variant="outlined"
                             label={status.label}
                             sx={{
                               height: 24,
                               fontSize: '0.72rem',
                               fontWeight: 800,
-                              ...(status.color === 'default'
-                                ? { bgcolor: 'action.hover', color: 'text.secondary', borderColor: 'divider' }
-                                : {}),
+                              ...(isCountdown || isOngoing
+                                ? {
+                                    bgcolor: 'accentWarmBg',
+                                    color: 'accentWarm',
+                                    borderColor: 'accentWarmBorder',
+                                  }
+                                : {
+                                    bgcolor: 'action.hover',
+                                    color: 'text.secondary',
+                                    borderColor: 'divider',
+                                  }),
                             }}
                           />
-                        ) : null
+                        )
                       })()}
                       <Chip
                         size="small"
@@ -280,8 +295,8 @@ export function TripListPage({
                           height: 24,
                           fontSize: '0.74rem',
                           fontWeight: 800,
-                          bgcolor: 'rgba(238, 124, 69, 0.12)',
-                          color: 'secondary.main',
+                          bgcolor: 'surfaceSubtle',
+                          color: 'primary.main',
                         }}
                       />
                     </Stack>

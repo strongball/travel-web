@@ -27,13 +27,14 @@ export function AssistantProgress({ label }: { label: string }) {
           px: 2,
           py: 1.1,
           borderRadius: '20px 20px 20px 6px',
-          bgcolor: 'rgba(255, 255, 255, 0.95)',
-          border: '1px solid rgba(13, 118, 110, 0.1)',
-          boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+          bgcolor: 'background.paper',
+          border: '1px solid',
+          borderColor: 'surfaceSubtleBorder',
+          boxShadow: (theme) => theme.palette.cardShadow,
         }}
       >
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={14} thickness={5} sx={{ color: '#0d766e' }} />
+          <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />
           <Typography
             variant="caption"
             aria-live="polite"

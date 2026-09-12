@@ -67,10 +67,11 @@ function WelcomeCard({ onQuickPrompt }: { onQuickPrompt: (text: string) => void 
         p: { xs: 2.5, sm: 3.5 },
         textAlign: 'center',
         borderRadius: 4,
-        border: '1px solid rgba(13, 118, 110, 0.12)',
-        bgcolor: 'rgba(255, 255, 255, 0.92)',
+        border: '1px solid',
+        borderColor: 'surfaceSubtleBorder',
+        bgcolor: 'background.paper',
         backdropFilter: 'blur(12px)',
-        boxShadow: '0 8px 30px rgba(13, 118, 110, 0.06)',
+        boxShadow: (theme) => theme.palette.cardShadow,
       }}
     >
       <Avatar
@@ -79,7 +80,7 @@ function WelcomeCard({ onQuickPrompt }: { onQuickPrompt: (text: string) => void 
           height: 56,
           mx: 'auto',
           mb: 1.5,
-          background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+          background: (theme) => theme.palette.primaryGradient,
           boxShadow: '0 4px 16px rgba(13, 118, 110, 0.3)',
         }}
       >
@@ -90,7 +91,7 @@ function WelcomeCard({ onQuickPrompt }: { onQuickPrompt: (text: string) => void 
         sx={{
           fontWeight: 900,
           letterSpacing: '-0.02em',
-          color: '#0d766e',
+          color: 'primary.main',
         }}
       >
         嗨！想怎麼規劃這趟旅程？
@@ -206,8 +207,10 @@ export function MessageList({
             p: 3.5,
             textAlign: 'center',
             borderRadius: 3.5,
-            border: '1px solid rgba(13, 118, 110, 0.1)',
-            bgcolor: 'rgba(255, 255, 255, 0.8)',
+            border: '1px solid',
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+            boxShadow: (theme) => theme.palette.cardShadow,
           }}
         >
           <ForumRoundedIcon color="action" sx={{ fontSize: 44, opacity: 0.7 }} />
