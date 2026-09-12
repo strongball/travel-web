@@ -127,10 +127,10 @@ export function ProposalCard({
             width: '100%',
             textAlign: 'left',
             p: { xs: 1.5, sm: 1.75 },
-            bgcolor: historyExpanded ? 'rgba(13, 118, 110, 0.03)' : 'transparent',
+            bgcolor: historyExpanded ? 'surfaceSubtle' : 'transparent',
             transition: 'background-color 180ms ease',
             '&:hover': {
-              bgcolor: 'rgba(13, 118, 110, 0.05)',
+              bgcolor: 'surfaceSubtleHover',
             },
           }}
         >
@@ -144,7 +144,7 @@ export function ProposalCard({
                 sx={{
                   width: 28,
                   height: 28,
-                  bgcolor: proposal.status === 'applied' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(13, 118, 110, 0.1)',
+                  bgcolor: proposal.status === 'applied' ? 'rgba(16, 185, 129, 0.15)' : 'surfaceSubtle',
                   color: proposal.status === 'applied' ? 'success.main' : 'primary.main',
                   flexShrink: 0,
                 }}
@@ -197,7 +197,8 @@ export function ProposalCard({
               px: { xs: 1.75, sm: 2.25 },
               pb: { xs: 1.75, sm: 2.25 },
               pt: 0.5,
-              borderTop: '1px solid rgba(13, 118, 110, 0.08)',
+              borderTop: '1px solid',
+              borderTopColor: 'divider',
             }}
           >
             <Box
@@ -249,9 +250,9 @@ export function ProposalCard({
             sx={{
               width: 28,
               height: 28,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+              background: (theme) => theme.palette.primaryGradient,
               color: 'common.white',
-              boxShadow: '0 2px 6px rgba(13, 118, 110, 0.25)',
+              boxShadow: (theme) => theme.palette.cardShadow,
             }}
           >
             <AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />
@@ -302,7 +303,7 @@ export function ProposalCard({
             disabled={busy || !online}
             onClick={() => onDecision(proposal, true)}
             startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <CheckCircleRoundedIcon />}
-            sx={{ fontWeight: 750, boxShadow: '0 3px 10px rgba(13, 118, 110, 0.3)' }}
+            sx={{ fontWeight: 750, boxShadow: (theme) => theme.palette.cardShadow }}
           >
             確認儲存並套用
           </Button>

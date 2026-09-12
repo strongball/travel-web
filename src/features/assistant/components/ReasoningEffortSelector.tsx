@@ -66,24 +66,17 @@ export function ReasoningEffortSelector({
           px: size === 'small' ? 1.1 : 1.5,
           py: size === 'small' ? 0.4 : 0.6,
           borderRadius: 3,
-          bgcolor:
-            currentOption.id === 'off'
-              ? 'rgba(0, 0, 0, 0.04)'
-              : 'rgba(99, 102, 241, 0.08)',
-          border:
-            currentOption.id === 'off'
-              ? '1px solid rgba(0, 0, 0, 0.12)'
-              : '1px solid rgba(99, 102, 241, 0.25)',
-          color: currentOption.id === 'off' ? 'text.secondary' : '#4f46e5',
+          bgcolor: currentOption.id === 'off' ? 'action.hover' : 'accentPurpleSubtle',
+          border: '1px solid',
+          borderColor: currentOption.id === 'off' ? 'divider' : 'accentPurpleBorder',
+          color: currentOption.id === 'off' ? 'text.secondary' : 'accentPurple',
           fontSize: size === 'small' ? '0.78rem' : '0.86rem',
           fontWeight: 700,
           transition: 'all 160ms ease',
           opacity: disabled ? 0.6 : 1,
           '&:hover': {
-            bgcolor:
-              currentOption.id === 'off'
-                ? 'rgba(0, 0, 0, 0.08)'
-                : 'rgba(99, 102, 241, 0.15)',
+            bgcolor: currentOption.id === 'off' ? 'action.selected' : 'accentPurpleSubtle',
+            filter: currentOption.id === 'off' ? 'none' : 'brightness(1.08)',
           },
         }}
       >
@@ -108,7 +101,7 @@ export function ReasoningEffortSelector({
               borderRadius: 3,
               minWidth: 260,
               maxWidth: 320,
-              boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+              boxShadow: (theme) => theme.palette.cardShadowHover,
               p: 0.5,
             },
           },

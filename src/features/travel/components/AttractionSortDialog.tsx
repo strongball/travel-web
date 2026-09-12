@@ -125,7 +125,7 @@ export function AttractionSortDialog({
                     size="small"
                     aria-label={`拖曳排序 ${attraction.name}`}
                     onPointerDown={(event) => beginPointerDrag(event, attraction.id)}
-                    sx={{ width: 38, height: 38, touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', color: 'primary.main', bgcolor: 'rgba(13, 118, 110, 0.08)' }}
+                    sx={{ width: 38, height: 38, touchAction: 'none', cursor: draggingId === attraction.id ? 'grabbing' : 'grab', color: 'primary.main', bgcolor: 'surfaceSubtle' }}
                   >
                     <DragHandleRoundedIcon />
                   </IconButton>

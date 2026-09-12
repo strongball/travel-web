@@ -120,7 +120,7 @@ export function ConversationList({
                 height: 20,
                 fontSize: '0.72rem',
                 fontWeight: 800,
-                bgcolor: 'rgba(13, 118, 110, 0.08)',
+                bgcolor: 'surfaceSubtle',
                 color: 'primary.main',
               }}
             />
@@ -138,11 +138,11 @@ export function ConversationList({
             sx={{
               width: 38,
               height: 38,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
+              background: (theme) => theme.palette.primaryGradient,
               color: '#ffffff',
-              boxShadow: '0 2px 8px rgba(13, 118, 110, 0.25)',
+              boxShadow: (theme) => theme.palette.cardShadow,
               '&:hover': {
-                background: 'linear-gradient(135deg, #075c57 0%, #0d766e 100%)',
+                filter: 'brightness(0.92)',
               },
             }}
           >
@@ -172,7 +172,7 @@ export function ConversationList({
                   }}
                   sx={{
                     color: 'text.secondary',
-                    '&:hover': { color: 'text.primary', bgcolor: 'rgba(0, 0, 0, 0.04)' },
+                    '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
                   }}
                 >
                   <MoreVertRoundedIcon fontSize="small" />
@@ -188,14 +188,11 @@ export function ConversationList({
                   pr: 6,
                   borderRadius: 2.5,
                   transition: 'all 160ms ease',
-                  border: isSelected
-                    ? '1px solid rgba(13, 118, 110, 0.25)'
-                    : '1px solid transparent',
-                  bgcolor: isSelected ? 'rgba(13, 118, 110, 0.08)' : 'transparent',
+                  border: '1px solid',
+                  borderColor: isSelected ? 'surfaceSubtleBorder' : 'transparent',
+                  bgcolor: isSelected ? 'surfaceSubtle' : 'transparent',
                   '&:hover': {
-                    bgcolor: isSelected
-                      ? 'rgba(13, 118, 110, 0.12)'
-                      : 'rgba(13, 118, 110, 0.04)',
+                    bgcolor: isSelected ? 'surfaceSubtleHover' : 'action.hover',
                   },
                 }}
               >
@@ -241,7 +238,7 @@ export function ConversationList({
         onClose={() => setMenu(null)}
         slotProps={{
           paper: {
-            sx: { borderRadius: 3, minWidth: 160, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' },
+            sx: { borderRadius: 3, minWidth: 160, boxShadow: (theme) => theme.palette.cardShadowHover },
           },
         }}
       >

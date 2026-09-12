@@ -15,8 +15,8 @@ export function AssistantProgress({ label }: { label: string }) {
         sx={{
           width: 32,
           height: 32,
-          background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-          boxShadow: '0 2px 6px rgba(13, 118, 110, 0.2)',
+          background: (theme) => theme.palette.primaryGradient,
+          boxShadow: (theme) => theme.palette.cardShadow,
         }}
       >
         <AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: '#ffffff' }} />

@@ -127,16 +127,17 @@ export function ModelSelector({
                 px: size === 'small' ? 1.25 : 1.6,
                 py: size === 'small' ? 0.45 : 0.65,
                 borderRadius: 3,
-                bgcolor: 'rgba(13, 118, 110, 0.08)',
-                border: '1px solid rgba(13, 118, 110, 0.2)',
-                color: '#0d766e',
+                bgcolor: 'surfaceSubtle',
+                border: '1px solid',
+                borderColor: 'surfaceSubtleBorder',
+                color: 'primary.main',
                 fontSize: size === 'small' ? '0.78rem' : '0.86rem',
                 fontWeight: 700,
                 transition: 'all 160ms ease',
                 opacity: disabled ? 0.6 : 1,
                 '&:hover': {
-                  bgcolor: 'rgba(13, 118, 110, 0.14)',
-                  borderColor: '#0d766e',
+                  bgcolor: 'surfaceSubtleHover',
+                  borderColor: 'primary.main',
                 },
               }
         }
@@ -148,7 +149,7 @@ export function ModelSelector({
               <Typography
                 component="span"
                 sx={{
-                  color: '#0d766e',
+                  color: 'primary.main',
                   fontSize: '0.76rem',
                   fontWeight: 700,
                   ml: 0.25,
@@ -172,8 +173,10 @@ export function ModelSelector({
                   px: 0.7,
                   py: 0.1,
                   borderRadius: 1.5,
-                  bgcolor: 'rgba(99, 102, 241, 0.12)',
-                  color: '#4338ca',
+                  bgcolor: 'accentPurpleSubtle',
+                  color: 'accentPurple',
+                  border: '1px solid',
+                  borderColor: 'accentPurpleBorder',
                   fontSize: '0.72rem',
                   fontWeight: 800,
                 }}
@@ -203,7 +206,7 @@ export function ModelSelector({
               borderRadius: 3,
               width: { xs: 'min(340px, calc(100vw - 24px))', sm: 340 },
               maxWidth: '100%',
-              boxShadow: '0 12px 36px rgba(0,0,0,0.14)',
+              boxShadow: (theme) => theme.palette.cardShadowHover,
               p: 0.5,
             },
           },

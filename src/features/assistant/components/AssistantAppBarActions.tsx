@@ -67,7 +67,7 @@ export function AssistantAppBarActions({
             onClose={() => setMenuAnchor(null)}
             slotProps={{
               paper: {
-                sx: { borderRadius: 3, minWidth: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.12)' },
+                sx: { borderRadius: 3, minWidth: 200, boxShadow: (theme) => theme.palette.cardShadowHover },
               },
             }}
           >

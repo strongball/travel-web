@@ -98,7 +98,8 @@ export function TodoItemEditorDialog({
                   sx={{
                     color: 'primary.main',
                     fontWeight: 700,
-                    borderTop: '1px dashed rgba(13, 118, 110, 0.2)',
+                    borderTop: '1px dashed',
+                    borderTopColor: 'surfaceSubtleBorder',
                   }}
                 >
                   <AddRoundedIcon fontSize="small" sx={{ mr: 1 }} />

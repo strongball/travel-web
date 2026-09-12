@@ -38,7 +38,7 @@ export function AttachmentPreviewList({
         py: 0.5,
         px: 0.25,
         '&::-webkit-scrollbar': { height: 4 },
-        '&::-webkit-scrollbar-thumb': { bgcolor: 'rgba(0,0,0,0.15)', borderRadius: 2 },
+        '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 2 },
       }}
     >
       {attachments.map((att) => {
@@ -80,8 +80,8 @@ export function AttachmentPreviewList({
                   width: 36,
                   height: 36,
                   borderRadius: 1.5,
-                  bgcolor: 'rgba(13, 118, 110, 0.1)',
-                  color: '#0d766e',
+                  bgcolor: 'surfaceSubtle',
+                  color: 'primary.main',
                 }}
               >
                 {isImage ? <ImageIcon fontSize="small" /> : <DescriptionRoundedIcon fontSize="small" />}

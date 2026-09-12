@@ -71,7 +71,7 @@ export function DaySelectorTabs({
                 borderColor: isSelected
                   ? 'primary.main'
                   : isToday
-                  ? 'accentWarm'
+                  ? 'secondary.main'
                   : 'divider',
                 bgcolor: isSelected
                   ? 'action.selected'
@@ -111,10 +111,10 @@ export function DaySelectorTabs({
                       height: 16,
                       fontSize: '0.65rem',
                       fontWeight: 800,
-                      bgcolor: 'accentWarmBg',
-                      color: 'accentWarm',
+                      bgcolor: 'secondarySubtle',
+                      color: 'secondary.main',
                       border: '1px solid',
-                      borderColor: 'accentWarmBorder',
+                      borderColor: 'secondaryBorder',
                       px: 0.25,
                       '& .MuiChip-label': { px: 0.5 },
                     }}

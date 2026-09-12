@@ -5,35 +5,37 @@ declare module '@mui/material/styles' {
     surfaceSubtle: string
     surfaceSubtleHover: string
     surfaceSubtleBorder: string
+    surfaceGlass: string
+    secondarySubtle: string
+    secondaryBorder: string
+    accentPurple: string
+    accentPurpleSubtle: string
+    accentPurpleBorder: string
     overlayBackdrop: string
     codeBackground: string
     codeOutputBackground: string
-    quoteBackground: string
     primaryGradient: string
     navShadow: string
     cardShadow: string
     cardShadowHover: string
-    headerBackground: string
-    accentWarm: string
-    accentWarmBg: string
-    accentWarmBorder: string
   }
   interface PaletteOptions {
     surfaceSubtle?: string
     surfaceSubtleHover?: string
     surfaceSubtleBorder?: string
+    surfaceGlass?: string
+    secondarySubtle?: string
+    secondaryBorder?: string
+    accentPurple?: string
+    accentPurpleSubtle?: string
+    accentPurpleBorder?: string
     overlayBackdrop?: string
     codeBackground?: string
     codeOutputBackground?: string
-    quoteBackground?: string
     primaryGradient?: string
     navShadow?: string
     cardShadow?: string
     cardShadowHover?: string
-    headerBackground?: string
-    accentWarm?: string
-    accentWarmBg?: string
-    accentWarmBorder?: string
   }
 }
 
@@ -61,14 +63,15 @@ export function createAppTheme(mode: ThemeMode = 'light') {
       surfaceSubtle: isDark ? 'rgba(20, 184, 166, 0.12)' : 'rgba(13, 118, 110, 0.07)',
       surfaceSubtleHover: isDark ? 'rgba(20, 184, 166, 0.2)' : 'rgba(13, 118, 110, 0.12)',
       surfaceSubtleBorder: isDark ? 'rgba(20, 184, 166, 0.22)' : 'rgba(13, 118, 110, 0.14)',
+      surfaceGlass: isDark ? 'rgba(19, 32, 29, 0.85)' : 'rgba(255, 255, 255, 0.85)',
+      secondarySubtle: isDark ? 'rgba(251, 146, 60, 0.14)' : 'rgba(249, 115, 22, 0.08)',
+      secondaryBorder: isDark ? 'rgba(251, 146, 60, 0.3)' : 'rgba(249, 115, 22, 0.22)',
+      accentPurple: isDark ? '#a5b4fc' : '#4338ca',
+      accentPurpleSubtle: isDark ? 'rgba(129, 140, 248, 0.14)' : 'rgba(99, 102, 241, 0.08)',
+      accentPurpleBorder: isDark ? 'rgba(129, 140, 248, 0.28)' : 'rgba(99, 102, 241, 0.22)',
       overlayBackdrop: isDark ? 'rgba(19, 32, 29, 0.76)' : 'rgba(255, 255, 255, 0.76)',
       codeBackground: isDark ? '#0b1120' : '#0f172a',
       codeOutputBackground: isDark ? 'rgba(255, 255, 255, 0.06)' : '#e2e8f0',
-      quoteBackground: isDark ? 'rgba(20, 184, 166, 0.08)' : '#f0fdfa',
-      headerBackground: isDark ? 'rgba(19, 32, 29, 0.85)' : 'rgba(255, 255, 255, 0.85)',
-      accentWarm: isDark ? '#fb923c' : '#f97316',
-      accentWarmBg: isDark ? 'rgba(251, 146, 60, 0.14)' : 'rgba(249, 115, 22, 0.08)',
-      accentWarmBorder: isDark ? 'rgba(251, 146, 60, 0.3)' : 'rgba(249, 115, 22, 0.22)',
       primaryGradient: isDark
         ? 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)'
         : 'linear-gradient(135deg, #0d766e 0%, #095953 100%)',

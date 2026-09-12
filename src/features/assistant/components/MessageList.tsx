@@ -32,8 +32,8 @@ const StyledMessagesContainer = styled(Stack)(({ theme }) => ({
   padding: theme.spacing(2),
   overflowY: 'auto',
   position: 'relative',
-  backgroundColor: '#f6f9f8',
-  backgroundImage: 'radial-gradient(rgba(13, 118, 110, 0.04) 1px, transparent 1px)',
+  backgroundColor: theme.palette.background.default,
+  backgroundImage: `radial-gradient(${theme.palette.divider} 1px, transparent 1px)`,
   backgroundSize: '16px 16px',
 
   '& > *': {
@@ -104,7 +104,7 @@ function WelcomeCard({ onQuickPrompt }: { onQuickPrompt: (text: string) => void 
         隨時告訴我你想去的景點、詢問動線建議，或直接說明要修改哪一天的行程。
       </Typography>
 
-      <Divider sx={{ my: 2.25, borderColor: 'rgba(13, 118, 110, 0.08)' }}>
+      <Divider sx={{ my: 2.25, borderColor: 'divider' }}>
         <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
           推薦快捷提問
         </Typography>
@@ -127,13 +127,14 @@ function WelcomeCard({ onQuickPrompt }: { onQuickPrompt: (text: string) => void 
               borderRadius: 3,
               fontWeight: 650,
               fontSize: '0.84rem',
-              bgcolor: 'rgba(13, 118, 110, 0.06)',
-              border: '1px solid rgba(13, 118, 110, 0.15)',
-              color: '#0d766e',
+              bgcolor: 'surfaceSubtle',
+              border: '1px solid',
+              borderColor: 'surfaceSubtleBorder',
+              color: 'primary.main',
               transition: 'all 180ms ease',
               '&:hover': {
-                bgcolor: 'rgba(13, 118, 110, 0.12)',
-                borderColor: '#0d766e',
+                bgcolor: 'surfaceSubtleHover',
+                borderColor: 'primary.main',
                 transform: 'translateY(-1px)',
               },
               '&:active': {
@@ -246,12 +247,12 @@ export function MessageList({
               borderRadius: 999,
               fontSize: '0.8rem',
               fontWeight: 650,
-              color: '#0d766e',
-              borderColor: 'rgba(13, 118, 110, 0.25)',
-              bgcolor: 'rgba(13, 118, 110, 0.04)',
+              color: 'primary.main',
+              borderColor: 'surfaceSubtleBorder',
+              bgcolor: 'surfaceSubtle',
               '&:hover': {
-                borderColor: '#0d766e',
-                bgcolor: 'rgba(13, 118, 110, 0.08)',
+                borderColor: 'primary.main',
+                bgcolor: 'surfaceSubtleHover',
               },
             }}
           >

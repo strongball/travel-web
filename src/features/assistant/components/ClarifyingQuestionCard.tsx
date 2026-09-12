@@ -168,7 +168,7 @@ export function ClarifyingQuestionCard({
           left: 0,
           right: 0,
           height: 4,
-          background: 'linear-gradient(90deg, #0d766e 0%, #14b8a6 100%)',
+          background: (theme) => theme.palette.primaryGradient,
         }}
       />
 
@@ -179,8 +179,8 @@ export function ClarifyingQuestionCard({
             sx={{
               width: 34,
               height: 34,
-              background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-              boxShadow: '0 2px 8px rgba(13, 118, 110, 0.25)',
+              background: (theme) => theme.palette.primaryGradient,
+              boxShadow: (theme) => theme.palette.cardShadow,
             }}
           >
             <HelpOutlineRoundedIcon sx={{ fontSize: 20, color: '#ffffff' }} />

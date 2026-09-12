@@ -210,7 +210,7 @@ export function TripListPage({
                       height: 5,
                       background: isSelected
                         ? (theme) => theme.palette.primaryGradient
-                        : 'linear-gradient(90deg, #ee7c45 0%, #f97316 100%)',
+                        : (theme) => theme.palette.secondary.main,
                     }}
                   />
                   <CardContent sx={{ p: { xs: 2, md: 2.5 }, '&:last-child': { pb: { xs: 2, md: 2.5 } } }}>
@@ -264,9 +264,9 @@ export function TripListPage({
                               fontWeight: 800,
                               ...(isCountdown || isOngoing
                                 ? {
-                                    bgcolor: 'accentWarmBg',
-                                    color: 'accentWarm',
-                                    borderColor: 'accentWarmBorder',
+                                    bgcolor: 'secondarySubtle',
+                                    color: 'secondary.main',
+                                    borderColor: 'secondaryBorder',
                                   }
                                 : {
                                     bgcolor: 'action.hover',

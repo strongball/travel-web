@@ -134,7 +134,7 @@ export function AttractionTimelineItem({
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
             '&:hover': {
               borderColor: 'primary.main',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              boxShadow: (theme) => theme.palette.cardShadow,
             },
           }}
         >

@@ -34,8 +34,8 @@ export function MessageBubble({
             width: 32,
             height: 32,
             mt: 0.25,
-            background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-            boxShadow: '0 2px 8px rgba(13, 118, 110, 0.25)',
+            background: (theme) => theme.palette.primaryGradient,
+            boxShadow: (theme) => theme.palette.cardShadow,
             flexShrink: 0,
           }}
         >
@@ -136,7 +136,7 @@ export function MessageBubble({
               pl: 1.25,
               py: 0.25,
               borderLeft: (theme) => `3px solid ${user ? '#5eead4' : theme.palette.primary.main}`,
-              background: user ? 'rgba(255, 255, 255, 0.08)' : (theme) => theme.palette.quoteBackground,
+              background: user ? 'rgba(255, 255, 255, 0.08)' : (theme) => theme.palette.surfaceSubtle,
               borderRadius: '0 6px 6px 0',
               fontStyle: 'italic',
             },
