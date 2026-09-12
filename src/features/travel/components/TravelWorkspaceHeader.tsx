@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import type { ReactNode } from 'react'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
@@ -15,11 +14,8 @@ interface TravelWorkspaceHeaderProps {
   subtitle: string
   loading: boolean
   showBack: boolean
-  backLabel?: string
   canEdit: boolean
   canOpenAssistant: boolean
-  assistantMode: boolean
-  assistantActions?: ReactNode
   onBack: () => void
   onEdit: () => void
   onOpenAssistant: () => void
@@ -33,11 +29,8 @@ export function TravelWorkspaceHeader({
   subtitle,
   loading,
   showBack,
-  backLabel,
   canEdit,
   canOpenAssistant,
-  assistantMode,
-  assistantActions,
   onBack,
   onEdit,
   onOpenAssistant,
@@ -53,11 +46,9 @@ export function TravelWorkspaceHeader({
       title={title}
       subtitle={subtitle}
       onBack={showBack ? onBack : undefined}
-      backLabel={backLabel ?? '返回我的行程'}
-      actions={(
-        assistantMode ? (
-          assistantActions
-        ) : showBack ? (
+      backLabel="返回我的行程"
+      actions={
+        showBack ? (
           /* Detail / In-Trip View */
           <>
             {canOpenAssistant ? (
@@ -182,7 +173,7 @@ export function TravelWorkspaceHeader({
             </Menu>
           </>
         )
-      )}
+      }
     />
   )
 }

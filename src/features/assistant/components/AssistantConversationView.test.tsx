@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RiverScope } from '@stball/react-river'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantConversationView } from './AssistantConversationView'
@@ -56,9 +56,9 @@ describe('AssistantConversationView Mobile & Thread Selection', () => {
     repositoryMocks.listAssistantMessages.mockResolvedValue([])
   })
 
-  it('allows deselecting thread and navigating back to conversation list', async () => {
-    const threadChangeCalls: Array<{ id: string | null; title?: string }> = []
-    let backHandler: (() => boolean) | null = null
+  it('renders PageHeader and allows returning to conversation list via back button', async () => {
+    const onBack = vi.fn()
+    let browserBackHandler: (() => boolean) | null = null
 
     render(
       <RiverScope overrides={[{ original: userIdProvider, create: () => 'user-1' }]}>
@@ -67,13 +67,9 @@ describe('AssistantConversationView Mobile & Thread Selection', () => {
           itinerary={mockItinerary}
           todos={[]}
           todoCategories={['行前準備']}
-          fullPage={true}
-          onAssistantToolbarChange={() => {}}
-          onThreadChange={(id, title) => {
-            threadChangeCalls.push({ id, title })
-          }}
-          onRegisterBackHandler={(handler) => {
-            backHandler = handler
+          onBack={onBack}
+          onRegisterBrowserBackHandler={(handler) => {
+            browserBackHandler = handler
           }}
         />
       </RiverScope>,
@@ -81,34 +77,31 @@ describe('AssistantConversationView Mobile & Thread Selection', () => {
 
     // Wait for threads to load and initial selection to happen
     await waitFor(() => {
-      expect(screen.getByText('東京賞櫻諮詢')).toBeInTheDocument()
+      expect(screen.getAllByText('東京賞櫻諮詢').length).toBeGreaterThan(0)
     })
 
-    // Initially, thread-1 should be selected
+    // The PageHeader title should be the current thread's title
+    const headerTitle = screen.getByRole('heading', { level: 1 })
+    expect(headerTitle).toHaveTextContent('東京賞櫻諮詢')
+
+    // Browser back handler should be registered while in a thread
+    expect(browserBackHandler).toBeTypeOf('function')
+
+    // Click the back button on PageHeader
+    const backButton = screen.getByRole('button', { name: '返回對話列表' })
+    fireEvent.click(backButton)
+
+    // Now threadId should become null, displaying conversation list
     await waitFor(() => {
-      expect(threadChangeCalls.some((c) => c.id === 'thread-1')).toBe(true)
+      expect(screen.getByText('對話列表')).toBeInTheDocument()
     })
 
-    // Back handler should be registered when a thread is active
-    expect(backHandler).toBeTypeOf('function')
+    // When on conversation list, header title updates to '旅程助理'
+    expect(headerTitle).toHaveTextContent('旅程助理')
 
-    // Simulate clicking back or opening conversation list (backHandler returns true)
-    act(() => {
-      const handled = backHandler!()
-      expect(handled).toBe(true)
-    })
-
-    // Now threadId should become null, allowing conversation list to be opened
-    await waitFor(() => {
-      const lastCall = threadChangeCalls[threadChangeCalls.length - 1]
-      expect(lastCall.id).toBeNull()
-    })
-
-    // And backHandler should now be unregistered (null)
-    expect(backHandler).toBeNull()
-
-    // The conversation list header should be rendered
-    expect(screen.getByText('對話列表')).toBeInTheDocument()
-    expect(screen.getByText('點選對話繼續討論行程')).toBeInTheDocument()
+    // Click the back button on PageHeader again, now it should call onBack to return to schedule
+    const returnScheduleButton = screen.getByRole('button', { name: '返回我的行程' })
+    fireEvent.click(returnScheduleButton)
+    expect(onBack).toHaveBeenCalledTimes(1)
   })
 })

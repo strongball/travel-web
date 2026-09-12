@@ -1,4 +1,3 @@
-import type { ReactNode } from 'react'
 
 import type { Itinerary, TodoItem } from '../../types/database'
 import { AssistantConversationView } from './components'
@@ -7,18 +6,14 @@ export function AssistantSection({
   itinerary,
   todos,
   todoCategories,
-  fullPage = false,
-  onAssistantToolbarChange,
-  onThreadChange,
-  onRegisterBackHandler,
+  onBack,
+  onRegisterBrowserBackHandler,
 }: {
   itinerary: Itinerary
   todos: TodoItem[]
   todoCategories: string[]
-  fullPage?: boolean
-  onAssistantToolbarChange?: (toolbar: ReactNode) => void
-  onThreadChange?: (threadId: string | null, threadTitle?: string) => void
-  onRegisterBackHandler?: (handler: (() => boolean) | null) => void
+  onBack?: () => void
+  onRegisterBrowserBackHandler?: ((handler: (() => boolean) | null) => void) | null
 }) {
   return (
     <AssistantConversationView
@@ -27,10 +22,8 @@ export function AssistantSection({
       itinerary={itinerary}
       todos={todos}
       todoCategories={todoCategories}
-      fullPage={fullPage}
-      onAssistantToolbarChange={onAssistantToolbarChange}
-      onThreadChange={onThreadChange}
-      onRegisterBackHandler={onRegisterBackHandler}
+      onBack={onBack}
+      onRegisterBrowserBackHandler={onRegisterBrowserBackHandler}
     />
   )
 }

@@ -4,10 +4,8 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type FormEvent,
-  type ReactNode,
 } from 'react'
 import {
   Alert,
@@ -112,23 +110,6 @@ export function TravelWorkspacePage({
   const [todoCategory, setTodoCategory] = useState('行前準備')
   const [saving, setSaving] = useState(false)
   const [todoSaving, setTodoSaving] = useState(false)
-  const [assistantToolbar, setAssistantToolbar] = useState<ReactNode>(null)
-  const [assistantThreadId, setAssistantThreadId] = useState<string | null>(null)
-  const [assistantThreadTitle, setAssistantThreadTitle] = useState<string | undefined>(undefined)
-  const assistantBackHandlerRef = useRef<(() => boolean) | null>(null)
-
-  const handleAssistantToolbarChange = useCallback((toolbar: ReactNode) => {
-    setAssistantToolbar(toolbar)
-  }, [])
-
-  const handleRegisterAssistantBack = useCallback((handler: (() => boolean) | null) => {
-    assistantBackHandlerRef.current = handler
-  }, [])
-
-  const handleAssistantThreadChange = useCallback((id: string | null, title?: string) => {
-    setAssistantThreadId(id)
-    setAssistantThreadTitle(title)
-  }, [])
 
   const updateWorkspaceRoute = useCallback((
     next: Partial<WorkspaceRoute>,
@@ -143,10 +124,6 @@ export function TravelWorkspacePage({
     if (next.workspaceView) setWorkspaceView(next.workspaceView)
     onWorkspaceRouteChange?.(route)
   }, [onWorkspaceRouteChange, section, selectedItineraryId, workspaceView])
-
-  useEffect(() => {
-    if (section !== 'assistant') setAssistantToolbar(null)
-  }, [section])
 
   useEffect(() => {
     if (!onRegisterBrowserBackHandler) return
@@ -169,9 +146,6 @@ export function TravelWorkspacePage({
         return true
       }
       if (workspaceView === 'detail' && section === 'assistant') {
-        if (assistantBackHandlerRef.current?.()) {
-          return true
-        }
         updateWorkspaceRoute({ section: 'schedule' })
         return true
       }
@@ -452,94 +426,70 @@ export function TravelWorkspacePage({
 
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: 'background.default' }}>
-      <TravelWorkspaceHeader
-        title={
-          workspaceView === 'detail' && section === 'assistant'
-            ? (assistantThreadId && assistantThreadTitle ? assistantThreadTitle : '旅程助理')
-            : workspaceView === 'detail'
-            ? selectedItinerary?.title ?? 'Travel'
-            : 'Travel'
-        }
-        subtitle={
-          workspaceView === 'detail' && section === 'assistant'
-            ? (assistantThreadId && assistantThreadTitle ? (selectedItinerary?.title ?? 'Travel') : (selectedItinerary?.title ?? '把每一段旅程放在同一個地方'))
-            : workspaceView === 'detail'
-            ? `${formatDate(selectedItinerary?.startDate)} — ${formatDate(selectedItinerary?.endDate)} · ${selectedItinerary?.currency ?? ''}`
-            : '把每一段旅程放在同一個地方'
-        }
-        backLabel={
-          section === 'assistant' && assistantThreadId
-            ? '返回對話列表'
-            : '返回我的行程'
-        }
-        loading={loading}
-        showBack={workspaceView === 'detail'}
-        canEdit={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
-        canOpenAssistant={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
-        assistantMode={workspaceView === 'detail' && section === 'assistant'}
-        assistantActions={assistantToolbar}
-        onBack={() => {
-          if (section === 'assistant') {
-            if (assistantBackHandlerRef.current?.()) return
-            updateWorkspaceRoute({ section: 'schedule' })
-          } else {
-            updateWorkspaceRoute({ workspaceView: 'trips' })
+      {section !== 'assistant' ? (
+        <TravelWorkspaceHeader
+          title={workspaceView === 'detail' ? selectedItinerary?.title ?? 'Travel' : 'Travel'}
+          subtitle={
+            workspaceView === 'detail'
+              ? `${formatDate(selectedItinerary?.startDate)} — ${formatDate(selectedItinerary?.endDate)} · ${selectedItinerary?.currency ?? ''}`
+              : '把每一段旅程放在同一個地方'
           }
-        }}
-        onEdit={() => selectedItinerary && setTripEditor(selectedItinerary)}
-        onOpenAssistant={() => updateWorkspaceRoute({ section: 'assistant' })}
-        onOpenGoogleMapsTest={onOpenGoogleMapsTest}
-        onRefresh={onRefresh}
-        onSignOut={onSignOut}
-      />
+          loading={loading}
+          showBack={workspaceView === 'detail'}
+          canEdit={workspaceView === 'detail' && Boolean(selectedItinerary)}
+          canOpenAssistant={workspaceView === 'detail' && Boolean(selectedItinerary)}
+          onBack={() => updateWorkspaceRoute({ workspaceView: 'trips' })}
+          onEdit={() => selectedItinerary && setTripEditor(selectedItinerary)}
+          onOpenAssistant={() => updateWorkspaceRoute({ section: 'assistant' })}
+          onOpenGoogleMapsTest={onOpenGoogleMapsTest}
+          onRefresh={onRefresh}
+          onSignOut={onSignOut}
+        />
+      ) : null}
 
-      <Container maxWidth={section === 'assistant' ? false : 'xl'} sx={{ px: section === 'assistant' ? 0 : { xs: 1.5, md: 4 }, pt: section === 'assistant' ? 0 : { xs: 1.5, md: 2.5 }, pb: section === 'assistant' ? 0 : { xs: 10, md: 4 } }}>
-        {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
-        {workspaceView === 'trips' ? (
-          <TripListPage
-            itineraries={itineraries}
-            selectedItineraryId={selectedItineraryId}
-            loading={loading}
-            onOpen={openItinerary}
-            onNew={openNewTrip}
+      {section === 'assistant' && selectedItinerary ? (
+        <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}>載入旅程助理…</Box>}>
+          <AssistantSection
+            itinerary={selectedItinerary}
+            todos={selectedTodos}
+            todoCategories={categories}
+            onBack={() => updateWorkspaceRoute({ section: 'schedule' })}
+            onRegisterBrowserBackHandler={onRegisterBrowserBackHandler}
           />
-        ) : selectedItinerary ? (
-          <Box component="main" sx={{ minWidth: 0 }}>
-            {section !== 'assistant' ? (
+        </Suspense>
+      ) : (
+        <Container maxWidth="xl" sx={{ px: { xs: 1.5, md: 4 }, pt: { xs: 1.5, md: 2.5 }, pb: { xs: 10, md: 4 } }}>
+          {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
+          {workspaceView === 'trips' ? (
+            <TripListPage
+              itineraries={itineraries}
+              selectedItineraryId={selectedItineraryId}
+              loading={loading}
+              onOpen={openItinerary}
+              onNew={openNewTrip}
+            />
+          ) : selectedItinerary ? (
+            <Box component="main" sx={{ minWidth: 0 }}>
               <WorkspaceDesktopTabs
                 section={section}
                 todoCount={selectedTodos.length}
                 completedTodoCount={completedTodos}
                 onSectionChange={(value) => updateWorkspaceRoute({ section: value })}
               />
-            ) : null}
 
-            <Box sx={{ mt: section === 'assistant' ? 0 : { xs: 0, md: 2 } }}>
-              {section === 'schedule' ? (
-                <ScheduleSection
-                  days={days}
-                  currency={selectedItinerary.currency}
-                  onAddAttraction={openNewAttraction}
-                  onEditAttraction={openEditAttraction}
-                  onEditTravelInfo={openTravelEditor}
-                  onDeleteAttraction={(day, id) => void deleteAttraction(day, id)}
-                  onStartTimeChange={(dayId, time) => void updateDayStartTime(dayId, time)}
-                  onReorder={(nextDays) => void saveReorderedDays(nextDays)}
-                />
-              ) : null}
-              {section === 'assistant' ? (
-                <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: 300 }}>載入旅程助理…</Box>}>
-                  <AssistantSection
-                    itinerary={selectedItinerary}
-                    todos={selectedTodos}
-                    todoCategories={categories}
-                    fullPage
-                    onAssistantToolbarChange={handleAssistantToolbarChange}
-                    onThreadChange={handleAssistantThreadChange}
-                    onRegisterBackHandler={handleRegisterAssistantBack}
+              <Box sx={{ mt: { xs: 0, md: 2 } }}>
+                {section === 'schedule' ? (
+                  <ScheduleSection
+                    days={days}
+                    currency={selectedItinerary.currency}
+                    onAddAttraction={openNewAttraction}
+                    onEditAttraction={openEditAttraction}
+                    onEditTravelInfo={openTravelEditor}
+                    onDeleteAttraction={(day, id) => void deleteAttraction(day, id)}
+                    onStartTimeChange={(dayId, time) => void updateDayStartTime(dayId, time)}
+                    onReorder={(nextDays) => void saveReorderedDays(nextDays)}
                   />
-                </Suspense>
-              ) : null}
+                ) : null}
               {section === 'todos' ? (
                 <TodoSection
                   todos={selectedTodos}
@@ -592,6 +542,7 @@ export function TravelWorkspacePage({
           />
         )}
       </Container>
+    )}
 
       <MobileFloatingAction
         section={section}

@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRiverRef, useRiverWatch } from '@stball/react-river'
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
   Alert,
-  Avatar,
   Box,
   CircularProgress,
-  IconButton,
-  Paper,
   Stack,
-  Typography,
 } from '@mui/material'
 import {
   assistantConversationsProvider,
@@ -19,6 +13,7 @@ import {
   assistantTurnActionsProvider,
 } from '../providers'
 import { useOnlineStatus } from '../../../hooks/useOnlineStatus'
+import { PageHeader } from '../../../components/PageHeader'
 import type { Itinerary, TodoItem } from '../../../types/database'
 import type { ReasoningEffort } from '../models'
 import type { AssistantAttachment, AssistantProposal } from '../types'
@@ -29,27 +24,23 @@ import { ChatComposer, type ChatComposerHandle } from './ChatComposer'
 import { AssistantAppBarActions } from './AssistantAppBarActions'
 
 /**
- * 對話工作區的容器:持有選取中的執行緒與錯誤訊息,
- * 負責檢視狀態與使用者事件；訊息載入、checkpoint 恢復與生成狀態由 River 管理。
+ * 對話工作區主容器：持有選取中的對話與錯誤狀態，
+ * 頂端以 PageHeader 作為一體化導航與操作列，支援行動端上一頁與清單切換。
  */
 export function AssistantConversationView({
   itineraryId,
   itinerary,
   todos,
   todoCategories,
-  fullPage,
-  onAssistantToolbarChange,
-  onThreadChange,
-  onRegisterBackHandler,
+  onBack,
+  onRegisterBrowserBackHandler,
 }: {
   itineraryId: string
   itinerary: Itinerary
   todos: TodoItem[]
   todoCategories: string[]
-  fullPage: boolean
-  onAssistantToolbarChange?: (toolbar: ReactNode) => void
-  onThreadChange?: (threadId: string | null, threadTitle?: string) => void
-  onRegisterBackHandler?: (handler: (() => boolean) | null) => void
+  onBack?: () => void
+  onRegisterBrowserBackHandler?: ((handler: (() => boolean) | null) => void) | null
 }) {
   const ref = useRiverRef()
   const online = useOnlineStatus()
@@ -107,29 +98,24 @@ export function AssistantConversationView({
       return
     }
 
-    // 已完成初次同步後：僅在目前選取的 threadId 已失效（被刪除）時，才退回第一個對話
     if (threadId && !list.some((thread) => thread.id === threadId)) {
       select(list[0]?.id ?? null)
     }
   }, [select, threadId, threadsState])
 
+  // 瀏覽器上一頁/手勢支援：在對話中優先返回對話清單
   useEffect(() => {
-    const currentThread = threadsState.data?.find((t) => t.id === threadId)
-    onThreadChange?.(threadId, currentThread?.title)
-  }, [onThreadChange, threadId, threadsState.data])
-
-  useEffect(() => {
-    if (!onRegisterBackHandler) return
-    if (threadId) {
-      onRegisterBackHandler(() => {
+    if (!onRegisterBrowserBackHandler) return
+    const handleBack = () => {
+      if (threadId) {
         select(null)
         return true
-      })
-    } else {
-      onRegisterBackHandler(null)
+      }
+      return false
     }
-    return () => onRegisterBackHandler(null)
-  }, [onRegisterBackHandler, select, threadId])
+    onRegisterBrowserBackHandler(handleBack)
+    return () => onRegisterBrowserBackHandler(null)
+  }, [onRegisterBrowserBackHandler, select, threadId])
 
   // ---- 使用者命令 ----
 
@@ -204,36 +190,6 @@ export function AssistantConversationView({
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
-    if (!fullPage || !onAssistantToolbarChange) return
-    const currentThread = threadsState.data?.find((thread) => thread.id === threadId) ?? null
-    onAssistantToolbarChange(
-      <AssistantAppBarActions
-        thread={currentThread}
-        sending={sending}
-        messageCount={messages.length}
-        online={online}
-        onConversationList={() => select(null)}
-        onSummarize={handleSummarize}
-        onDelete={(targetId) => void handleDeleteThread(targetId)}
-        showConversationList={Boolean(threadId)}
-      />,
-    )
-  }, [
-    fullPage,
-    handleDeleteThread,
-    handleSummarize,
-    messages.length,
-    onAssistantToolbarChange,
-    online,
-    select,
-    sending,
-    threadId,
-    threadsState,
-  ])
-
-  useEffect(() => () => onAssistantToolbarChange?.(null), [onAssistantToolbarChange])
-
-  useEffect(() => {
     if (prevSendingRef.current && !sending) {
       requestAnimationFrame(() => {
         composerRef.current?.focus()
@@ -259,24 +215,40 @@ export function AssistantConversationView({
     : null
 
   return (
-    <Stack spacing={0} sx={{ height: '100%' }}>
+    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+      <PageHeader
+        title={currentThread?.title ?? '旅程助理'}
+        subtitle={itinerary.title}
+        onBack={() => {
+          if (threadId) select(null)
+          else onBack?.()
+        }}
+        backLabel={threadId ? '返回對話列表' : '返回我的行程'}
+        actions={
+          <AssistantAppBarActions
+            thread={currentThread}
+            sending={sending}
+            messageCount={messages.length}
+            online={online}
+            onConversationList={() => select(null)}
+            onSummarize={handleSummarize}
+            onDelete={(targetId) => void handleDeleteThread(targetId)}
+            showConversationList={Boolean(threadId)}
+          />
+        }
+      />
+
       {collectionError || (!threadId && error) ? (
         <Alert severity="error">{collectionError ?? error}</Alert>
       ) : null}
-      <Paper
-        variant={fullPage ? undefined : 'outlined'}
-        elevation={fullPage ? 0 : undefined}
+
+      <Box
         sx={{
+          flex: 1,
+          minHeight: 0,
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '300px minmax(0, 1fr)' },
-          height: fullPage
-            ? { xs: 'calc(100dvh - 58px)', md: 'calc(100dvh - 65px)' }
-            : { xs: 'calc(100dvh - 145px)', md: 'min(760px, calc(100dvh - 200px))' },
-          minHeight: { xs: 460, md: 600 },
           overflow: 'hidden',
-          borderRadius: fullPage ? 0 : 3.5,
-          border: fullPage ? 0 : '1px solid rgba(13, 118, 110, 0.12)',
-          boxShadow: fullPage ? 'none' : '0 16px 40px rgba(15, 23, 42, 0.07)',
           bgcolor: 'background.paper',
         }}
       >
@@ -297,65 +269,6 @@ export function AssistantConversationView({
             bgcolor: '#f8faf9',
           }}
         >
-          {!fullPage ? (
-            <Stack
-              direction="row"
-              sx={{
-                px: { xs: 1.5, sm: 2 },
-                py: 1.25,
-                alignItems: 'center',
-                borderBottom: '1px solid rgba(13, 118, 110, 0.1)',
-                bgcolor: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(12px)',
-                zIndex: 2,
-              }}
-            >
-              <IconButton
-                aria-label="返回對話列表"
-                sx={{
-                  display: { md: 'none' },
-                  mr: 1,
-                  width: 38,
-                  height: 38,
-                  bgcolor: 'rgba(13, 118, 110, 0.06)',
-                  '&:hover': { bgcolor: 'rgba(13, 118, 110, 0.12)' },
-                }}
-                onClick={() => select(null)}
-              >
-                <ArrowBackRoundedIcon fontSize="small" />
-              </IconButton>
-              <Avatar
-                sx={{
-                  width: 36,
-                  height: 36,
-                  mr: 1.25,
-                  background: 'linear-gradient(135deg, #0d766e 0%, #14b8a6 100%)',
-                  boxShadow: '0 2px 8px rgba(13, 118, 110, 0.25)',
-                }}
-              >
-                <AutoAwesomeRoundedIcon sx={{ fontSize: 19, color: '#ffffff' }} />
-              </Avatar>
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography noWrap sx={{ fontWeight: 800, fontSize: '0.96rem', letterSpacing: '-0.01em' }}>
-                  {currentThread?.title ?? '旅程助理'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.74rem' }}>
-                  任何修改建議皆需你確認後才套用
-                </Typography>
-              </Box>
-              <AssistantAppBarActions
-                thread={currentThread}
-                sending={sending}
-                messageCount={messages.length}
-                online={online}
-                onConversationList={() => select(null)}
-                onSummarize={handleSummarize}
-                onDelete={(tId) => void handleDeleteThread(tId)}
-                showConversationList={false}
-              />
-            </Stack>
-          ) : null}
-
           <MessageList
             itineraryId={itineraryId}
             threadId={threadId}
@@ -382,7 +295,7 @@ export function AssistantConversationView({
             />
           ) : null}
         </Stack>
-      </Paper>
-    </Stack>
+      </Box>
+    </Box>
   )
 }

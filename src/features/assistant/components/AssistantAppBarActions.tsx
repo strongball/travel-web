@@ -42,7 +42,7 @@ export function AssistantAppBarActions({
           <IconButton
             aria-label="對話清單"
             onClick={onConversationList}
-            sx={{ width: 38, height: 38 }}
+            sx={{ width: 38, height: 38, display: { xs: 'inline-flex', md: 'none' } }}
           >
             <ForumRoundedIcon fontSize="small" />
           </IconButton>
