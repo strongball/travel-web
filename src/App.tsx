@@ -45,7 +45,10 @@ const ReceiptReviewPage = lazy(() =>
     default: module.ReceiptReviewPage,
   })),
 )
-const GoogleMapsApiTestPage = lazy(() => import('./features/google/GoogleMapsApiTestPage'))
+const isDev = import.meta.env.DEV
+const GoogleMapsApiTestPage = isDev
+  ? lazy(() => import('./features/google/GoogleMapsApiTestPage'))
+  : null
 
 const EMPTY_ITINERARIES: Itinerary[] = []
 const EMPTY_EXPENSES: Expense[] = []
@@ -389,7 +392,7 @@ function App() {
             onCancel={cancelReview}
           />
         ) : null}
-        {view === 'google-maps-test' ? (
+        {isDev && view === 'google-maps-test' && GoogleMapsApiTestPage ? (
           <GoogleMapsApiTestPage onBack={() => navigateView('workspace')} />
         ) : null}
       </Suspense>

@@ -53,6 +53,10 @@ Deno.test("allows dynamic model generateContent and SSE streaming", () => {
     "/functions/v1/gemini-proxy/v1beta/models/gemini-3.7-flash:streamGenerateContent",
     "?alt=sse&extra=true",
   ), "ENDPOINT_NOT_ALLOWED");
+  assertThrows(() => validateProxyPath(
+    "/functions/v1/gemini-proxy/v1beta/models/unauthorized-model:generateContent",
+    "",
+  ), "MODEL_NOT_ALLOWED");
 });
 
 Deno.test("requires JSON object within body limit", () => {

@@ -64,9 +64,18 @@ export const tavilySearchTool = tool(
 
       if (Array.isArray(data.results) && data.results.length > 0) {
         parts.push('【參考來源與詳細內容】：')
+        const isSafeHttpUrl = (url?: string) => {
+          if (!url) return false
+          try {
+            const parsed = new URL(url)
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+          } catch {
+            return false
+          }
+        }
         data.results.forEach((item, index) => {
           const title = item.title || '無標題'
-          const link = item.url ? `[${title}](${item.url})` : title
+          const link = isSafeHttpUrl(item.url) ? `[${title}](${item.url})` : title
           parts.push(`${index + 1}. ${link}\n${item.content || '無內容摘要'}`)
         })
       }

@@ -42,13 +42,14 @@ export function useBrowserNavigation(sessionActive: boolean) {
   const workspaceRouteRef = useRef(workspaceRoute)
 
   const navigateView = useCallback((nextView: AppView, mode: 'push' | 'replace' = 'push') => {
+    const effectiveView = (!import.meta.env.DEV && nextView === 'google-maps-test') ? 'workspace' : nextView
     const route = workspaceRouteRef.current
     const nextState = {
       ...(window.history.state && typeof window.history.state === 'object'
         ? window.history.state
         : {}),
       travelApp: true,
-      travelView: nextView,
+      travelView: effectiveView,
       travelGuard: false,
       travelSection: route.section,
       travelWorkspaceView: route.workspaceView,
@@ -59,7 +60,7 @@ export function useBrowserNavigation(sessionActive: boolean) {
     } else {
       window.history.pushState(nextState, '')
     }
-    setView(nextView)
+    setView(effectiveView)
   }, [])
 
   const rememberWorkspaceRoute = useCallback((route: WorkspaceRoute) => {
@@ -115,7 +116,7 @@ export function useBrowserNavigation(sessionActive: boolean) {
     const handlePopState = (event: PopStateEvent) => {
       const state = event.state as TravelHistoryState | null
       const nextView = state?.travelView
-      const isKnownView = nextView === 'workspace' || nextView === 'editor' || nextView === 'review' || nextView === 'google-maps-test'
+      const isKnownView = nextView === 'workspace' || nextView === 'editor' || nextView === 'review' || (Boolean(import.meta.env.DEV) && nextView === 'google-maps-test')
 
       if (browserBackHandler.current?.()) {
         const route = workspaceRouteRef.current

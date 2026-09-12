@@ -2,3 +2,7 @@ project_id = "travel-web"
 
 [functions.gemini-proxy]
 verify_jwt = true
+
+[functions.tavily-proxy]
+verify_jwt = true
+

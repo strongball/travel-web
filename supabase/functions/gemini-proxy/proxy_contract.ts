@@ -32,6 +32,23 @@ export function validateAuthenticatedUser(authorization: string | null): void {
   }
 }
 
+export const DEFAULT_ALLOWED_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.7-flash",
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+];
+
+export function validateAllowedModel(model: string): void {
+  const configured = typeof Deno !== "undefined" ? Deno.env.get("ALLOWED_MODELS") : undefined;
+  const allowed = configured
+    ? configured.split(",").map((m: string) => m.trim().toLowerCase())
+    : DEFAULT_ALLOWED_MODELS;
+  if (!allowed.includes(model.toLowerCase())) {
+    throw new ProxyError("MODEL_NOT_ALLOWED", `Gemini model '${model}' is not allowed`, 403);
+  }
+}
+
 export function validateProxyPath(pathname: string, search: string): string {
   const marker = "/gemini-proxy";
   const index = pathname.indexOf(marker);
@@ -43,7 +60,9 @@ export function validateProxyPath(pathname: string, search: string): string {
     throw new ProxyError("ENDPOINT_NOT_ALLOWED", "Gemini endpoint is not allowed", 403);
   }
 
-  const [, , action] = match;
+  const [, model, action] = match;
+  validateAllowedModel(model);
+
   const isGenerateRequest = action === "generateContent" && search === "";
   const isStreamRequest = action === "streamGenerateContent" && search === "?alt=sse";
   if (!isGenerateRequest && !isStreamRequest) {

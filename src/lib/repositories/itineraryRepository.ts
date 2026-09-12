@@ -19,6 +19,49 @@ export const saveItinerary = async (itinerary: Itinerary): Promise<void> => {
   const startDate = itinerary.startDate ?? days[0]?.date ?? new Date().toISOString()
   const endDate = itinerary.endDate ?? days.at(-1)?.date ?? startDate
 
+  const payload = {
+    id: itinerary.id,
+    ownerId: itinerary.ownerId || userData.user.id,
+    title: itinerary.title.trim(),
+    startDate,
+    endDate,
+    currency: itinerary.currency,
+    exchangeRates: normalizeExchangeRates(itinerary.currency, itinerary.exchangeRates),
+    todoCategories: itinerary.todoCategories ?? [],
+    days: days.map((day) => ({
+      id: day.id,
+      date: day.date,
+      startTime: day.startTime,
+      attractions: day.attractions.map((attraction) => ({
+        id: attraction.id,
+        name: attraction.name.trim(),
+        description: attraction.description.trim() || null,
+        startTime: attraction.startTime,
+        endTime: attraction.endTime,
+        cost: attraction.cost,
+        latitude: attraction.latitude,
+        longitude: attraction.longitude,
+        duration: attraction.duration,
+        transportMode: attraction.transportMode,
+        travelTime: attraction.travelTime,
+        placeId: attraction.placeId,
+        locationName: attraction.locationName,
+      })),
+    })),
+  }
+
+  // 1. Prioritize single atomic transaction via PostgreSQL RPC
+  const { error: rpcError } = await supabase.rpc('save_full_itinerary', {
+    p_itinerary: payload,
+  })
+
+  if (!rpcError) return
+
+  // If RPC does not exist in environment, fallback to multi-step postgrest calls
+  if (rpcError.code !== 'PGRST202' && rpcError.code !== '42883') {
+    throw rpcError
+  }
+
   const { error } = await supabase.from('itineraries').upsert({
     id: itinerary.id,
     owner_id: itinerary.ownerId || userData.user.id,

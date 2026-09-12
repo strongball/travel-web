@@ -67,6 +67,16 @@ function formatToolArgs(args?: Record<string, unknown>): string | null {
     .join(', ')
 }
 
+function isSafeHttpUrl(url?: string): boolean {
+  if (!url) return false
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export function AssistantToolExecutionBadge({
   grounding,
   codeExecutions,
@@ -276,34 +286,55 @@ export function AssistantToolExecutionBadge({
                   參考來源
                 </Typography>
                 <Stack spacing={0.5}>
-                  {sources.map((source, index) => (
-                    <Link
-                      key={`${source.uri ?? source.title}-${index}`}
-                      href={source.uri}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        color: '#0d766e',
-                        fontSize: '0.75rem',
-                        textDecoration: 'none',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        '&:hover': {
-                          textDecoration: 'underline',
-                          color: '#0f766e',
-                        },
-                      }}
-                    >
-                      <OpenInNewRoundedIcon sx={{ fontSize: 12, flexShrink: 0, opacity: 0.8 }} />
-                      <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {source.title || source.uri}
-                      </Box>
-                    </Link>
-                  ))}
+                  {sources.map((source, index) => {
+                    const isSafe = isSafeHttpUrl(source.uri)
+                    const titleText = source.title || source.uri || '未知來源'
+                    if (!isSafe) {
+                      return (
+                        <Typography
+                          key={`${source.uri ?? source.title}-${index}`}
+                          variant="caption"
+                          sx={{
+                            color: 'text.secondary',
+                            fontSize: '0.75rem',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          • {titleText}
+                        </Typography>
+                      )
+                    }
+                    return (
+                      <Link
+                        key={`${source.uri ?? source.title}-${index}`}
+                        href={source.uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.5,
+                          color: '#0d766e',
+                          fontSize: '0.75rem',
+                          textDecoration: 'none',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          '&:hover': {
+                            textDecoration: 'underline',
+                            color: '#0f766e',
+                          },
+                        }}
+                      >
+                        <OpenInNewRoundedIcon sx={{ fontSize: 12, flexShrink: 0, opacity: 0.8 }} />
+                        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {titleText}
+                        </Box>
+                      </Link>
+                    )
+                  })}
                 </Stack>
               </Box>
             ) : null}
