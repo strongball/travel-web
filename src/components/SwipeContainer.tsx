@@ -35,7 +35,6 @@ export function SwipeContainer({
       {...touchHandlers}
       sx={{
         touchAction: 'pan-y', // 允許垂直滑動，防止手勢衝突
-        userSelect: 'none',
         ...sx,
       }}
       {...boxProps}

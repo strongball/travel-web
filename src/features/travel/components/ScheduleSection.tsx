@@ -28,6 +28,8 @@ const GoogleItineraryMapDialog = lazy(() => import('../GoogleItineraryMapDialog'
 export function ScheduleSection({
   days,
   currency,
+  activeDayIndex: controlledActiveDayIndex,
+  onActiveDayChange,
   onAddAttraction,
   onEditAttraction,
   onEditTravelInfo,
@@ -37,6 +39,8 @@ export function ScheduleSection({
 }: {
   days: TripDay[]
   currency: string
+  activeDayIndex?: number
+  onActiveDayChange?: (index: number) => void
   onAddAttraction: (dayId: string) => void
   onEditAttraction: (day: TripDay, attraction: Attraction) => void
   onEditTravelInfo: (origin: Attraction, attraction: Attraction) => void
@@ -44,7 +48,14 @@ export function ScheduleSection({
   onStartTimeChange: (dayId: string, time: string) => void
   onReorder: (days: TripDay[]) => void | Promise<void>
 }) {
-  const [activeDayIndex, setActiveDayIndex] = useState(0)
+  const [internalActiveDayIndex, setInternalActiveDayIndex] = useState(0)
+  const activeDayIndex = controlledActiveDayIndex ?? internalActiveDayIndex
+  const setActiveDay = useCallback((updater: number | ((prev: number) => number)) => {
+    const nextIndex = typeof updater === 'function' ? updater(activeDayIndex) : updater
+    setInternalActiveDayIndex(nextIndex)
+    onActiveDayChange?.(nextIndex)
+  }, [activeDayIndex, onActiveDayChange])
+
   const [visibleDays, setVisibleDays] = useState(days)
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null)
   const [mapOpen, setMapOpen] = useState(false)
@@ -58,28 +69,30 @@ export function ScheduleSection({
   }, [days])
 
   useEffect(() => {
-    if (activeDayIndex >= days.length) setActiveDayIndex(Math.max(days.length - 1, 0))
-  }, [activeDayIndex, days.length])
+    if (activeDayIndex >= days.length && days.length > 0) {
+      setActiveDay(Math.max(days.length - 1, 0))
+    }
+  }, [activeDayIndex, days.length, setActiveDay])
 
   const goToNextDay = useCallback(() => {
     if (activeDayIndex < days.length - 1) {
       triggerHaptic('light')
       setSlideDirection('left')
-      setActiveDayIndex((prev) => prev + 1)
+      setActiveDay((prev) => prev + 1)
     }
-  }, [activeDayIndex, days.length])
+  }, [activeDayIndex, days.length, setActiveDay])
 
   const goToPrevDay = useCallback(() => {
     if (activeDayIndex > 0) {
       triggerHaptic('light')
       setSlideDirection('right')
-      setActiveDayIndex((prev) => prev - 1)
+      setActiveDay((prev) => prev - 1)
     }
-  }, [activeDayIndex])
+  }, [activeDayIndex, setActiveDay])
 
   const handleTabSelectDay = (index: number) => {
     setSlideDirection(index > activeDayIndex ? 'left' : 'right')
-    setActiveDayIndex(index)
+    setActiveDay(index)
   }
 
   const applyAttractionOrder = (attractions: Attraction[]) => {

@@ -5,6 +5,29 @@ import { Avatar, Box, Button, Card, CardActionArea, CardContent, Chip, Stack, Ty
 import type { Itinerary } from '../../../types/database'
 import { formatDate } from '../travelWorkspaceUtils'
 
+function getTripStatus(startDate?: string | null, endDate?: string | null) {
+  if (!startDate) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const start = new Date(startDate.slice(0, 10))
+  start.setHours(0, 0, 0, 0)
+
+  const end = endDate ? new Date(endDate.slice(0, 10)) : new Date(start)
+  end.setHours(23, 59, 59, 999)
+
+  const diffDays = Math.ceil((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+
+  if (today >= start && today <= end) {
+    const currentDay = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1
+    return { label: `進行中 · 第 ${currentDay} 天`, color: 'success' as const }
+  }
+  if (diffDays > 0) {
+    return { label: `還有 ${diffDays} 天出發`, color: 'primary' as const }
+  }
+  return { label: '已結束', color: 'default' as const }
+}
+
 export function TripListPage({
   itineraries,
   selectedItineraryId,
@@ -152,6 +175,25 @@ export function TripListPage({
                     </Stack>
 
                     <Stack direction="row" spacing={0.75} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 0.5 }}>
+                      {(() => {
+                        const status = getTripStatus(itinerary.startDate, itinerary.endDate)
+                        return status ? (
+                          <Chip
+                            size="small"
+                            color={status.color === 'default' ? undefined : status.color}
+                            variant={status.color === 'default' ? 'outlined' : 'filled'}
+                            label={status.label}
+                            sx={{
+                              height: 24,
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              ...(status.color === 'default'
+                                ? { bgcolor: '#f1f5f4', color: 'text.secondary', borderColor: 'transparent' }
+                                : {}),
+                            }}
+                          />
+                        ) : null
+                      })()}
                       <Chip
                         size="small"
                         icon={<CalendarMonthRoundedIcon sx={{ fontSize: '14px !important' }} />}

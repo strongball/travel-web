@@ -129,9 +129,11 @@ export function ExpenseItemsSection({ draft, isBusy, onChange }: ExpenseItemsSec
                   noWrap
                   variant="body2"
                   color="text.secondary"
-                  sx={{ maxWidth: { xs: 132, sm: 'none' }, minWidth: 0 }}
+                  sx={{ maxWidth: { xs: 160, sm: 'none' }, minWidth: 0 }}
                 >
-                  {item.quantity} × {item.lineTotal === null ? '—' : `${draft.currency} ${item.lineTotal.toLocaleString('zh-TW')}`}
+                  {item.unitPrice !== null
+                    ? `${item.quantity} 件 × ${draft.currency} ${item.unitPrice.toLocaleString('zh-TW')} (共 ${item.lineTotal === null ? '—' : item.lineTotal.toLocaleString('zh-TW')})`
+                    : `${item.quantity} 件 · 共 ${item.lineTotal === null ? '—' : `${draft.currency} ${item.lineTotal.toLocaleString('zh-TW')}`}`}
                 </Typography>
                 <IconButton
                   size="small"

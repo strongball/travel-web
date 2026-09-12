@@ -41,8 +41,8 @@ export function PageHeader({
           gap: { xs: 0.25, sm: 0.5 },
         }}
       >
-        <Box sx={{ width: { xs: 44, sm: 48 }, flexShrink: 0, display: 'flex', justifyContent: 'flex-start' }}>
-          {onBack ? (
+        {onBack ? (
+          <Box sx={{ width: { xs: 44, sm: 48 }, flexShrink: 0, display: 'flex', justifyContent: 'flex-start' }}>
             <IconButton
               aria-label={backLabel ?? t('common.back')}
               onClick={onBack}
@@ -50,8 +50,8 @@ export function PageHeader({
             >
               <ArrowBackRoundedIcon />
             </IconButton>
-          ) : null}
-        </Box>
+          </Box>
+        ) : null}
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography
             component="h1"

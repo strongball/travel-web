@@ -171,6 +171,7 @@ export function TravelInfoCard({
   return (
     <Paper
       variant="outlined"
+      onClick={onEdit}
       sx={{
         display: 'block',
         width: { xs: 'calc(100% - 46px)', sm: 'calc(100% - 60px)' },
@@ -179,8 +180,11 @@ export function TravelInfoCard({
         p: 1,
         borderStyle: 'dashed',
         bgcolor: 'action.hover',
+        cursor: 'pointer',
+        transition: 'border-color 150ms ease, background-color 150ms ease',
         '&:hover': {
           borderColor: 'primary.main',
+          bgcolor: 'action.selected',
         },
       }}
     >
@@ -235,6 +239,7 @@ export function TravelInfoCard({
               color="primary"
               size="small"
               aria-label="在 Google 地圖開啟導航"
+              onClick={(e) => e.stopPropagation()}
             >
               <NavigationRoundedIcon fontSize="small" />
             </IconButton>
@@ -243,7 +248,10 @@ export function TravelInfoCard({
         <IconButton
           size="small"
           aria-label="編輯交通方式"
-          onClick={onEdit}
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit()
+          }}
         >
           <EditRoundedIcon fontSize="small" />
         </IconButton>

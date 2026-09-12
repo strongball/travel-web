@@ -5,7 +5,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip } from '@mui/material'
+import { Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { PageHeader } from '../../../components/PageHeader'
 
@@ -109,6 +109,18 @@ export function TravelWorkspaceHeader({
                   />
                 </ListItemIcon>
                 <ListItemText>重新整理</ListItemText>
+              </MenuItem>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null)
+                  void onSignOut()
+                }}
+              >
+                <ListItemIcon>
+                  <LogoutRoundedIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>{t('list.signOut')}</ListItemText>
               </MenuItem>
             </Menu>
           </>

@@ -82,7 +82,7 @@ export function DaySelectorTabs({
                   : '0 2px 6px rgba(0, 0, 0, 0.02)',
                 textAlign: 'center',
                 transition: 'all 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                minWidth: { xs: 84, sm: 96 },
+                minWidth: { xs: 92, sm: 104 },
                 '&:hover': {
                   bgcolor: isSelected ? 'rgba(13, 118, 110, 0.12)' : 'rgba(13, 118, 110, 0.04)',
                   transform: 'translateY(-1px)',
@@ -123,11 +123,37 @@ export function DaySelectorTabs({
                 sx={{
                   fontWeight: isSelected ? 800 : 600,
                   color: isSelected ? '#075c57' : 'text.primary',
-                  fontSize: '0.88rem',
+                  fontSize: '0.86rem',
                   mt: 0.2,
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {day.date.slice(5, 10).replace('-', '/')}
+                <Typography
+                  component="span"
+                  sx={{
+                    ml: 0.5,
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
+                    color: isSelected ? '#0d766e' : 'text.secondary',
+                  }}
+                >
+                  ({['週日', '週一', '週二', '週三', '週四', '週五', '週六'][new Date(day.date.slice(0, 10) + 'T00:00:00').getDay()]})
+                </Typography>
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  display: 'block',
+                  mt: 0.25,
+                  fontSize: '0.7rem',
+                  fontWeight: 750,
+                  color: day.attractions.length > 0
+                    ? isSelected ? 'primary.dark' : 'text.secondary'
+                    : 'text.disabled',
+                }}
+              >
+                {day.attractions.length > 0 ? `${day.attractions.length} 個景點` : '尚無景點'}
               </Typography>
             </Paper>
           )

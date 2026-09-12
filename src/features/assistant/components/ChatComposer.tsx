@@ -12,9 +12,9 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded'
 import MicRoundedIcon from '@mui/icons-material/MicRounded'
-import StopRoundedIcon from '@mui/icons-material/StopRounded'
 import {
   Alert,
+  CircularProgress,
   IconButton,
   InputBase,
   Paper,
@@ -395,13 +395,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
             <IconButton
               type="submit"
-              aria-label={sending ? '正在產生回覆' : '送出訊息'}
+              aria-label={sending ? '正在產生回覆…' : '送出訊息'}
               disabled={!canSubmit}
               sx={{
                 width: 32,
                 height: 32,
-                bgcolor: !canSubmit ? 'rgba(0, 0, 0, 0.08)' : '#0d766e',
-                color: '#ffffff',
+                bgcolor: sending ? 'rgba(13, 118, 110, 0.12)' : !canSubmit ? 'rgba(0, 0, 0, 0.08)' : '#0d766e',
+                color: sending ? 'primary.main' : '#ffffff',
                 boxShadow: !canSubmit ? 'none' : '0 2px 8px rgba(13, 118, 110, 0.3)',
                 transition: 'all 160ms ease',
                 '&:hover': {
@@ -409,13 +409,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                   transform: 'scale(1.04)',
                 },
                 '&.Mui-disabled': {
-                  bgcolor: 'action.disabledBackground',
-                  color: 'action.disabled',
+                  bgcolor: sending ? 'rgba(13, 118, 110, 0.12)' : 'action.disabledBackground',
+                  color: sending ? 'primary.main' : 'action.disabled',
                 },
               }}
             >
               {sending ? (
-                <StopRoundedIcon sx={{ fontSize: 16 }} />
+                <CircularProgress size={16} color="inherit" />
               ) : (
                 <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
               )}

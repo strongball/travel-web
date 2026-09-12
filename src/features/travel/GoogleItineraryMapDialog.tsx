@@ -20,6 +20,8 @@ export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean
   const [mapElement, setMapElement] = useState<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const markerRefs = useRef<google.maps.Marker[]>([])
+  const polylineRef = useRef<google.maps.Polyline | null>(null)
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [mappedAttractions, setMappedAttractions] = useState<MappedAttraction[]>([])
@@ -98,21 +100,82 @@ export function GoogleItineraryMapDialog({ open, day, onClose }: { open: boolean
   }, [mapElement, open])
 
   useEffect(() => {
-    if (!open || !mapReady || !mapRef.current) return
-    void loadGoogleMaps().then(({ Marker }) => {
+    if (!open) {
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null)
+        polylineRef.current = null
+      }
+      if (infoWindowRef.current) {
+        infoWindowRef.current.close()
+        infoWindowRef.current = null
+      }
+      return
+    }
+    if (!mapReady || !mapRef.current) return
+
+    void loadGoogleMaps().then(({ Marker, Polyline, InfoWindow }) => {
       if (!mapRef.current) return
       markerRefs.current.forEach((marker) => marker.setMap(null))
       markerRefs.current = []
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null)
+        polylineRef.current = null
+      }
+      if (infoWindowRef.current) {
+        infoWindowRef.current.close()
+        infoWindowRef.current = null
+      }
+
       const bounds = new google.maps.LatLngBounds()
+      const pathCoordinates: google.maps.LatLngLiteral[] = []
+
       mappedAttractions.forEach(({ attraction, position }, index) => {
         bounds.extend(position)
-        markerRefs.current.push(new Marker({
+        pathCoordinates.push(position)
+
+        const marker = new Marker({
           map: mapRef.current,
           position,
           title: `${index + 1}. ${attraction.name || attraction.locationName || '景點'}`,
           label: `${index + 1}`,
-        }))
+        })
+
+        if (InfoWindow) {
+          const info = new InfoWindow({
+            content: `
+              <div style="padding: 4px 6px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b;">
+                <div style="font-weight: 800; font-size: 14px; margin-bottom: 2px;">${index + 1}. ${attraction.name}</div>
+                ${attraction.locationName ? `<div style="color: #64748b; font-size: 12px; margin-bottom: 3px;">${attraction.locationName}</div>` : ''}
+                <div style="color: #0d766e; font-size: 12px; font-weight: 700;">停留約 ${attraction.duration} 分鐘</div>
+              </div>
+            `,
+          })
+          marker.addListener('click', () => {
+            if (infoWindowRef.current) {
+              infoWindowRef.current.close()
+            }
+            infoWindowRef.current = info
+            info.open({
+              anchor: marker,
+              map: mapRef.current,
+            })
+          })
+        }
+
+        markerRefs.current.push(marker)
       })
+
+      if (pathCoordinates.length >= 2 && Polyline && mapRef.current) {
+        polylineRef.current = new Polyline({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: '#0d766e',
+          strokeOpacity: 0.85,
+          strokeWeight: 4,
+          map: mapRef.current,
+        })
+      }
+
       if (!bounds.isEmpty()) mapRef.current.fitBounds(bounds, 56)
     })
   }, [mappedAttractions, mapReady, open])

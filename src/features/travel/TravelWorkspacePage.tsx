@@ -108,8 +108,13 @@ export function TravelWorkspacePage({
   const [attractionDayId, setAttractionDayId] = useState<string | null>(null)
   const [todoTitle, setTodoTitle] = useState('')
   const [todoCategory, setTodoCategory] = useState('行前準備')
+  const [activeDayIndex, setActiveDayIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [todoSaving, setTodoSaving] = useState(false)
+
+  useEffect(() => {
+    setActiveDayIndex(0)
+  }, [selectedItineraryId])
 
   const updateWorkspaceRoute = useCallback((
     next: Partial<WorkspaceRoute>,
@@ -370,6 +375,9 @@ export function TravelWorkspacePage({
 
   const deleteAttraction = async (day: TripDay, attractionId: string) => {
     if (!selectedItinerary) return
+    const target = day.attractions.find((entry) => entry.id === attractionId)
+    const name = target?.name?.trim() || '此景點'
+    if (!window.confirm(`確定要刪除「${name}」嗎？`)) return
     const nextDays = days.map((item) => {
       if (item.id !== day.id) return item
       return recalculateDayTimes(item, item.attractions.filter((entry) => entry.id !== attractionId))
@@ -482,6 +490,8 @@ export function TravelWorkspacePage({
                   <ScheduleSection
                     days={days}
                     currency={selectedItinerary.currency}
+                    activeDayIndex={activeDayIndex}
+                    onActiveDayChange={setActiveDayIndex}
                     onAddAttraction={openNewAttraction}
                     onEditAttraction={openEditAttraction}
                     onEditTravelInfo={openTravelEditor}
@@ -547,7 +557,10 @@ export function TravelWorkspacePage({
       <MobileFloatingAction
         section={section}
         visible={workspaceView === 'detail' && section !== 'assistant' && Boolean(selectedItinerary)}
-        onAddAttraction={days.length > 0 ? () => openNewAttraction(days[0].id) : undefined}
+        onAddAttraction={(() => {
+          const activeDay = days[Math.min(activeDayIndex, Math.max(days.length - 1, 0))]
+          return activeDay ? () => openNewAttraction(activeDay.id) : undefined
+        })()}
         onFocusTodoInput={() => {
           const input = document.getElementById('todo-input-field')
           input?.scrollIntoView({ behavior: 'smooth', block: 'center' })
