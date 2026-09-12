@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import PaidRoundedIcon from '@mui/icons-material/PaidRounded'
-import { Alert, Box, Button, ButtonBase, Card, CardActionArea, Collapse, Divider, IconButton, Stack, TextField, Typography } from '@mui/material'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded'
+import { Alert, Box, Button, ButtonBase, Card, CardActionArea, Collapse, Divider, IconButton, InputAdornment, Stack, TextField, Typography } from '@mui/material'
 import { getExchangeRate, missingExchangeRateCurrencies } from '../../../lib/currencies'
 import type { Attraction, Expense } from '../../../types/database'
 import { convertExpenseAmount, formatAmount, formatDate } from '../travelWorkspaceUtils'
@@ -74,6 +77,19 @@ export function ExpenseSection({
     })
   }, [attractionById, attractions, visibleExpenses])
 
+  const allKeys = useMemo(
+    () => groupedExpenses.map((group) => group.id ?? '__general__'),
+    [groupedExpenses],
+  )
+  const allCollapsed = allKeys.length > 0 && allKeys.every((key) => collapsedGroups.has(key))
+  const toggleAllGroups = () => {
+    if (allCollapsed) {
+      setCollapsedGroups(new Set())
+    } else {
+      setCollapsedGroups(new Set(allKeys))
+    }
+  }
+
   const toggleGroup = (groupId: string | null) => {
     const key = groupId ?? '__general__'
     setCollapsedGroups((current) => {
@@ -142,7 +158,45 @@ export function ExpenseSection({
         placeholder="搜尋費用或收據品項…"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
+        slotProps={{
+          input: {
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchRoundedIcon color="action" fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: query ? (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  aria-label="清除搜尋"
+                  onClick={() => setQuery('')}
+                  edge="end"
+                >
+                  <ClearRoundedIcon fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+          },
+        }}
       />
+
+      {groupedExpenses.length > 0 ? (
+        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', px: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 750 }}>
+            共 {visibleExpenses.length} 筆費用 · {groupedExpenses.length} 個分組
+          </Typography>
+          <Button
+            size="small"
+            color="inherit"
+            startIcon={<UnfoldMoreRoundedIcon fontSize="small" />}
+            onClick={toggleAllGroups}
+            sx={{ fontWeight: 750, fontSize: '0.78rem', color: 'text.secondary' }}
+          >
+            {allCollapsed ? '全部展開' : '全部收合'}
+          </Button>
+        </Stack>
+      ) : null}
 
       {groupedExpenses.map((group) => {
         const groupKey = group.id ?? '__general__'

@@ -419,6 +419,15 @@ export function TravelWorkspacePage({
     }
   }
 
+  const handleClearCompletedTodos = async () => {
+    const completedList = selectedTodos.filter((t) => t.isCompleted)
+    if (completedList.length === 0) return
+    if (!window.confirm(`確定要清除已完成的 ${completedList.length} 個待辦事項嗎？`)) return
+    for (const item of completedList) {
+      await onDeleteTodo(item.id)
+    }
+  }
+
   const openItinerary = (id: string) => {
     onSelectItinerary(id)
     updateWorkspaceRoute({ section: 'schedule', workspaceView: 'detail' }, id)
@@ -516,6 +525,7 @@ export function TravelWorkspacePage({
                   onSaveCategories={(cats) => void handleSaveCategories(cats)}
                   onRenameCategory={(oldName, newName) => void handleRenameCategory(oldName, newName)}
                   onDeleteCategory={(cat) => void handleDeleteCategory(cat)}
+                  onClearCompleted={() => void handleClearCompletedTodos()}
                 />
               ) : null}
               {section === 'expenses' ? (

@@ -1,4 +1,5 @@
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
+import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded'
 import { Button, Card, Chip, Stack } from '@mui/material'
 import type { TodoItem } from '../../../../types/database'
 
@@ -9,6 +10,7 @@ interface TodoCategoryFilterBarProps {
   selectedFilterCategory: string
   onSelectCategory: (category: string) => void
   onOpenManager: () => void
+  onClearCompleted?: () => void
 }
 
 export function TodoCategoryFilterBar({
@@ -18,6 +20,7 @@ export function TodoCategoryFilterBar({
   selectedFilterCategory,
   onSelectCategory,
   onOpenManager,
+  onClearCompleted,
 }: TodoCategoryFilterBarProps) {
   const totalCompleted = todos.filter((t) => t.isCompleted).length
   const categoryOrder = Array.from(new Set([...categories, ...todos.map((t) => t.category)]))
@@ -69,7 +72,19 @@ export function TodoCategoryFilterBar({
           })}
         </Stack>
 
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ml: 'auto' }}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', ml: 'auto', flexWrap: 'wrap', gap: 1 }}>
+          {totalCompleted > 0 && onClearCompleted ? (
+            <Button
+              size="small"
+              color="error"
+              variant="text"
+              startIcon={<DeleteSweepRoundedIcon />}
+              onClick={onClearCompleted}
+              sx={{ fontWeight: 700 }}
+            >
+              清除已完成 ({totalCompleted})
+            </Button>
+          ) : null}
           <Button
             size="small"
             variant="outlined"

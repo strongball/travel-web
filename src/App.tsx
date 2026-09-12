@@ -1,4 +1,4 @@
-import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Snackbar } from '@mui/material'
 import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import {
   lazy,
@@ -80,6 +80,7 @@ function App() {
 
   const [authLoading, setAuthLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [deletedTodoBackup, setDeletedTodoBackup] = useState<TodoItem | null>(null)
   const dataMutationVersion = useRef(0)
 
   const {
@@ -264,9 +265,22 @@ function App() {
     }
   }
 
+  const handleRestoreTodo = async () => {
+    if (!deletedTodoBackup) return
+    const toRestore = deletedTodoBackup
+    setDeletedTodoBackup(null)
+    setNotice(null)
+    await handleSaveTodo(toRestore)
+  }
+
   const handleDeleteTodo = async (id: string) => {
     ref.set(appErrorProvider, null)
+    const target = todos.find((item) => item.id === id)
     try {
+      if (target) {
+        setDeletedTodoBackup(target)
+        setNotice(`已刪除「${target.title}」`)
+      }
       await ref.read(todosProvider.notifier).delete(id, enqueueOfflineMutation)
     } catch (deleteError) {
       ref.set(
@@ -400,7 +414,25 @@ function App() {
           ) : null}
         </Suspense>
       </ErrorBoundary>
-      <Notice value={notice} onClose={() => setNotice(null)} />
+      <Notice
+        value={notice}
+        action={
+          deletedTodoBackup ? (
+            <Button
+              color="secondary"
+              size="small"
+              onClick={() => void handleRestoreTodo()}
+              sx={{ fontWeight: 850 }}
+            >
+              復原
+            </Button>
+          ) : undefined
+        }
+        onClose={() => {
+          setNotice(null)
+          setDeletedTodoBackup(null)
+        }}
+      />
       <SyncNotice
         count={pendingCount}
         state={syncState}
@@ -422,16 +454,19 @@ function ScreenLoader({ label }: { label: string }) {
 
 function Notice({
   value,
+  action,
   onClose,
 }: {
   value: string | null
+  action?: React.ReactNode
   onClose: () => void
 }) {
   return (
     <Snackbar
       open={Boolean(value)}
-      autoHideDuration={4000}
+      autoHideDuration={4500}
       message={value}
+      action={action}
       onClose={onClose}
     />
   )

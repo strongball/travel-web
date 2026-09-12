@@ -5,9 +5,18 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import DarkModeRoundedIcon from '@mui/icons-material/DarkModeRounded'
+import LightModeRoundedIcon from '@mui/icons-material/LightModeRounded'
+import SettingsBrightnessRoundedIcon from '@mui/icons-material/SettingsBrightnessRounded'
 import { Divider, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Tooltip } from '@mui/material'
 import { useTranslation } from 'react-i18next'
+import { useRiverRef, useRiverWatch } from '@stball/react-river'
 import { PageHeader } from '../../../components/PageHeader'
+import {
+  setStoredThemePreference,
+  themePreferenceProvider,
+  type ThemePreference,
+} from '../../../providers'
 
 interface TravelWorkspaceHeaderProps {
   title: string
@@ -40,6 +49,36 @@ export function TravelWorkspaceHeader({
 }: TravelWorkspaceHeaderProps) {
   const { t } = useTranslation()
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const ref = useRiverRef()
+  const themePref = useRiverWatch(themePreferenceProvider)
+
+  const handleCycleTheme = () => {
+    const nextPref: ThemePreference =
+      themePref === 'system' ? 'light' : themePref === 'light' ? 'dark' : 'system'
+    ref.set(themePreferenceProvider, nextPref)
+    setStoredThemePreference(nextPref)
+  }
+
+  const themeLabel =
+    themePref === 'system' ? '外觀：跟隨系統' : themePref === 'light' ? '外觀：淺色模式' : '外觀：深色模式'
+
+  const themeIcon =
+    themePref === 'system' ? (
+      <SettingsBrightnessRoundedIcon />
+    ) : themePref === 'light' ? (
+      <LightModeRoundedIcon />
+    ) : (
+      <DarkModeRoundedIcon />
+    )
+
+  const themeIconSmall =
+    themePref === 'system' ? (
+      <SettingsBrightnessRoundedIcon fontSize="small" />
+    ) : themePref === 'light' ? (
+      <LightModeRoundedIcon fontSize="small" />
+    ) : (
+      <DarkModeRoundedIcon fontSize="small" />
+    )
 
   return (
     <PageHeader
@@ -58,6 +97,11 @@ export function TravelWorkspaceHeader({
                 </IconButton>
               </Tooltip>
             ) : null}
+            <Tooltip title={`${themeLabel}（點擊切換）`}>
+              <IconButton onClick={handleCycleTheme} aria-label={themeLabel}>
+                {themeIcon}
+              </IconButton>
+            </Tooltip>
             <Tooltip title="更多操作">
               <IconButton
                 aria-label="更多操作"
@@ -110,6 +154,14 @@ export function TravelWorkspaceHeader({
                 </ListItemIcon>
                 <ListItemText>重新整理</ListItemText>
               </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  handleCycleTheme()
+                }}
+              >
+                <ListItemIcon>{themeIconSmall}</ListItemIcon>
+                <ListItemText>{themeLabel}</ListItemText>
+              </MenuItem>
               <Divider />
               <MenuItem
                 onClick={() => {
@@ -127,6 +179,11 @@ export function TravelWorkspaceHeader({
         ) : (
           /* Home / Trips List View */
           <>
+            <Tooltip title={`${themeLabel}（點擊切換）`}>
+              <IconButton onClick={handleCycleTheme} aria-label={themeLabel}>
+                {themeIcon}
+              </IconButton>
+            </Tooltip>
             <Tooltip title="重新整理">
               <span>
                 <IconButton disabled={loading} onClick={() => void onRefresh()} aria-label="重新整理">
@@ -171,6 +228,15 @@ export function TravelWorkspaceHeader({
                 </ListItemIcon>
                 <ListItemText>Google Maps API 測試</ListItemText>
               </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  handleCycleTheme()
+                }}
+              >
+                <ListItemIcon>{themeIconSmall}</ListItemIcon>
+                <ListItemText>{themeLabel}</ListItemText>
+              </MenuItem>
+              <Divider />
               <MenuItem
                 onClick={() => {
                   setMenuAnchor(null)

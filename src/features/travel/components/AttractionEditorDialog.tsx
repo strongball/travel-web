@@ -1,5 +1,6 @@
 import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import {
+  Box,
   Button,
   Chip,
   CircularProgress,
@@ -82,10 +83,53 @@ export function AttractionEditorDialog({
               ) : null}
             </Paper>
             <TextField label="備註" multiline minRows={2} value={attraction.description} onChange={(event) => onChange({ ...attraction, description: event.target.value })} />
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <TextField label="停留分鐘" type="number" value={attraction.duration} onChange={(event) => onChange({ ...attraction, duration: Number(event.target.value) || 60 })} />
-              <TextField label={`預估花費 (${currency})`} type="number" value={attraction.cost} onChange={(event) => onChange({ ...attraction, cost: Number(event.target.value) || 0 })} />
-            </Stack>
+            <Box>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                  停留時間
+                </Typography>
+                {(() => {
+                  if (!attraction.startTime) return null
+                  const start = new Date(attraction.startTime)
+                  if (Number.isNaN(start.getTime())) return null
+                  const end = new Date(start.getTime() + (attraction.duration || 0) * 60 * 1000)
+                  const startStr = attraction.startTime.slice(11, 16)
+                  const endHours = String(end.getHours()).padStart(2, '0')
+                  const endMins = String(end.getMinutes()).padStart(2, '0')
+                  return (
+                    <Typography variant="caption" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                      預計時段：{startStr} — {endHours}:{endMins}
+                    </Typography>
+                  )
+                })()}
+              </Stack>
+              <TextField
+                label="停留分鐘"
+                type="number"
+                value={attraction.duration}
+                onChange={(event) => onChange({ ...attraction, duration: Number(event.target.value) || 0 })}
+              />
+              <Stack direction="row" spacing={0.75} sx={{ mt: 1, flexWrap: 'wrap', gap: 0.75 }}>
+                {[
+                  { label: '30 分鐘', value: 30 },
+                  { label: '60 分鐘', value: 60 },
+                  { label: '90 分鐘', value: 90 },
+                  { label: '2 小時', value: 120 },
+                  { label: '3 小時', value: 180 },
+                ].map((preset) => (
+                  <Chip
+                    key={preset.value}
+                    label={preset.label}
+                    size="small"
+                    clickable
+                    variant={attraction.duration === preset.value ? 'filled' : 'outlined'}
+                    color={attraction.duration === preset.value ? 'primary' : 'default'}
+                    onClick={() => onChange({ ...attraction, duration: preset.value })}
+                  />
+                ))}
+              </Stack>
+            </Box>
+            <TextField label={`預估花費 (${currency})`} type="number" value={attraction.cost} onChange={(event) => onChange({ ...attraction, cost: Number(event.target.value) || 0 })} />
           </Stack>
         ) : null}
       </DialogContent>

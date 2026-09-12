@@ -34,6 +34,7 @@ export interface TodoSectionProps {
   onSaveCategories: (categories: string[]) => void | Promise<void>
   onRenameCategory: (oldName: string, newName: string) => void | Promise<void>
   onDeleteCategory: (categoryName: string) => void | Promise<void>
+  onClearCompleted?: () => void
 }
 
 export function TodoSection({
@@ -51,6 +52,7 @@ export function TodoSection({
   onSaveCategories,
   onRenameCategory,
   onDeleteCategory,
+  onClearCompleted,
 }: TodoSectionProps) {
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('all')
   const [managerOpen, setManagerOpen] = useState(false)
@@ -163,6 +165,7 @@ export function TodoSection({
         selectedFilterCategory={selectedFilterCategory}
         onSelectCategory={setSelectedFilterCategory}
         onOpenManager={() => setManagerOpen(true)}
+        onClearCompleted={onClearCompleted}
       />
 
       {/* Add Todo Form */}
