@@ -7,10 +7,8 @@ import {
   type BaseMessage,
 } from '@langchain/core/messages'
 import { config } from '../../../config'
-import type { Itinerary } from '../../../types/database'
 import { supabase } from '../../../lib/supabase'
 import type {
-  AssistantAttachment,
   AssistantCodeExecution,
   AssistantGroundingMetadata,
   AssistantMessage,
@@ -308,92 +306,13 @@ export async function invokeAssistantModel(
   })
 }
 
-export function buildAssistantPrompt(
-  itinerary: Itinerary,
-  summary: string | null,
-  messages: AssistantMessage[],
-  currentQuestion: string,
-  todos: Array<{ title: string; category: string; isCompleted: boolean }> = [],
-  todoCategories: string[] = [],
-  attachments: AssistantAttachment[] = [],
-) {
-  const promptParts = [
-    '你是一位專業、條理分明的旅遊行程規劃助理。',
-    '請一律使用與使用者發問時相同的語言進行回覆（使用者用繁體中文就用繁體中文回覆，使用者用英文就用英文回覆，使用者用日文就用日文回覆等）。',
-    '請根據以下行程目前狀態與對話脈絡提供協助。',
-    '',
-    '## 核心原則',
-    '1. 一般問答、提供旅遊建議、景點介紹、交通方式、或是詢問/釐清細節時，直接回覆自然文字即可。當需要查詢即時資訊、最新情報或需要連網查證資料時，可呼叫 `search_web_information` 搜尋。',
-    '2. 只有在使用者明確要求、同意或接受「修改行程景點」時，才呼叫 `propose_itinerary_edit` 工具提出具體操作（ operations ）。',
-    '3. 當使用者要求「規劃、整理、建議或新增待辦清單」（如行前準備、打包清單、預約提醒等）時，呼叫 `propose_todo_list` 工具。',
-    '4. 當你呼叫提案工具（`propose_itinerary_edit` 或 `propose_todo_list`）提出提案時，該提案會由使用者介面長出專屬畫面讓使用者確認後才儲存與套用。',
-    '5. 當使用者的旅行需求較為廣泛、缺少關鍵偏好（例如：旅行步調風格、預算高低、餐飲偏好、交通工具、或特定路線/景點二選一）時，優先呼叫 `ask_clarifying_question` 工具向使用者提出具體選項確認。此工具會暫停對話並在介面彈出互動選項膠囊，待使用者點選後，你再根據使用者的確切選擇提供量身規劃，避免冗長模糊的猜測。',
-    '6. **功能解耦與單一職責原則**：各項功能與工具請保持職責單一與解耦：',
-    '   - 當呼叫 `ask_clarifying_question` 提問時，**切勿在同一回合內同時呼叫** `propose_itinerary_edit` 或 `propose_todo_list`。請專注於釐清偏好，待使用者選擇並恢復對話後，再進行具體規劃或提案。',
-    '   - 修改行程景點、整理待辦清單、以及詢問偏好各自獨立，不強行綁定或混雜在同一回合。',
-    '',
-    '## 行程規劃與交通處理原則',
-    '- **善用內建獨立交通欄位**：本系統在各景點之間已設計獨立的交通欄位（`transportMode`: transit / walking / driving / bicycling 與 `travelTime`: 分鐘數）。因此，**一般點對點的交通移動（如：搭乘地鐵、公車、走路、轉乘等）請直接填寫在景點的交通欄位中，切勿單獨新增為一個獨立的行程項目**。',
-    '- **何時才將交通建立為獨立景點**：**除非該交通體驗本身非常特別**、具有重大觀光遊覽價值（例如：特色景觀觀光列車、破冰船巡航、熱氣球體驗、高空纜車、遊船渡輪等本身就是一項遊程活動），才需要作為獨立景點加入行程。',
-    '',
-    '## 格式與資料來源連結規範',
-    '- **超連結與資料來源**：當你使用搜尋工具或提及任何官方網站、售票網址、交通資訊、景點網址或參考資料時，**務必使用 Markdown 超連結語法**（例如 `[景點或網站名稱](URL)`）將連結直接放入回覆中，方便使用者點擊。',
-    '- **具體連結文字**：連結文字請使用具有描述性的名稱（如 `[東京晴空塔官方預約網站](https://...)` 或 `[JR東日本路線圖](https://...)`），切勿使用「點這裡」、「網址」等空泛字詞。',
-    '- **文末來源彙整**：若有透過搜尋取得參考資料，可以在回覆結尾加上「🔗 參考資料 / 相關連結」清單供使用者進一步查閱。',
-    '',
-    '## 當前行程摘要',
-    `標題：${itinerary.title}`,
-    `貨幣：${itinerary.currency}`,
-    `出發日期：${itinerary.startDate || '未設定'}`,
-    `天數：${itinerary.days?.length ?? 0}`,
-    '',
-    '## 每日景點現況',
-    ...(itinerary.days ?? []).flatMap((day, dayIndex) => [
-      `### 第 ${dayIndex + 1} 天（ID: ${day.id}，日期：${day.date.slice(0, 10)}，開始時間：${day.startTime?.slice(11, 16) || '未設定'}）`,
-      ...(day.attractions.length === 0
-        ? ['- （尚無景點）']
-        : day.attractions.map((attraction, attractionIndex) =>
-          `${attractionIndex + 1}. ID: ${attraction.id} | 名稱: ${attraction.name} | 地點: ${attraction.locationName || attraction.name} | 時間: ${attraction.startTime?.slice(11, 16) || '未排'}~${attraction.endTime?.slice(11, 16) || '未排'} | 停留: ${attraction.duration}分 | 交通: ${attraction.transportMode} (${attraction.travelTime ?? 0}分)`,
-        )),
-    ]),
-  ]
+export {
+  buildAssistantSystemPrompt,
+  buildAssistantUserPrompt,
+} from '../prompts'
 
-  if (summary) {
-    promptParts.push('', '## 先前對話摘要', summary)
-  }
 
-  promptParts.push(
-    '',
-    '## 目前待辦清單',
-    `現有分類：${todoCategories.length > 0 ? todoCategories.join('、') : '行前準備、旅途中、其他'}`,
-    ...(todos.length > 0
-      ? todos.map((todo, index) => `${index + 1}. [${todo.isCompleted ? '已完成' : '未完成'}] ${todo.title}（分類：${todo.category}）`)
-      : ['- （目前尚無待辦事項）']),
-  )
 
-  if (messages.length > 0) {
-    promptParts.push(
-      '',
-      '## 近期對話紀錄',
-      ...messages.map((message) => `${message.role === 'user' ? '使用者' : '助理'}：${message.content}`),
-    )
-  }
-
-  if (attachments.length > 0) {
-    promptParts.push('', '## 使用者附加檔案')
-    for (const att of attachments) {
-      if (att.textContent) {
-        promptParts.push(`### 檔案【${att.name}】內容：\n${att.textContent}`)
-      } else {
-        promptParts.push(`- 附加檔案：${att.name}（類型：${att.mimeType}）`)
-      }
-    }
-  }
-
-  promptParts.push('', '## 使用者最新訊息', currentQuestion || '（使用者提供了附件並請求分析）')
-
-  return promptParts.join('\n')
-}
 
 export async function summarizeWithGemini(
   currentSummary: string,

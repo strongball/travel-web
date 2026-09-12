@@ -6,41 +6,26 @@ import {
   assistantBuiltinTools,
   langchainAssistantTools,
   proposeTodoListTool,
+  findGeminiSchemaIssues,
 } from './index'
-
-const unsupportedSchemaKeys = new Set([
-  '$schema',
-  'additionalProperties',
-  'anyOf',
-  'allOf',
-  'oneOf',
-  'pattern',
-  'minLength',
-  'maxLength',
-  'minimum',
-  'maximum',
-])
-
-function collectKeys(value: unknown): string[] {
-  if (Array.isArray(value)) return value.flatMap(collectKeys)
-  if (!value || typeof value !== 'object') return []
-  return Object.entries(value).flatMap(([key, child]) => [key, ...collectKeys(child)])
-}
 
 describe('active Gemini tool declarations', () => {
   it('uses LangChain tools with provider-safe schemas', () => {
-    expect(assistantCallableTools).toHaveLength(4)
+    expect(assistantCallableTools).toHaveLength(7)
     expect(assistantCallableTools.map((tool) => tool.name)).toEqual([
       'propose_itinerary_edit',
       'propose_todo_list',
       'ask_clarifying_question',
+      'view_itinerary',
+      'view_todo_categories',
+      'view_todo_list',
       'search_web_information',
     ])
     expect(assistantBuiltinTools).toEqual([
       { urlContext: {} },
       { codeExecution: {} },
     ])
-    expect(langchainAssistantTools).toHaveLength(6)
+    expect(langchainAssistantTools).toHaveLength(9)
   })
 
   it('passes the shared schemas through ChatGoogleGenerativeAI without a network call', () => {
@@ -61,13 +46,19 @@ describe('active Gemini tool declarations', () => {
       'propose_itinerary_edit',
       'propose_todo_list',
       'ask_clarifying_question',
+      'view_itinerary',
+      'view_todo_categories',
+      'view_todo_list',
       'search_web_information',
     ])
+    const issues: Record<string, string[]> = {}
     for (const declaration of declarations) {
-      expect(collectKeys(declaration.parameters)).not.toEqual(
-        expect.arrayContaining([...unsupportedSchemaKeys]),
-      )
+      const toolIssues = findGeminiSchemaIssues(declaration.parameters)
+      if (toolIssues.length > 0) {
+        issues[declaration.name] = toolIssues.map((i) => `${i.path} (${i.keyword})`)
+      }
     }
+    expect(issues).toEqual({})
     expect(request.toolConfig?.functionCallingConfig?.mode).toBe('AUTO')
   })
 

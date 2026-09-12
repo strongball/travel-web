@@ -1,6 +1,10 @@
-import { AIMessage, HumanMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages'
 import { getWriter, type LangGraphRunnableConfig } from '@langchain/langgraph/web'
-import { buildAssistantPrompt, invokeAssistantModel } from '../../services'
+import {
+  buildAssistantSystemPrompt,
+  buildAssistantUserPrompt,
+  invokeAssistantModel,
+} from '../../services'
 import type { AssistantProgressPhase } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
 
@@ -14,13 +18,9 @@ export function createRespondNode(options: RespondNodeOptions) {
     if (!request) throw new Error('Assistant graph request is missing')
 
     options.emitProgress(request.threadId, 'generating_response')
-    const promptText = buildAssistantPrompt(
-      request.itinerary,
-      state.summary || null,
-      state.messages,
+    const systemPrompt = buildAssistantSystemPrompt(request.itinerary, state.summary || null)
+    const promptText = buildAssistantUserPrompt(
       request.text,
-      request.todos ?? [],
-      request.todoCategories ?? [],
       request.attachments ?? [],
     )
 
@@ -41,8 +41,19 @@ export function createRespondNode(options: RespondNodeOptions) {
           })
         : new HumanMessage(promptText)
 
+    const historyMessages: BaseMessage[] = state.messages
+      .filter((m) => m.turnId !== request.turnId)
+      .map((m) =>
+        m.role === 'user'
+          ? new HumanMessage(m.content)
+          : new AIMessage(m.content),
+      )
+
+    const systemMessage = new SystemMessage(systemPrompt)
     const modelMessages =
-      state.modelMessages.length > 0 ? state.modelMessages : [initialHumanMessage]
+      state.modelMessages.length > 0
+        ? state.modelMessages
+        : [systemMessage, ...historyMessages, initialHumanMessage]
     const writer = getWriter(config)
     const response = await invokeAssistantModel(
       modelMessages,

@@ -111,9 +111,45 @@ export const itineraryOperationSchema = z.union([
   reorderAttractionsOperationSchema,
 ])
 
+export const assistantAttractionItemSchema = z.object({
+  id: z.string().optional().describe('景點 ID'),
+  name: z.string().optional().describe('景點名稱'),
+  description: z.string().optional().describe('景點說明'),
+  cost: z.number().optional().describe('花費預算'),
+  duration: z.number().optional().describe('停留時間（分鐘）'),
+  transportMode: z.enum(['driving', 'walking', 'transit', 'bicycling']).optional().describe('交通方式'),
+  travelTime: z.number().optional().describe('前往交通時間（分鐘）'),
+  locationName: z.string().optional().describe('地點名稱或地址'),
+})
+
+export const itineraryOperationItemSchema = z.object({
+  type: z.enum([
+    'set_day_start_time',
+    'add_attraction',
+    'update_attraction',
+    'remove_attraction',
+    'move_attraction',
+    'reorder_attractions',
+  ]).describe('操作類型'),
+  dayId: z.string().optional().describe('目標天數 ID（例如 day-1）'),
+  targetDayId: z.string().optional().describe('移動目的地天數 ID'),
+  attractionId: z.string().optional().describe('景點 ID'),
+  attractionIds: z.array(z.string()).optional().describe('重新排序後的景點 ID 清單'),
+  startTime: z.string().optional().describe('當天開始時間（HH:mm）'),
+  name: z.string().optional().describe('景點名稱'),
+  description: z.string().optional().describe('景點簡短說明'),
+  duration: z.number().optional().describe('停留時間（分鐘）'),
+  transportMode: z.enum(['driving', 'walking', 'transit', 'bicycling']).optional().describe('交通方式'),
+  travelTime: z.number().optional().describe('前往交通時間（分鐘）'),
+  locationName: z.string().optional().describe('地點名稱或地址'),
+  index: z.number().optional().describe('排序位置（0-indexed）'),
+  attraction: assistantAttractionItemSchema.optional().describe('新增景點之完整資訊（選填）'),
+  changes: assistantAttractionItemSchema.optional().describe('修改景點之變更內容（選填）'),
+})
+
 export const itineraryToolInputSchema = z.object({
-  reply: z.string().nullable().optional(),
-  title: z.string().nullable().optional(),
-  explanation: z.string().nullable().optional(),
-  operations: z.array(itineraryOperationSchema).min(1),
+  reply: z.string().optional().describe('對使用者的簡短說明或回覆'),
+  title: z.string().optional().describe('提案標題'),
+  explanation: z.string().optional().describe('提案詳細說明'),
+  operations: z.array(itineraryOperationItemSchema).min(1).describe('要執行的行程操作清單'),
 })

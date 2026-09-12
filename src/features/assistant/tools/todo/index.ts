@@ -3,6 +3,13 @@ export {
   proposeTodoListTool,
 } from './todoTool'
 export {
+  VIEW_TODO_CATEGORIES_TOOL_NAME,
+  VIEW_TODO_LIST_TOOL_NAME,
+  viewTodoCategoriesTool,
+  viewTodoListTool,
+  viewTodoListInputSchema,
+} from './viewTodoTools'
+export {
   todoToolInputSchema,
   todoOperationSchema,
   addTodoOperationSchema,

@@ -3,6 +3,11 @@ export {
   proposeItineraryEditTool,
 } from './itineraryTool'
 export {
+  VIEW_ITINERARY_TOOL_NAME,
+  viewItineraryTool,
+  viewItineraryInputSchema,
+} from './viewItineraryTool'
+export {
   itineraryToolInputSchema,
   itineraryOperationSchema,
   timeSchema,

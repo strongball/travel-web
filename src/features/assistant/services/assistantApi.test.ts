@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../../types/database'
-import { buildAssistantPrompt } from './assistantApi'
-
-describe('buildAssistantPrompt', () => {
+import {
+  buildAssistantSystemPrompt,
+  buildAssistantUserPrompt,
+} from './assistantApi'
+describe('assistant prompt builders', () => {
   const itinerary: Itinerary = {
     id: 'trip-1',
     title: '東京賞楓 5 日遊',
@@ -15,7 +17,7 @@ describe('buildAssistantPrompt', () => {
         itineraryId: 'trip-1',
         date: '2026-11-01',
         startTime: '2026-11-01T09:00:00',
-        revision: 1,
+        revision: 2,
         attractions: [
           {
             id: 'a-1',
@@ -38,30 +40,43 @@ describe('buildAssistantPrompt', () => {
     ],
   }
 
-  it('includes itinerary structure, recent messages, and current user question', () => {
-    const prompt = buildAssistantPrompt(
-      itinerary,
-      '使用者偏好搭地鐵，不想走太遠。',
-      [
-        {
-          id: 'm-1',
-          turnId: 'turn-1',
-          role: 'user',
-          content: '第一天早上想去淺草寺。',
-          createdAt: '2026-08-12T00:00:00Z',
-        },
-      ],
-      '下午想去晴空塔，怎麼排比較順？',
-    )
+  describe('buildAssistantSystemPrompt', () => {
+    it('contains core principles, SOP rules for itinerary and todo tools, and trip metadata', () => {
+      const systemPrompt = buildAssistantSystemPrompt(itinerary, '使用者偏好搭地鐵，不想走太遠。')
+      expect(systemPrompt).toContain('東京賞楓 5 日遊')
+      expect(systemPrompt).toContain('共 1 天')
+      expect(systemPrompt).toContain('view_itinerary')
+      expect(systemPrompt).toContain('view_todo_categories')
+      expect(systemPrompt).toContain('view_todo_list')
+      expect(systemPrompt).toContain('行程最新性原則')
+      expect(systemPrompt).toContain('待辦最新性原則')
+      expect(systemPrompt).toContain('歷史快照不可信原則')
+      expect(systemPrompt).toContain('先前對話摘要')
+      expect(systemPrompt).toContain('使用者偏好搭地鐵，不想走太遠。')
+    })
+  })
 
-    expect(prompt).toContain('東京賞楓 5 日遊')
-    expect(prompt).toContain('第 1 天（ID: day-1，日期：2026-11-01')
-    expect(prompt).toContain('淺草寺')
-    expect(prompt).toContain('使用者偏好搭地鐵，不想走太遠。')
-    expect(prompt).toContain('使用者：第一天早上想去淺草寺。')
-    expect(prompt).toContain('下午想去晴空塔，怎麼排比較順？')
-    expect(prompt).toContain('propose_itinerary_edit')
-    expect(prompt).toContain('善用內建獨立交通欄位')
-    expect(prompt).toContain('切勿單獨新增為一個獨立的行程項目')
+  describe('buildAssistantUserPrompt', () => {
+    it('returns pure user input without dumping itinerary or todo state', () => {
+      const userPrompt = buildAssistantUserPrompt('幫我安排第一天晚餐')
+      expect(userPrompt).toBe('幫我安排第一天晚餐')
+      expect(userPrompt).not.toContain('東京賞楓')
+      expect(userPrompt).not.toContain('淺草寺')
+      expect(userPrompt).not.toContain('行前準備')
+    })
+
+    it('includes text attachments when present', () => {
+      const userPrompt = buildAssistantUserPrompt('請看這份文件', [
+        {
+          id: 'att-1',
+          name: 'notes.txt',
+          mimeType: 'text/plain',
+          size: 100,
+          textContent: '飯店訂單編號: 12345',
+        },
+      ])
+      expect(userPrompt).toContain('### 檔案【notes.txt】內容：\n飯店訂單編號: 12345')
+      expect(userPrompt).toContain('請看這份文件')
+    })
   })
 })

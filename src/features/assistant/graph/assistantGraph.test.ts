@@ -1,5 +1,5 @@
 import { MemorySaver } from '@langchain/langgraph/web'
-import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 
@@ -228,8 +228,10 @@ describe('createAssistantGraph', () => {
       return '先前內容摘要'
     })
     assistantGraphMocks.invokeAssistantModel.mockImplementation(async (messages: BaseMessage[]) => {
-      events.push(`respond:${String(messages[0]?.content).includes('先前內容摘要')}`)
-      expect(String(messages[0]?.content)).toContain('這次的新問題')
+      const systemMessage = messages.find((m) => SystemMessage.isInstance(m)) ?? messages[0]
+      const userMessage = messages.findLast((m) => HumanMessage.isInstance(m)) ?? messages.at(-1)
+      events.push(`respond:${String(systemMessage?.content).includes('先前內容摘要')}`)
+      expect(String(userMessage?.content)).toContain('這次的新問題')
       return new AIMessage({ content: '完成' })
     })
     const graph = createAssistantGraph(new MemorySaver(), {

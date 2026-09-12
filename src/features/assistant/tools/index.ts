@@ -1,6 +1,8 @@
 import {
   PROPOSAL_TOOL_NAME,
   proposeItineraryEditTool,
+  VIEW_ITINERARY_TOOL_NAME,
+  viewItineraryTool,
   applyItineraryOperations,
   changedDays,
   enrichAppliedProposalPlaces,
@@ -10,6 +12,10 @@ import {
 import {
   TODO_PROPOSAL_TOOL_NAME,
   proposeTodoListTool,
+  VIEW_TODO_CATEGORIES_TOOL_NAME,
+  VIEW_TODO_LIST_TOOL_NAME,
+  viewTodoCategoriesTool,
+  viewTodoListTool,
   extractProposedTodos,
   extractProposedCategories,
   applyTodoProposal,
@@ -30,6 +36,8 @@ import {
 export {
   PROPOSAL_TOOL_NAME,
   proposeItineraryEditTool,
+  VIEW_ITINERARY_TOOL_NAME,
+  viewItineraryTool,
   applyItineraryOperations,
   changedDays,
   enrichAppliedProposalPlaces,
@@ -37,6 +45,10 @@ export {
   ItineraryProposalView,
   TODO_PROPOSAL_TOOL_NAME,
   proposeTodoListTool,
+  VIEW_TODO_CATEGORIES_TOOL_NAME,
+  VIEW_TODO_LIST_TOOL_NAME,
+  viewTodoCategoriesTool,
+  viewTodoListTool,
   extractProposedTodos,
   extractProposedCategories,
   applyTodoProposal,
@@ -49,6 +61,13 @@ export {
   askClarifyingQuestionSchema,
   questionOptionSchema,
 }
+export {
+  GEMINI_UNSUPPORTED_SCHEMA_KEYS,
+  findGeminiSchemaIssues,
+  validateGeminiToolSchema,
+  validateAllGeminiTools,
+  assertGeminiTools,
+} from './schemaValidator'
 
 /** 提案 / UI 互動中斷類工具：執行後中斷模型回合，交由前端 UI 確認或選擇 */
 export const assistantProposalTools = [
@@ -59,6 +78,9 @@ export const assistantProposalTools = [
 
 /** 一般查詢 / 背景類工具：執行後將結果回傳給模型繼續思考 */
 export const assistantGeneralTools = [
+  viewItineraryTool,
+  viewTodoCategoriesTool,
+  viewTodoListTool,
   tavilySearchTool,
 ] as const
 
