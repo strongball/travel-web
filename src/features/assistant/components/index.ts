@@ -1,6 +1,5 @@
 export * from './MessageBubble'
 export * from './MessageList'
-export * from './ConversationThread'
 export * from './ChatComposer'
 export * from './ConversationList'
 export * from './AssistantAppBarActions'

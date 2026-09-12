@@ -11,21 +11,40 @@ import {
   Paper,
   Stack,
   Typography,
+  styled,
 } from '@mui/material'
 import { useRiverWatch } from '@stball/react-river'
-import { assistantConversationsProvider, type AssistantTurnOverlay } from '../providers'
+import { assistantConversationsProvider } from '../providers'
 import type {
-  AssistantMessage,
-  AssistantPendingToolCall,
   AssistantProposal,
   AssistantQuestionDecision,
 } from '../types'
 import { isPendingProposalCall, isPendingQuestionCall } from '../types'
+import { useActiveTurnScroll } from '../hooks'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { ClarifyingQuestionCard } from './ClarifyingQuestionCard'
 import { AssistantProgress, ConversationLoading } from './AssistantProgress'
-import { ConversationThread } from './ConversationThread'
+
+const StyledMessagesContainer = styled(Stack)(({ theme }) => ({
+  flex: 1,
+  minHeight: 0,
+  padding: theme.spacing(2),
+  overflowY: 'auto',
+  position: 'relative',
+  backgroundColor: '#f6f9f8',
+  backgroundImage: 'radial-gradient(rgba(13, 118, 110, 0.04) 1px, transparent 1px)',
+  backgroundSize: '16px 16px',
+
+  '& > *': {
+    minWidth: 0,
+  },
+}))
+
+const StyledActiveTurnSpacer = styled(Box)({
+  flexShrink: 0,
+  pointerEvents: 'none',
+})
 
 const INITIAL_VISIBLE_COUNT = 40
 
@@ -167,6 +186,17 @@ export function MessageList({
     ? messages
     : messages.slice(messages.length - INITIAL_VISIBLE_COUNT)
 
+  const {
+    activeTurnSpacerHeight,
+    activeTurnSpacerRef,
+    lastUserMessageIndex,
+    lastUserMessageRef,
+    messagesAreaRef,
+    messagesEndRef,
+  } = useActiveTurnScroll(visibleMessages, sending || isStreaming)
+
+  const hasMessages = visibleMessages.length > 0
+
   if (!threadId) {
     return (
       <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 3 }}>
@@ -191,45 +221,49 @@ export function MessageList({
   }
 
   return (
-    <ConversationThread<
-      AssistantMessage,
-      AssistantTurnOverlay,
-      AssistantPendingToolCall,
-      { proposal: AssistantProposal; approved: boolean }
-    >
-      key={threadId}
-      messages={visibleMessages}
-      renderHead={
-        hasMore && !expanded ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />}
-              onClick={() => setExpanded(true)}
-              sx={{
-                borderRadius: 999,
-                fontSize: '0.8rem',
-                fontWeight: 650,
-                color: '#0d766e',
-                borderColor: 'rgba(13, 118, 110, 0.25)',
-                bgcolor: 'rgba(13, 118, 110, 0.04)',
-                '&:hover': {
-                  borderColor: '#0d766e',
-                  bgcolor: 'rgba(13, 118, 110, 0.08)',
-                },
-              }}
-            >
-              載入更早的 {messages.length - INITIAL_VISIBLE_COUNT} 則對話
-            </Button>
-          </Box>
-        ) : null
-      }
-      isHistoryLoading={loading}
-      historyLoading={<ConversationLoading />}
-      emptyState={<WelcomeCard onQuickPrompt={onQuickPrompt} />}
-      renderMessage={({ message, messageRef }) => (
-        <Stack ref={messageRef} data-message-id={message.id} spacing={1.25}>
+    <StyledMessagesContainer ref={messagesAreaRef} spacing={2} key={threadId}>
+      {loading && !hasMessages && (
+        <Box sx={{ textAlign: 'center', m: 'auto', p: 3 }}>
+          <ConversationLoading />
+        </Box>
+      )}
+
+      {!loading && !hasMessages && (
+        <WelcomeCard onQuickPrompt={onQuickPrompt} />
+      )}
+
+      {hasMessages && hasMore && !expanded && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 1 }}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<UnfoldMoreRoundedIcon sx={{ fontSize: 18 }} />}
+            onClick={() => setExpanded(true)}
+            sx={{
+              borderRadius: 999,
+              fontSize: '0.8rem',
+              fontWeight: 650,
+              color: '#0d766e',
+              borderColor: 'rgba(13, 118, 110, 0.25)',
+              bgcolor: 'rgba(13, 118, 110, 0.04)',
+              '&:hover': {
+                borderColor: '#0d766e',
+                bgcolor: 'rgba(13, 118, 110, 0.08)',
+              },
+            }}
+          >
+            載入更早的 {messages.length - INITIAL_VISIBLE_COUNT} 則對話
+          </Button>
+        </Box>
+      )}
+
+      {visibleMessages.map((message, index) => (
+        <Stack
+          key={message.id}
+          ref={index === lastUserMessageIndex ? lastUserMessageRef : undefined}
+          data-message-id={message.id}
+          spacing={1.25}
+        >
           <MessageBubble message={message} />
           {message.role === 'assistant' && message.clarifyingQuestion ? (
             <ClarifyingQuestionCard
@@ -252,60 +286,52 @@ export function MessageList({
             />
           ) : null}
         </Stack>
-      )}
-      isStreaming={isStreaming}
-      streamingState={turn}
-      renderStreaming={({ state }) => (
+      ))}
+
+      {isStreaming && (
         <Stack spacing={1.25}>
-          {state?.streaming ? (
-            <MessageBubble message={state.streaming} streaming />
+          {turn?.streaming ? (
+            <MessageBubble message={turn.streaming} streaming />
           ) : (
-            <AssistantProgress label={state?.progressLabel || '正在思考並產生回覆…'} />
+            <AssistantProgress label={turn?.progressLabel || '正在思考並產生回覆…'} />
           )}
         </Stack>
       )}
-      interrupt={pendingToolCall}
-      renderInterrupt={({ interrupt, isBusy, resume }) => {
-        if (isPendingQuestionCall(interrupt)) {
-          return (
-            <Stack data-tool-call-id={interrupt.id} spacing={1.25}>
-              <ClarifyingQuestionCard
-                questionData={interrupt.questionData}
-                busy={Boolean(isBusy)}
-                online={online}
-                onAnswer={(answer) => {
-                  resume({ type: 'question', answer } as any)
-                }}
-                isHistory={false}
-              />
-            </Stack>
-          )
-        }
 
-        const proposal = isPendingProposalCall(interrupt)
-          ? interrupt.proposal
-          : (interrupt as unknown as { proposal: AssistantProposal }).proposal
-        return (
-          <Stack data-tool-call-id={interrupt.id} spacing={1.25}>
-            <ProposalCard
-              proposal={proposal}
-              busy={Boolean(isBusy)}
-              online={online}
-              onDecision={(prop, approved) => resume({ type: 'proposal', proposal: prop, approved } as any)}
-              isHistory={false}
-            />
-          </Stack>
-        )
-      }}
-      isBusy={sending}
-      onResume={(data: any) => {
-        if (data?.type === 'question' && data.answer) {
-          onQuestionAnswer?.(data.answer)
-        } else if (data?.proposal) {
-          onDecision(data.proposal, data.approved)
-        }
-      }}
-    />
+      {pendingToolCall && isPendingQuestionCall(pendingToolCall) && (
+        <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+          <ClarifyingQuestionCard
+            questionData={pendingToolCall.questionData}
+            busy={sending}
+            online={online}
+            onAnswer={onQuestionAnswer}
+            isHistory={false}
+          />
+        </Stack>
+      )}
+
+      {pendingToolCall && isPendingProposalCall(pendingToolCall) && (
+        <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+          <ProposalCard
+            proposal={pendingToolCall.proposal}
+            busy={sending}
+            online={online}
+            onDecision={onDecision}
+            isHistory={false}
+          />
+        </Stack>
+      )}
+
+      <StyledActiveTurnSpacer
+        ref={activeTurnSpacerRef}
+        sx={{
+          height: activeTurnSpacerHeight > 0 ? activeTurnSpacerHeight : (sending ? '100%' : 0),
+          minHeight: sending ? '100%' : 0,
+        }}
+      />
+
+      <div ref={messagesEndRef} />
+    </StyledMessagesContainer>
   )
 }
 

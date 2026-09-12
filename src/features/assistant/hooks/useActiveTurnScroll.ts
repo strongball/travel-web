@@ -107,7 +107,7 @@ export function useActiveTurnScroll<T extends { role: string; id: string }>(
 
     prevMessagesLengthRef.current = messages.length
     prevLastUserIdRef.current = lastUserMessageId
-  }, [messages, lastUserMessageId, isBusy])
+  }, [messages, lastUserMessage, lastUserMessageId, isBusy])
 
   return {
     messagesAreaRef,

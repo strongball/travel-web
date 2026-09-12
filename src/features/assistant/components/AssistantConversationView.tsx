@@ -28,20 +28,21 @@ import { AssistantAppBarActions } from './AssistantAppBarActions'
  * 頂端以 PageHeader 作為一體化導航與操作列，支援行動端上一頁與清單切換。
  */
 export function AssistantConversationView({
-  itineraryId,
+  itineraryId: propItineraryId,
   itinerary,
   todos,
   todoCategories,
   onBack,
   onRegisterBrowserBackHandler,
 }: {
-  itineraryId: string
+  itineraryId?: string
   itinerary: Itinerary
   todos: TodoItem[]
   todoCategories: string[]
   onBack?: () => void
   onRegisterBrowserBackHandler?: ((handler: (() => boolean) | null) => void) | null
 }) {
+  const itineraryId = propItineraryId ?? itinerary.id
   const ref = useRiverRef()
   const online = useOnlineStatus()
   const threadStorageKey = `assistant-active-thread:${itineraryId}`
@@ -299,3 +300,5 @@ export function AssistantConversationView({
     </Box>
   )
 }
+
+export default AssistantConversationView

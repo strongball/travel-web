@@ -49,7 +49,7 @@ import type {
 export type { WorkspaceRoute, WorkspaceSection, WorkspaceView } from './travelWorkspaceUtils'
 
 const MapPickerDialog = lazy(() => import('./MapPickerDialog'))
-const AssistantSection = lazy(() => import('../assistant/AssistantSection'))
+const AssistantConversationView = lazy(() => import('../assistant/components/AssistantConversationView'))
 
 export interface TravelWorkspacePageProps {
   itineraries: Itinerary[]
@@ -449,7 +449,7 @@ export function TravelWorkspacePage({
 
       {section === 'assistant' && selectedItinerary ? (
         <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', minHeight: '100dvh' }}>載入旅程助理…</Box>}>
-          <AssistantSection
+          <AssistantConversationView
             itinerary={selectedItinerary}
             todos={selectedTodos}
             todoCategories={categories}
