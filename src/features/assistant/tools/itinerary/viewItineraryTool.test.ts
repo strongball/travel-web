@@ -55,31 +55,39 @@ describe('viewItineraryTool', () => {
     },
   } as unknown as AssistantProposalToolRuntime
 
-  it('returns full itinerary overview when dayNumber is not provided', async () => {
+  it('returns full itinerary overview and all day details when dayNumbers is not provided', async () => {
     const result = await (viewItineraryTool as any).invoke({}, mockRuntime)
     expect(result).toContain('【東京自由行 全體行程總覽】')
     expect(result).toContain('第 1 天 (2026-05-01, ID: day-1, rev 2, 共 1 個景點): 淺草寺')
     expect(result).toContain('第 2 天 (2026-05-02, ID: day-2, rev 1, 共 0 個景點): （尚無景點）')
+    expect(result).toContain('【全體每日詳細排程】')
+    expect(result).toContain('【第 1 天行程現況】')
+    expect(result).toContain('淺草寺')
+    expect(result).toContain('【第 2 天行程現況】')
+    expect(result).toContain('目前尚無景點安排')
   })
 
-  it('returns specific day details with attractions and revisions when dayNumber is provided', async () => {
-    const result = await (viewItineraryTool as any).invoke({ dayNumber: 1 }, mockRuntime)
+  it('returns specific day details when dayNumbers is provided', async () => {
+    const result = await (viewItineraryTool as any).invoke({ dayNumbers: [1] }, mockRuntime)
     expect(result).toContain('【第 1 天行程現況】')
     expect(result).toContain('Day ID: day-1')
     expect(result).toContain('rev 2')
     expect(result).toContain('淺草寺')
     expect(result).toContain('雷門')
     expect(result).toContain('transit (30分)')
+    expect(result).not.toContain('【第 2 天行程現況】')
   })
 
-  it('handles days with no attractions cleanly', async () => {
-    const result = await (viewItineraryTool as any).invoke({ dayNumber: 2 }, mockRuntime)
+  it('returns multiple days details when multiple dayNumbers are provided', async () => {
+    const result = await (viewItineraryTool as any).invoke({ dayNumbers: [1, 2] }, mockRuntime)
+    expect(result).toContain('【第 1 天行程現況】')
+    expect(result).toContain('淺草寺')
     expect(result).toContain('【第 2 天行程現況】')
     expect(result).toContain('目前尚無景點安排')
   })
 
-  it('returns error message when dayNumber is out of range', async () => {
-    const result = await (viewItineraryTool as any).invoke({ dayNumber: 99 }, mockRuntime)
+  it('returns error message when dayNumbers contains an out of range day', async () => {
+    const result = await (viewItineraryTool as any).invoke({ dayNumbers: [99] }, mockRuntime)
     expect(result).toContain('超出範圍')
   })
 

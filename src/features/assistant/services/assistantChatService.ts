@@ -32,16 +32,19 @@ export interface AssistantChatService {
     request: AssistantTurnRequest,
     rehydratedMessages: AssistantMessage[],
     onEvent: (event: ChatStreamEvent) => void,
+    signal?: AbortSignal,
   ) => Promise<void>
   resumeProposal: (
     threadId: string,
     decision: AssistantUserDecision,
     onEvent: (event: ChatStreamEvent) => void,
+    signal?: AbortSignal,
   ) => Promise<void>
   resumeQuestion: (
     threadId: string,
     answer: AssistantQuestionDecision,
     onEvent: (event: ChatStreamEvent) => void,
+    signal?: AbortSignal,
   ) => Promise<void>
   summarize: (threadId: string) => Promise<void>
 }
@@ -51,12 +54,14 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
       threadId: string,
       payload: AssistantUserDecision | AssistantQuestionDecision,
       onEvent: (event: ChatStreamEvent) => void,
+      signal?: AbortSignal,
     ) => {
       const state = await runtime.runner.resumeTurn(
         threadId,
         payload,
         (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
         (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
+        signal,
       )
 
       if (state.pendingToolCall) {
@@ -94,7 +99,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         }
       },
 
-      sendStream: async (request, rehydratedMessages, onEvent) => {
+      sendStream: async (request, rehydratedMessages, onEvent, signal) => {
         const userMessage: AssistantMessage = {
           id: crypto.randomUUID(),
           turnId: request.turnId,
@@ -104,6 +109,8 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           attachments: request.attachments ?? null,
         }
         await saveAssistantMessage(request.threadId, userMessage)
+
+        if (signal?.aborted) return
 
         const input = {
           ...request,
@@ -116,16 +123,21 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
             input,
             (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
+            signal,
           )
         } catch (error) {
+          if (signal?.aborted) return
           if (!isRecoverableGraphStateError(error)) throw error
           await runtime.checkpointer.deleteThread(request.threadId)
           graphState = await runtime.runner.sendTurn(
             input,
             (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
+            signal,
           )
         }
+
+        if (signal?.aborted) return
 
         onEvent({ type: 'progress', label: null })
 
@@ -137,8 +149,8 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         }
       },
 
-      resumeProposal: (threadId, decision, onEvent) => resumeTurn(threadId, decision, onEvent),
-      resumeQuestion: (threadId, answer, onEvent) => resumeTurn(threadId, answer, onEvent),
+      resumeProposal: (threadId, decision, onEvent, signal) => resumeTurn(threadId, decision, onEvent, signal),
+      resumeQuestion: (threadId, answer, onEvent, signal) => resumeTurn(threadId, answer, onEvent, signal),
 
       summarize: async (threadId) => {
         const state = await runtime.runner.summarizeThread(threadId)

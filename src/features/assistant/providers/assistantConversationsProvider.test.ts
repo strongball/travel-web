@@ -154,7 +154,37 @@ describe('AssistantConversationNotifier', () => {
     const answer = { selectedOptions: ['☕ 悠閒慢活'], answer: '☕ 悠閒慢活' }
     await notifier.resumeQuestion(answer)
 
-    expect(mockService.resumeQuestion).toHaveBeenCalledWith('thread-1', answer, expect.any(Function))
+    expect(mockService.resumeQuestion).toHaveBeenCalledWith('thread-1', answer, expect.any(Function), expect.any(AbortSignal))
+  })
+
+  it('cancels an in-flight turn and resets turn state to null', async () => {
+    const { notifier, provider } = createTestProvider()
+    await container.read(provider.promise)
+    let abortSignalPassed: AbortSignal | undefined
+    mockService.sendStream = vi.fn().mockImplementation(async (_req, _msgs, _onEvent, signal) => {
+      abortSignalPassed = signal
+      return new Promise(() => {})
+    })
+
+    void notifier.send({
+      threadId: 'thread-1',
+      turnId: 'turn-cancel',
+      text: '規劃行程',
+      createdAt: '2026-09-21T00:00:00.000Z',
+      itinerary: { id: 'itinerary-1', title: '東京自由行', ownerId: 'user-1', currency: 'JPY', startDate: '2026-05-01', days: [] },
+      todoCategories: [],
+      todos: [],
+      dayRevisions: {},
+    })
+
+    let snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.turn?.phase).toBe('running')
+
+    notifier.cancel()
+
+    snapshot = container.read(provider).data as AssistantConversationSnapshot
+    expect(snapshot.turn).toBeNull()
+    expect(abortSignalPassed?.aborted).toBe(true)
   })
 })
 

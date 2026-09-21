@@ -28,7 +28,7 @@ import {
   shouldSummarizeMessages,
 } from './assistantGraph'
 import type { AssistantGraphNodeState } from './graphState'
-import { routeAfterRespond, routeAfterTools } from './routing'
+import { routeAfterRespond } from './routing'
 import type {
   AssistantMessage,
   AssistantProposal,
@@ -117,19 +117,18 @@ describe('assistant graph routing', () => {
     toolRound,
   } as AssistantGraphNodeState)
 
-  it('routes continuing tool to execute_tools and stops at the round limit', () => {
+  it('routes continuing tool to execute_tools', () => {
     const continuingCall = { id: '1', name: 'lookup_weather', args: {}, type: 'tool_call' as const }
-    expect(routeAfterRespond(stateWithAiMessage([continuingCall], 0), 4)).toBe('execute_tools')
-    expect(routeAfterTools(stateWithAiMessage([continuingCall], 1), 4)).toBe('respond')
-    expect(routeAfterTools(stateWithAiMessage([continuingCall], 4), 4)).toBe('tool_limit')
-  })
-
-  it('returns to the model after every tool result', () => {
-    expect(routeAfterTools(stateWithAiMessage([], 1), 4)).toBe('respond')
+    expect(routeAfterRespond(stateWithAiMessage([continuingCall], 0))).toBe('execute_tools')
   })
 
   it('finalizes direct text responses when no tool calls exist', () => {
-    expect(routeAfterRespond(stateWithAiMessage([], 0), 4)).toBe('finalize_response')
+    expect(routeAfterRespond(stateWithAiMessage([], 0))).toBe('finalize_response')
+  })
+
+  it('throws on unsupported tool', () => {
+    const unsupportedCall = { id: '1', name: 'unsupported_tool', args: {}, type: 'tool_call' as const }
+    expect(() => routeAfterRespond(stateWithAiMessage([unsupportedCall], 0))).toThrow('不支援的工具：unsupported_tool')
   })
 })
 
@@ -568,6 +567,28 @@ describe('createAssistantGraph', () => {
 
     expect(finalized.assistantMessage?.content).toBe('已成功為您更新平價行程！')
     expect(finalized.assistantMessage?.proposal?.status).toBe('applied')
+  })
+
+
+  it('aborts sendTurn when signal is aborted', async () => {
+    const controller = new AbortController()
+    assistantGraphMocks.invokeAssistantModel.mockImplementation(async (_msgs, _onDelta, _model, _budget, signal) => {
+      if (signal?.aborted) {
+        const error = new Error('Aborted')
+        error.name = 'AbortError'
+        throw error
+      }
+      return new AIMessage({ content: '完成' })
+    })
+
+    const graph = createAssistantGraph(new MemorySaver(), {
+      proposals: persistence(),
+    })
+
+    controller.abort()
+    const req = request()
+    const result = await graph.sendTurn(req, undefined, undefined, controller.signal)
+    expect(result.assistantMessage).toBeFalsy()
   })
 })
 

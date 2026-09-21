@@ -244,7 +244,6 @@ export type AssistantGraphDependencies = {
   summaryMessageThreshold?: number
   summaryCharacterThreshold?: number
   recentMessageCount?: number
-  maxToolRounds?: number
 }
 
 export type AssistantGraphState = {
@@ -263,12 +262,14 @@ export type AssistantGraphRunner = {
     request: AssistantTurnRequest,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
   ) => Promise<AssistantGraphState>
   resumeTurn: (
     threadId: string,
     decision: AssistantUserDecision | AssistantQuestionDecision,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
   ) => Promise<AssistantGraphState>
   summarizeThread: (threadId: string) => Promise<AssistantGraphState>
   getState: (threadId: string) => Promise<AssistantGraphState | null>

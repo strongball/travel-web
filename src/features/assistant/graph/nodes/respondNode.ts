@@ -66,6 +66,7 @@ export function createRespondNode(options: RespondNodeOptions) {
       },
       request.selectedModel,
       request.thinkingBudget,
+      config?.signal,
     )
     const toolCalls = (response.tool_calls ?? []).map((call, index) => ({
       ...call,

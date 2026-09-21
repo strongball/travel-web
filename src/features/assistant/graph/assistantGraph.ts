@@ -26,11 +26,10 @@ import { summarizeWithGemini } from '../services'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'
-import { routeAfterRespond, routeAfterTools } from './routing'
+import { routeAfterRespond } from './routing'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
 import { createPrepareContextNode } from './nodes/prepareContextNode'
 import { createRespondNode } from './nodes/respondNode'
-import { createToolLimitNode } from './nodes/toolLimitNode'
 import { ensureLangGraphAsyncContext } from '../../../lib/langGraphAsyncContext'
 
 export { ASSISTANT_GRAPH_VERSION }
@@ -68,7 +67,6 @@ export const createAssistantGraph = (
   const msgLimit = dependencies.summaryMessageThreshold ?? DEFAULT_SUMMARY_MESSAGE_THRESHOLD
   const charLimit = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
   const recentLimit = dependencies.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT
-  const maxToolRounds = dependencies.maxToolRounds ?? 4
   const progressListeners = new Map<string, AssistantProgressListener>()
   const emitProgress = (threadId?: string, phase?: AssistantProgressPhase) => {
     if (threadId && phase) progressListeners.get(threadId)?.(phase)
@@ -103,18 +101,13 @@ export const createAssistantGraph = (
       return { modelMessages: [...state.modelMessages, ...result.messages] }
     })
     .addNode('finalize_response', createFinalizeResponseNode({ emitProgress }))
-    .addNode('tool_limit', createToolLimitNode(maxToolRounds))
     .addEdge(START, 'prepare_context')
     .addEdge('prepare_context', 'respond')
-    .addConditionalEdges('respond', (state) => routeAfterRespond(state, maxToolRounds), {
+    .addConditionalEdges('respond', routeAfterRespond, {
       execute_tools: 'execute_tools',
       finalize_response: 'finalize_response',
-      tool_limit: 'tool_limit',
     })
-    .addConditionalEdges('execute_tools', (state) => routeAfterTools(state, maxToolRounds), {
-      respond: 'respond',
-      tool_limit: 'tool_limit',
-    })
+    .addEdge('execute_tools', 'respond')
     .addEdge('finalize_response', END)
     .compile({ checkpointer })
 
@@ -143,19 +136,27 @@ export const createAssistantGraph = (
     threadId: string,
     request: AssistantTurnRequest | null,
     onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
   ) => {
     try {
       const stream = await workflow.stream(input as never, {
         ...config(threadId, request),
+        recursionLimit: 50,
+        signal,
         streamMode: ['custom', 'values'],
       })
       for await (const event of stream) {
+        if (signal?.aborted) break
         const customEvent = Array.isArray(event) && event[0] === 'custom'
           ? event[1]
           : null
         if (isAssistantStreamEvent(customEvent)) onStream?.(customEvent)
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (signal?.aborted || error?.name === 'AbortError') {
+        const snapshot = await workflow.getState(config(threadId))
+        return stateWithSnapshot(snapshot.values as AssistantGraphState, snapshot)
+      }
       if (!isGraphInterrupt(error)) throw error
     }
 
@@ -218,6 +219,7 @@ export const createAssistantGraph = (
     request: AssistantTurnRequest,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
   ) => {
     const active = inFlightTurns.get(request.threadId)
     if (active) return active
@@ -268,7 +270,7 @@ export const createAssistantGraph = (
           pendingToolCall: null,
           modelMessages: [],
           toolRound: 0,
-        }, request.threadId, request, onStream)
+        }, request.threadId, request, onStream, signal)
       } finally {
         progressListeners.delete(request.threadId)
       }
@@ -287,6 +289,7 @@ export const createAssistantGraph = (
     decision: AssistantUserDecision | AssistantQuestionDecision,
     onProgress?: AssistantProgressListener,
     onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
   ): Promise<AssistantGraphState> => {
     const active = inFlightTurns.get(threadId)
     if (active) return active
@@ -294,7 +297,7 @@ export const createAssistantGraph = (
     const run = (async () => {
       if (onProgress) progressListeners.set(threadId, onProgress)
       try {
-        return await runWorkflowStream(new Command({ resume: decision }), threadId, null, onStream)
+        return await runWorkflowStream(new Command({ resume: decision }), threadId, null, onStream, signal)
       } finally {
         progressListeners.delete(threadId)
       }

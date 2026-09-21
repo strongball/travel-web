@@ -179,6 +179,7 @@ function useConversationHarness() {
         setError(friendlyError(renameError, '無法重新命名對話'))
       }
     },
+    cancel: () => turnActions.cancelTurn(threadId),
   }), [ref, threadId, threadProvider, turnActions])
 
   return {
@@ -207,8 +208,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  localStorage.clear()
-  sessionStorage.clear()
+  window.localStorage.clear()
+  window.sessionStorage.clear()
   mocks.listAssistantThreads.mockResolvedValue([thread('thread-1')])
   mocks.listAssistantMessages.mockResolvedValue([])
   mocks.getState.mockResolvedValue(null)
@@ -392,5 +393,25 @@ describe('assistant turn actions', () => {
     expect(result.current.threadId).toBe(secondThread.id)
     expect(result.current.threads.find((item) => item.id === firstThread.id)?.title).toBe('新標題')
     expect(mocks.listAssistantThreads).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels active turn via cancelTurn', async () => {
+    const turn = deferred<AssistantGraphState>()
+    mocks.sendTurn.mockReturnValue(turn.promise)
+
+    const { result } = renderHarness()
+    await waitFor(() => expect(result.current.threadId).toBe('thread-1'))
+
+    void act(() => {
+      void result.current.actions.send('請幫我安排行程')
+    })
+
+    await waitFor(() => expect(result.current.turn?.phase).toBe('running'))
+
+    act(() => {
+      result.current.actions.cancel()
+    })
+
+    await waitFor(() => expect(result.current.turn).toBeNull())
   })
 })

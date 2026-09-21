@@ -12,9 +12,9 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import GraphicEqRoundedIcon from '@mui/icons-material/GraphicEqRounded'
 import MicRoundedIcon from '@mui/icons-material/MicRounded'
+import StopRoundedIcon from '@mui/icons-material/StopRounded'
 import {
   Alert,
-  CircularProgress,
   IconButton,
   InputBase,
   Paper,
@@ -78,6 +78,7 @@ export interface ChatComposerProps {
   onClearError: () => void
   notice?: string | null
   onClearNotice: () => void
+  onCancel?: () => void
 }
 
 export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(function ChatComposer(
@@ -90,6 +91,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     notice = null,
     onClearError,
     onClearNotice,
+    onCancel,
   },
   ref,
 ) {
@@ -394,33 +396,53 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
               </span>
             </Tooltip>
 
-            <IconButton
-              type="submit"
-              aria-label={sending ? '正在產生回覆…' : '送出訊息'}
-              disabled={!canSubmit}
-              sx={{
-                width: 32,
-                height: 32,
-                bgcolor: sending ? 'action.hover' : !canSubmit ? 'action.disabledBackground' : 'primary.main',
-                color: sending ? 'primary.main' : 'primary.contrastText',
-                boxShadow: !canSubmit ? 'none' : (theme) => theme.palette.cardShadow,
-                transition: 'all 160ms ease',
-                '&:hover': {
-                  bgcolor: 'primary.dark',
-                  transform: 'scale(1.04)',
-                },
-                '&.Mui-disabled': {
-                  bgcolor: sending ? 'action.hover' : 'action.disabledBackground',
-                  color: sending ? 'primary.main' : 'action.disabled',
-                },
-              }}
-            >
-              {sending ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : (
+            {sending ? (
+              <Tooltip title="取消請求">
+                <IconButton
+                  type="button"
+                  aria-label="取消請求"
+                  onClick={onCancel}
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    bgcolor: 'error.main',
+                    color: '#ffffff',
+                    boxShadow: (theme) => theme.palette.cardShadow,
+                    transition: 'all 160ms ease',
+                    '&:hover': {
+                      bgcolor: 'error.dark',
+                      transform: 'scale(1.06)',
+                    },
+                  }}
+                >
+                  <StopRoundedIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+            ) : (
+              <IconButton
+                type="submit"
+                aria-label="送出訊息"
+                disabled={!canSubmit}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  bgcolor: !canSubmit ? 'action.disabledBackground' : 'primary.main',
+                  color: 'primary.contrastText',
+                  boxShadow: !canSubmit ? 'none' : (theme) => theme.palette.cardShadow,
+                  transition: 'all 160ms ease',
+                  '&:hover': {
+                    bgcolor: 'primary.dark',
+                    transform: 'scale(1.04)',
+                  },
+                  '&.Mui-disabled': {
+                    bgcolor: 'action.disabledBackground',
+                    color: 'action.disabled',
+                  },
+                }}
+              >
                 <ArrowUpwardRoundedIcon sx={{ fontSize: 18 }} />
-              )}
-            </IconButton>
+              </IconButton>
+            )}
           </Stack>
         </Stack>
       </Paper>

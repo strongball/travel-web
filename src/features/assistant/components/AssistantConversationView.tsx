@@ -201,6 +201,12 @@ export function AssistantConversationView({
     requestAnimationFrame(() => composerRef.current?.focus())
   }, [threadId, turnActions])
 
+  const handleCancel = useCallback(() => {
+    if (threadId) {
+      turnActions.cancelTurn(threadId)
+    }
+  }, [threadId, turnActions])
+
   const prevSendingRef = useRef(sending)
 
   useEffect(() => {
@@ -306,6 +312,7 @@ export function AssistantConversationView({
               threadId={threadId}
               online={online}
               onSubmit={handleSubmit}
+              onCancel={handleCancel}
               error={conversationError ?? error}
               notice={notice}
               onClearError={() => {

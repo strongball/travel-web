@@ -44,6 +44,7 @@ const IDLE_CONVERSATION: AssistantConversationSnapshot = {
  */
 export class AssistantConversationNotifier extends AsyncNotifier<AssistantConversationSnapshot> {
   private activeTurn: Promise<void> | null = null
+  private abortController: AbortController | null = null
   private readonly itineraryId: string
   private readonly threadId: string
 
@@ -82,6 +83,9 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
     if (this.activeTurn) return this.activeTurn
 
+    this.abortController = new AbortController()
+    const signal = this.abortController.signal
+
     const execute = async () => {
       const current = this.state.data ?? IDLE_CONVERSATION
       const userMessage: AssistantMessage = {
@@ -106,6 +110,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
       try {
         await service.sendStream(request, this.state.data?.messages ?? [], (event) => {
+          if (signal.aborted) return
           const cur = this.state.data
           if (!cur) return
 
@@ -147,12 +152,23 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
               turn: null,
             })
           }
-        })
+        }, signal)
+
+        if (signal.aborted) {
+          const cur = this.state.data ?? IDLE_CONVERSATION
+          this.state = asyncData({ ...cur, turn: null })
+          return
+        }
 
         if (this.state.data?.turn?.phase === 'running') {
           this.state = asyncData({ ...this.state.data, turn: null })
         }
       } catch (err: any) {
+        if (signal.aborted || err?.name === 'AbortError') {
+          const cur = this.state.data ?? IDLE_CONVERSATION
+          this.state = asyncData({ ...cur, turn: null })
+          return
+        }
         const cur = this.state.data ?? IDLE_CONVERSATION
         this.state = asyncData({
           ...cur,
@@ -166,6 +182,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
         })
       } finally {
         this.activeTurn = null
+        this.abortController = null
       }
     }
 
@@ -177,7 +194,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     return this.#resumeInterrupt({
       progressLabel: '正在套用…',
       errorMessage: '無法處理行程提案',
-      runner: (service, onEvent) => service.resumeProposal(this.threadId, decision, onEvent),
+      runner: (service, onEvent, signal) => service.resumeProposal(this.threadId, decision, onEvent, signal),
     })
   }
 
@@ -185,7 +202,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     return this.#resumeInterrupt({
       progressLabel: '正在處理您的回答…',
       errorMessage: '無法送出回答',
-      runner: (service, onEvent) => service.resumeQuestion(this.threadId, answer, onEvent),
+      runner: (service, onEvent, signal) => service.resumeQuestion(this.threadId, answer, onEvent, signal),
     })
   }
 
@@ -195,12 +212,16 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     runner: (
       service: AssistantChatService,
       onEvent: (event: ChatStreamEvent) => void,
+      signal?: AbortSignal,
     ) => Promise<void>
   }): Promise<void> {
     const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
     if (!service) return
 
     if (this.activeTurn) return this.activeTurn
+
+    this.abortController = new AbortController()
+    const signal = this.abortController.signal
 
     const execute = async () => {
       const current = this.state.data ?? IDLE_CONVERSATION
@@ -217,6 +238,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
       try {
         await options.runner(service, (event) => {
+          if (signal.aborted) return
           const cur = this.state.data
           if (!cur) return
 
@@ -258,12 +280,23 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
               turn: null,
             })
           }
-        })
+        }, signal)
+
+        if (signal.aborted) {
+          const cur = this.state.data ?? IDLE_CONVERSATION
+          this.state = asyncData({ ...cur, turn: null })
+          return
+        }
 
         if (this.state.data?.turn?.phase === 'running') {
           this.state = asyncData({ ...this.state.data, turn: null })
         }
       } catch (err: any) {
+        if (signal.aborted || err?.name === 'AbortError') {
+          const cur = this.state.data ?? IDLE_CONVERSATION
+          this.state = asyncData({ ...cur, turn: null })
+          return
+        }
         const cur = this.state.data ?? IDLE_CONVERSATION
         this.state = asyncData({
           ...cur,
@@ -277,11 +310,24 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
         })
       } finally {
         this.activeTurn = null
+        this.abortController = null
       }
     }
 
     this.activeTurn = execute()
     return this.activeTurn
+  }
+
+  cancel(): void {
+    if (this.abortController) {
+      this.abortController.abort()
+      this.abortController = null
+    }
+    this.activeTurn = null
+    const current = this.state.data
+    if (current?.turn?.phase === 'running') {
+      this.state = asyncData({ ...current, turn: null })
+    }
   }
 
   async summarize(): Promise<void> {

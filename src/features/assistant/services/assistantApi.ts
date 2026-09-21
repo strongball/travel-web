@@ -240,11 +240,13 @@ export async function invokeAssistantModel(
   onTextDelta?: (text: string) => void,
   modelName?: string,
   thinkingBudget?: number,
+  signal?: AbortSignal,
 ): Promise<AIMessage> {
   const model = await createLangChainChatModel(modelName, thinkingBudget)
   const assistantModel = bindAssistantTools(model)
+  const callConfig = signal ? { signal } : undefined
   if (!onTextDelta) {
-    const response = await assistantModel.invoke(messages)
+    const response = await assistantModel.invoke(messages, callConfig)
     const aiResp = response as AIMessage
     const extracted = extractAssistantToolsMetadata(aiResp.content, aiResp.response_metadata)
     return new AIMessage({
@@ -267,7 +269,7 @@ export async function invokeAssistantModel(
   let mergedResponseMetadata: Record<string, unknown> = {}
   const accumulatedParts: unknown[] = []
 
-  const stream = await assistantModel.stream(messages)
+  const stream = await assistantModel.stream(messages, callConfig)
   for await (const chunk of stream) {
     const aiChunk = chunk as AIMessageChunk
     const text =

@@ -83,8 +83,11 @@ export const dayRevisions = (itinerary: Itinerary) => Object.fromEntries(
 export function formatToolCallLabel(name: string, args?: Record<string, unknown>): string {
   switch (name) {
     case 'view_itinerary': {
-      const day = args?.dayNumber
-      return typeof day === 'number' ? `檢視第 ${day} 天行程` : '檢視全體行程總覽'
+      const days = args?.dayNumbers
+      if (Array.isArray(days) && days.length > 0) {
+        return days.length === 1 ? `檢視第 ${days[0]} 天行程` : `檢視第 ${days.join(', ')} 天行程`
+      }
+      return '檢視全體行程'
     }
     case 'view_todo_categories':
       return '查詢待辦分類清單'

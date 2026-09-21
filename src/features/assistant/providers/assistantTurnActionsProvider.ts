@@ -108,6 +108,11 @@ export const assistantTurnActionsProvider = providerFamily(
         if (!threadAvailable(threadId)) return
         await conversationNotifier(threadId).summarize()
       },
+
+      cancelTurn: (threadId: string | null): void => {
+        if (!threadId) return
+        conversationNotifier(threadId).cancel()
+      },
     }
   },
   { name: 'assistantTurnActions', ssr: false },
