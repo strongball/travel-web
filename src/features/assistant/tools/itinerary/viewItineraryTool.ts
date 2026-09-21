@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools'
 import { z } from 'zod'
-import type { ItineraryDay } from '../../../../types/database'
+import type { TripDay } from '../../../../types/database'
 import type { AssistantProposalToolRuntime } from '../proposalToolRuntime'
 
 export const VIEW_ITINERARY_TOOL_NAME = 'view_itinerary'
@@ -14,7 +14,7 @@ export const viewItineraryInputSchema = z.object({
 
 export type ViewItineraryInput = z.infer<typeof viewItineraryInputSchema>
 
-function formatDayDetails(day: ItineraryDay, dayNumber: number): string[] {
+function formatDayDetails(day: TripDay, dayNumber: number): string[] {
   const lines: string[] = [
     `【第 ${dayNumber} 天行程現況】`,
     `- 日期：${day.date.slice(0, 10)}（Day ID: ${day.id}，版本: rev ${day.revision}）`,
