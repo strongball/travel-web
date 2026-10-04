@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RiverScope } from '@stball/react-river'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AssistantConversationView } from './AssistantConversationView'
+import { assistantChatServiceProvider } from '../providers/assistantChatServiceProvider'
 import { userIdProvider } from '../../../providers/authProviders'
 import type { Itinerary } from '../../../types/database'
 
@@ -152,4 +153,27 @@ describe('AssistantConversationView Mobile & Thread Selection', () => {
     })
     expect(onBack).not.toHaveBeenCalled()
   })
+  it('lets an empty conversation send directly and creates only one thread', async () => {
+    repositoryMocks.listAssistantThreads.mockResolvedValue([])
+    repositoryMocks.createAssistantThread.mockResolvedValue({ id: 'direct-thread', title: '新對話', summary: '', updatedAt: '2026-10-04T00:00:00Z' })
+    const sendStream = vi.fn(async (_request, _messages, onEvent) => {
+      onEvent({ type: 'user_saved' })
+      onEvent({ type: 'message', message: { id: 'reply', turnId: _request.turnId, role: 'assistant', content: '已收到', createdAt: '2026-10-04T00:00:01Z' } })
+    })
+    render(<RiverScope overrides={[
+      { original: userIdProvider, create: () => 'direct-user' },
+      { original: assistantChatServiceProvider('itin-1'), create: () => ({ fetchHistory: vi.fn().mockResolvedValue({ messages: [], pendingToolCall: null }), sendStream, resumeProposal: vi.fn(), resumeQuestion: vi.fn(), summarize: vi.fn() }) },
+    ]}>
+      <AssistantConversationView itinerary={mockItinerary} todos={[]} todoCategories={[]} />
+    </RiverScope>)
+    const input = await screen.findByRole('textbox')
+    await waitFor(() => expect(input).not.toBeDisabled())
+    fireEvent.change(input, { target: { value: '檢查行程' } })
+    fireEvent.click(screen.getByRole('button', { name: '送出訊息' }))
+    await screen.findByText('已收到')
+    expect(repositoryMocks.createAssistantThread).toHaveBeenCalledTimes(1)
+    expect(sendStream).toHaveBeenCalledTimes(1)
+    expect(sendStream.mock.calls[0][0]).toMatchObject({ threadId: 'direct-thread', text: '檢查行程' })
+  })
+
 })

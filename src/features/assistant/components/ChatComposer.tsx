@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent,
 } from 'react'
 import { useRiverWatch } from '@stball/react-river'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -21,6 +22,8 @@ import {
   Tooltip,
 } from '@mui/material'
 import { assistantConversationsProvider } from '../providers'
+import { userIdProvider } from '../../../providers/authProviders'
+import { useAssistantDraft } from '../hooks/useAssistantDraft'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { DEFAULT_GEMINI_MODEL, DEFAULT_REASONING_EFFORT, type ReasoningEffort } from '../models'
 import type { AssistantAttachment } from '../types'
@@ -64,7 +67,7 @@ export interface ChatComposerProps {
     attachments: AssistantAttachment[]
     selectedModel?: string
     reasoningEffort?: ReasoningEffort
-  }) => void
+  }, onAccepted?: () => void) => void | boolean | Promise<void | boolean>
   error?: string | null
   onClearError: () => void
   notice?: string | null
@@ -88,8 +91,13 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 ) {
   const conversationState = useRiverWatch(assistantConversationsProvider({ itineraryId, threadId }))
 
-  const [text, setText] = useState('')
-  const [attachments, setAttachments] = useState<AssistantAttachment[]>([])
+  const userId = useRiverWatch(userIdProvider)
+  const { text, attachments, setText, setAttachments, clearDraft, loading: draftLoading, storageError } =
+    useAssistantDraft(`${userId}:${itineraryId}:${threadId}`)
+  const [accepting, setAccepting] = useState(false)
+  const [draggingFiles, setDraggingFiles] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [readingFiles, setReadingFiles] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
 
   const [selectedModel, setSelectedModel] = useStoredPreference<string>(
@@ -106,7 +114,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
 
   useImperativeHandle(ref, () => ({
     setText: (newText: string) => {
-      setText(newText)
+      setText((current) => current.trim() ? `${current.trimEnd()}\n${newText}` : newText)
       requestAnimationFrame(() => inputElementRef.current?.focus())
     },
     focus: () => {
@@ -131,9 +139,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     })
 
   const handleAddAttachments = async (files: File[]) => {
-    const { attachments: next, errors } = await readAssistantAttachments(files)
-    if (errors.length > 0) setLocalError(errors.at(-1) ?? null)
-    if (next.length > 0) setAttachments((current) => [...current, ...next])
+    setReadingFiles(true)
+    setLocalError(null)
+    try {
+      const { attachments: next, errors } = await readAssistantAttachments(files)
+      if (errors.length > 0) setLocalError(errors.join('；'))
+      if (next.length > 0) setAttachments((current) => [...current, ...next])
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : '無法讀取附件，請再試一次。')
+    } finally {
+      setReadingFiles(false)
+    }
   }
 
   const handleRemoveAttachment = (id: string) => {
@@ -149,24 +165,40 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
   }
 
   const canSubmit = (Boolean(text.trim()) || attachments.length > 0) &&
-    !loading && !unavailable && !sending && !hasPendingInterrupt && online
+    !loading && !draftLoading && !unavailable && !sending && !submitting && !readingFiles && !hasPendingInterrupt && online
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!canSubmit) return
 
-    const submittedText = text
-    const submittedAttachments = attachments
-    setText('')
-    setAttachments([])
+    setSubmitting(true)
+    setAccepting(true)
     setLocalError(null)
+    const submitted = { text, attachments }
+    let consumed = false
+    const onAccepted = () => {
+      if (consumed) return
+      consumed = true
+      setAccepting(false)
+      clearDraft(submitted)
+    }
+    try {
+      const accepted = await onSubmit({ text, attachments, selectedModel, reasoningEffort }, onAccepted)
+      if (accepted !== false) onAccepted()
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : '訊息未送出，草稿已保留。')
+    } finally {
+      setSubmitting(false)
+      setAccepting(false)
+    }
+  }
 
-    onSubmit({
-      text: submittedText,
-      attachments: submittedAttachments,
-      selectedModel,
-      reasoningEffort,
-    })
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement | HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault()
+      if (canSubmit) event.currentTarget.closest('form')?.requestSubmit()
+    }
   }
 
   const composerPlaceholder = unavailable
@@ -176,16 +208,40 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     : hasPendingQuestion
     ? '請先點選上方偏好選項卡片…'
     : hasPendingProposal
-    ? '請先確認或拒絕待處理的行程提案'
-    : '輸入訊息…（Enter 換行，點擊箭頭送出）'
+    ? '請在上方提案確認、拒絕或輸入修改需求'
+    : sending || submitting
+    ? '可以先準備下一則訊息，回覆完成後再送出'
+    : '輸入訊息…（Enter 換行，Ctrl／⌘+Enter 送出）'
 
-  const disabled = loading || unavailable || sending || hasPendingInterrupt || !online
-  const displayError = feedbackError ?? localError
+  const disabled = loading || draftLoading || unavailable || accepting
+  const displayError = feedbackError ?? localError ?? storageError
 
   return (
     <Stack
       component="form"
       onSubmit={handleSubmit}
+      onPaste={(event) => {
+        if (disabled || readingFiles) return
+        const files = Array.from(event.clipboardData.files)
+        if (files.length === 0) return
+        event.preventDefault()
+        void handleAddAttachments(files)
+      }}
+      onDragEnter={(event) => {
+        if (!disabled && !readingFiles && event.dataTransfer.types.includes('Files')) setDraggingFiles(true)
+      }}
+      onDragLeave={(event) => {
+        if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDraggingFiles(false)
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+      }}
+      onDrop={(event) => {
+        setDraggingFiles(false)
+        if (!event.dataTransfer.types.includes('Files') && event.dataTransfer.files.length === 0) return
+        event.preventDefault()
+        if (!disabled && !readingFiles) void handleAddAttachments(Array.from(event.dataTransfer.files))
+      }}
       sx={{
         px: { xs: 1.25, sm: 2 },
         pt: 0.75,
@@ -244,6 +300,8 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         </Alert>
       ) : null}
 
+      {draggingFiles ? <Alert severity="info" sx={{ mb: 1 }}>放開即可加入附件</Alert> : null}
+      {readingFiles ? <Alert severity="info" sx={{ mb: 1 }}>正在讀取附件，完成後即可送出。</Alert> : null}
       {/* 整合式現代化輸入卡片 */}
       <Paper
         elevation={0}
@@ -292,6 +350,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
           placeholder={isListening ? '正在聆聽您的語音輸入…' : composerPlaceholder}
           value={text}
           onChange={(event) => setText(event.target.value)}
+          onKeyDown={handleKeyDown}
           disabled={disabled}
           sx={{
             px: 0.5,
@@ -319,12 +378,12 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         >
           {/* 左側群組：新增檔案 與 模型選擇器 */}
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Tooltip title="上傳檔案或圖片">
+            <Tooltip title="上傳、貼上或拖曳檔案與圖片">
               <span>
                 <IconButton
                   size="small"
                   aria-label="上傳檔案或圖片"
-                  disabled={disabled}
+                  disabled={disabled || readingFiles}
                   onClick={() => fileInputRef.current?.click()}
                   sx={{
                     width: 30,

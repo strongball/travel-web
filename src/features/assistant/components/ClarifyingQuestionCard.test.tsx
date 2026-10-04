@@ -62,6 +62,9 @@ describe('ClarifyingQuestionCard', () => {
 
     const input = screen.getByPlaceholderText('或輸入其他偏好想法…')
     fireEvent.change(input, { target: { value: '希望多排一些居酒屋' } })
+    expect(input.tagName).toBe('TEXTAREA')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(handleAnswer).not.toHaveBeenCalled()
     fireEvent.submit(input.closest('form')!)
 
     expect(handleAnswer).toHaveBeenCalledWith({

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
-import ForumRoundedIcon from '@mui/icons-material/ForumRounded'
 import UnfoldMoreRoundedIcon from '@mui/icons-material/UnfoldMoreRounded'
 import {
   Avatar,
@@ -156,6 +155,7 @@ export function MessageList({
   onDecision,
   onQuestionAnswer,
   onRetry,
+  onRefine,
 }: {
   itineraryId: string
   /** 目標對話;訊息與生成中的狀態由此元件自行訂閱(graph → river → component)。 */
@@ -166,6 +166,7 @@ export function MessageList({
   onDecision: (proposal: AssistantProposal, approved: boolean) => void
   onQuestionAnswer?: (answer: AssistantQuestionDecision) => void
   onRetry?: () => void
+  onRefine?: (proposal: AssistantProposal, feedback: string) => void
 }) {
   const conversationState = useRiverWatch(
     assistantConversationsProvider({ itineraryId, threadId: threadId ?? '' }),
@@ -191,43 +192,25 @@ export function MessageList({
     : messages.slice(messages.length - INITIAL_VISIBLE_COUNT)
 
   const {
+    hasNewReply,
+    onScroll,
+    scrollToLatest,
     activeTurnSpacerHeight,
     activeTurnSpacerRef,
     lastUserMessageIndex,
     lastUserMessageRef,
     messagesAreaRef,
     messagesEndRef,
-  } = useActiveTurnScroll(visibleMessages, sending || isStreaming)
+  } = useActiveTurnScroll(visibleMessages, sending || isStreaming, {
+    conversationKey: threadId,
+    activityKey: turn?.streaming?.content ?? pendingToolCall?.id ?? turn?.error,
+  })
 
   const hasMessages = visibleMessages.length > 0
 
-  if (!threadId) {
-    return (
-      <Box sx={{ flex: 1, display: 'grid', placeItems: 'center', p: 3 }}>
-        <Paper
-          elevation={0}
-          sx={{
-            p: 3.5,
-            textAlign: 'center',
-            borderRadius: 3.5,
-            border: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            boxShadow: (theme) => theme.palette.cardShadow,
-          }}
-        >
-          <ForumRoundedIcon color="action" sx={{ fontSize: 44, opacity: 0.7 }} />
-          <Typography sx={{ mt: 1, fontWeight: 800 }}>選擇一個對話</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            從左側清單挑選對話，或點擊「+」建立新對話。
-          </Typography>
-        </Paper>
-      </Box>
-    )
-  }
 
   return (
-    <StyledMessagesContainer ref={messagesAreaRef} spacing={2} key={threadId}>
+    <StyledMessagesContainer onScroll={onScroll} ref={messagesAreaRef} spacing={2} key={threadId}>
       {loading && !hasMessages && (
         <Box sx={{ textAlign: 'center', m: 'auto', p: 3 }}>
           <ConversationLoading />
@@ -299,7 +282,7 @@ export function MessageList({
           <MessageBubble
             message={{
               id: `failed-${threadId}`,
-              turnId: messages.at(-1)?.turnId ?? threadId,
+              turnId: messages.at(-1)?.turnId ?? threadId ?? '',
               role: 'assistant',
               content: turn.error,
               createdAt: messages.at(-1)?.createdAt ?? new Date().toISOString(),
@@ -321,7 +304,7 @@ export function MessageList({
       )}
 
       {pendingToolCall && isPendingQuestionCall(pendingToolCall) && (
-        <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+        <Stack key={pendingToolCall.id} data-tool-call-id={pendingToolCall.id} spacing={1.25}>
           <ClarifyingQuestionCard
             questionData={pendingToolCall.questionData}
             busy={sending}
@@ -333,12 +316,13 @@ export function MessageList({
       )}
 
       {pendingToolCall && isPendingProposalCall(pendingToolCall) && (
-        <Stack data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+        <Stack key={pendingToolCall.id} data-tool-call-id={pendingToolCall.id} spacing={1.25}>
           <ProposalCard
             proposal={pendingToolCall.proposal}
             busy={sending}
             online={online}
             onDecision={onDecision}
+            onRefine={onRefine}
             isHistory={false}
           />
         </Stack>
@@ -353,6 +337,9 @@ export function MessageList({
       />
 
       <div ref={messagesEndRef} />
+      {hasNewReply ? <Box sx={{ position: 'sticky', bottom: 12, alignSelf: 'center', zIndex: 2 }}>
+        <Button variant="contained" onClick={scrollToLatest}>有新回覆 ↓</Button>
+      </Box> : null}
     </StyledMessagesContainer>
   )
 }

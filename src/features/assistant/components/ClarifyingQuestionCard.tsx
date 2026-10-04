@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import SendRoundedIcon from '@mui/icons-material/SendRounded'
@@ -81,14 +81,6 @@ export function ClarifyingQuestionCard({
       customAnswer: trimmed,
       answer: trimmed,
     })
-  }
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing || e.keyCode === 229) return
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      handleCustomSubmit()
-    }
   }
 
   // 歷史記錄模式：顯示為已確認之偏好紀錄卡
@@ -342,10 +334,12 @@ export function ClarifyingQuestionCard({
           >
             <InputBase
               fullWidth
+              multiline
+              minRows={1}
+              maxRows={5}
               placeholder="或輸入其他偏好想法…"
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}
-              onKeyDown={handleKeyDown}
               disabled={busy || !online}
               sx={{
                 fontSize: '0.86rem',

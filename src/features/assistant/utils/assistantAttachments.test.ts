@@ -57,7 +57,7 @@ describe('assistantAttachments', () => {
       expect(result.errors).toHaveLength(0)
       expect(result.attachments).toHaveLength(1)
       expect(result.attachments[0]?.dataUrl).toBe('data:image/jpeg;base64,mockedcompresseddata')
-      expect(result.attachments[0]?.mimeType).toBe('image/png')
+      expect(result.attachments[0]?.mimeType).toBe('image/jpeg')
     } finally {
       globalThis.Image = originalImage
       URL.createObjectURL = originalCreateObjectURL
@@ -66,4 +66,13 @@ describe('assistantAttachments', () => {
       HTMLCanvasElement.prototype.toDataURL = originalToDataURL
     }
   })
+  it('reads PDFs with missing browser MIME and rejects unsupported files', async () => {
+    const result = await readAssistantAttachments([
+      new File(['abc'], '預約.pdf'), new File(['abc'], 'archive.zip', { type: 'application/zip' }),
+    ])
+    expect(result.attachments).toHaveLength(1)
+    expect(result.attachments[0]).toMatchObject({ mimeType: 'application/pdf', dataUrl: 'data:application/pdf;base64,YWJj' })
+    expect(result.errors[0]).toContain('無法分析')
+  })
+
 })

@@ -18,6 +18,7 @@ import { findRecoveredAssistantMessages } from './assistantTurnFlow'
 import type { AssistantConversationRuntime } from './assistantRuntime'
 
 export type ChatStreamEvent =
+  | { type: 'user_saved' }
   | { type: 'progress'; label: string | null }
   | { type: 'content'; text: string; turnId: string }
   | { type: 'proposal'; pendingToolCall: AssistantPendingToolCall }
@@ -27,6 +28,8 @@ export interface AssistantChatService {
   fetchHistory: (threadId: string) => Promise<{
     messages: AssistantMessage[]
     pendingToolCall: AssistantPendingToolCall | null
+    interruptedRequest?: AssistantTurnRequest
+    interruptedMessage?: AssistantMessage
   }>
   sendStream: (
     request: AssistantTurnRequest,
@@ -94,9 +97,17 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           a.createdAt.localeCompare(b.createdAt),
         )
 
+        const pendingToolCall = graphState?.pendingToolCall ?? null
+        const lastMessage = allMessages.at(-1)
+        const interruptedRequest = !pendingToolCall && graphState?.request &&
+          !allMessages.some((message) => message.role === 'assistant' && message.turnId === graphState.request?.turnId)
+          ? graphState.request : undefined
+        const interruptedMessage = !pendingToolCall && lastMessage?.role === 'user' ? lastMessage : undefined
         return {
           messages: allMessages,
-          pendingToolCall: graphState?.pendingToolCall ?? null,
+          pendingToolCall,
+          interruptedRequest,
+          interruptedMessage,
         }
       },
 
@@ -109,8 +120,14 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           content: request.text.trim(),
           createdAt: request.createdAt ?? new Date().toISOString(),
           attachments: request.attachments ?? null,
+          generationSettings: {
+            selectedModel: request.selectedModel,
+            reasoningEffort: request.reasoningEffort,
+            thinkingBudget: request.thinkingBudget,
+          },
         }
         await saveAssistantMessage(request.threadId, userMessage)
+        onEvent({ type: 'user_saved' })
 
         if (signal?.aborted) return
 

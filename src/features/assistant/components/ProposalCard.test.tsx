@@ -153,4 +153,26 @@ describe('ProposalCard', () => {
     expect(screen.getByText('未套用')).toBeInTheDocument()
     expect(screen.queryByText('建議在第二天增加淺草寺，並新增購票提醒待辦。')).not.toBeInTheDocument()
   })
+  it('submits refinement feedback only from the button and disables actions while busy', () => {
+    const onRefine = vi.fn()
+    const onDecision = vi.fn()
+    const { rerender } = render(<ProposalCard proposal={sampleProposal} busy={false} online onDecision={onDecision} onRefine={onRefine} />)
+    fireEvent.click(screen.getByRole('button', { name: '修改這份建議' }))
+    const input = screen.getByRole('textbox')
+    fireEvent.change(input, { target: { value: '晚餐改為七點\n保留午餐' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onRefine).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '送出修改需求' }))
+    expect(onRefine).toHaveBeenCalledWith(sampleProposal, '晚餐改為七點\n保留午餐')
+    expect(onDecision).not.toHaveBeenCalled()
+    rerender(<ProposalCard proposal={sampleProposal} busy online onDecision={onDecision} onRefine={onRefine} />)
+    expect(screen.getByRole('button', { name: '送出修改需求' })).toBeDisabled()
+  })
+
+  it('shows validated time targets with the calculated time and difference', () => {
+    render(<ProposalCard proposal={{ ...sampleProposal, timeChecks: [{ attractionId: 'dinner', name: '晚餐', targetStartTime: '18:30', actualStartTime: '18:25', differenceMinutes: -5 }] }} busy={false} online onDecision={vi.fn()} />)
+    expect(screen.getByText('時間目標驗算')).toBeInTheDocument()
+    expect(screen.getByText(/晚餐：目標 18:30 → 預計 18:25/)).toHaveTextContent('提早 5 分鐘')
+  })
+
 })

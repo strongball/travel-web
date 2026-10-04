@@ -52,6 +52,7 @@ describe('assistantRepository', () => {
       role: 'user',
       content: '請參考附件',
       createdAt: '2026-08-22T00:00:00.000Z',
+      generationSettings: { selectedModel: 'gemini-test', reasoningEffort: 'high', thinkingBudget: 1024 },
       attachments: [{
         id: 'attachment-1',
         name: 'plan.txt',
@@ -71,7 +72,7 @@ describe('assistantRepository', () => {
       turn_id: message.turnId,
       role: message.role,
       content: message.content,
-      metadata: { attachments: message.attachments },
+      metadata: { attachments: message.attachments, generationSettings: message.generationSettings },
       created_at: message.createdAt,
     }, { onConflict: 'thread_id,turn_id,role' })
 
@@ -81,7 +82,7 @@ describe('assistantRepository', () => {
         turn_id: message.turnId,
         role: message.role,
         content: message.content,
-        metadata: { attachments: message.attachments },
+        metadata: { attachments: message.attachments, generationSettings: message.generationSettings },
         created_at: message.createdAt,
       }],
       error: null,
@@ -96,7 +97,7 @@ describe('assistantRepository', () => {
     supabaseMock.from.mockReturnValueOnce(query)
 
     await expect(listAssistantMessages('thread-1')).resolves.toEqual([
-      expect.objectContaining({ attachments: message.attachments }),
+      expect.objectContaining({ attachments: message.attachments, generationSettings: message.generationSettings }),
     ])
     expect(query.select).toHaveBeenCalledWith('id,turn_id,role,content,metadata,created_at')
   })

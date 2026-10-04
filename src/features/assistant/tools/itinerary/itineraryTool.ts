@@ -5,8 +5,9 @@ import {
   parseAssistantOperations,
   validateAssistantOperations,
 } from '../../services/assistantOperations'
-import { itineraryToolInputSchema } from './itineraryToolSchema'
+import { itineraryTimeTargetsSchema, itineraryToolInputSchema } from './itineraryToolSchema'
 import { applyItineraryOperations, changedDays } from './itineraryOperations'
+import { validateRequiredItineraryTimeTargets } from './itineraryTimeRequirements'
 import { validateItineraryTimeTargets } from './itineraryTimeTargets'
 import {
   proposalIdForRequest,
@@ -33,15 +34,22 @@ export const proposeItineraryEditTool = tool(
       validateAssistantOperations(request.itinerary, operations)
     }
 
+    const timeTargets = itineraryTimeTargetsSchema.parse(input.timeTargets ?? [])
+    validateRequiredItineraryTimeTargets({
+      text: request?.text ?? '',
+      modelMessages: runtime.state?.modelMessages ?? [],
+      targets: timeTargets,
+      operations,
+    })
     const allBeforeDays = request?.itinerary.days ?? []
     const allAfterDays = request?.itinerary
       ? applyItineraryOperations(request.itinerary, operations)
       : []
-    validateItineraryTimeTargets({
+    const timeChecks = validateItineraryTimeTargets({
       beforeDays: allBeforeDays,
       afterDays: allAfterDays,
       operations,
-      timeTargets: input.timeTargets ?? [],
+      timeTargets,
     })
     const afterDays = changedDays(allBeforeDays, allAfterDays)
     const affectedDayIds = new Set(afterDays.map((day) => day.id))
@@ -59,6 +67,7 @@ export const proposeItineraryEditTool = tool(
       ])),
       beforeDays: allBeforeDays.filter((day) => affectedDayIds.has(day.id)),
       afterDays,
+      timeChecks,
       proposedTodos: [],
       proposedCategories: [],
       status: 'pending',

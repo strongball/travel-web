@@ -1,4 +1,4 @@
-import { render, act } from '@testing-library/react'
+import { render, act, fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { useActiveTurnScroll } from './useActiveTurnScroll'
 
@@ -6,10 +6,10 @@ type MockMessage = { id: string; role: 'user' | 'assistant'; content: string }
 
 const scrollToSpy = vi.fn()
 
-function TestComponent({ messages, isBusy }: { messages: MockMessage[]; isBusy: boolean }) {
-  const scroll = useActiveTurnScroll(messages, isBusy)
+function TestComponent({ messages, isBusy, activityKey }: { messages: MockMessage[]; isBusy: boolean; activityKey?: string }) {
+  const scroll = useActiveTurnScroll(messages, isBusy, { activityKey })
   return (
-    <div
+    <div onScroll={scroll.onScroll}
       ref={(el) => {
         if (el) {
           Object.defineProperty(el, 'clientHeight', { value: 600, configurable: true })
@@ -36,6 +36,7 @@ function TestComponent({ messages, isBusy }: { messages: MockMessage[]; isBusy: 
       ))}
       <div ref={scroll.activeTurnSpacerRef} />
       <div ref={scroll.messagesEndRef} />
+      {scroll.hasNewReply ? <button onClick={scroll.scrollToLatest}>有新回覆</button> : null}
     </div>
   )
 }
@@ -103,4 +104,40 @@ describe('useActiveTurnScroll', () => {
       behavior: 'smooth',
     })
   })
+  it('leaves readers in place when a reply arrives and offers a jump to the new reply', () => {
+    const initial: MockMessage[] = [{ id: 'u', role: 'user', content: '問題' }]
+    const { container, rerender } = render(<TestComponent messages={initial} isBusy={true} activityKey="第一段" />)
+    const area = container.firstElementChild as HTMLDivElement
+    area.scrollTop = 100
+    fireEvent.scroll(area)
+    const latest = area.children[area.children.length - 1] as HTMLDivElement
+    latest.scrollIntoView = vi.fn()
+    rerender(<TestComponent messages={initial} isBusy={true} activityKey="第一段第二段" />)
+    expect(screen.getByRole('button', { name: '有新回覆' })).toBeInTheDocument()
+    expect(latest.scrollIntoView).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '有新回覆' }))
+    expect(latest.scrollIntoView).toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '有新回覆' })).not.toBeInTheDocument()
+  })
+
+  it('follows replies near the bottom and does not mistake expanded history for a new reply', () => {
+    const initial: MockMessage[] = [{ id: 'u', role: 'user', content: '問題' }]
+    const { container, rerender } = render(<TestComponent messages={initial} isBusy={true} />)
+    const area = container.firstElementChild as HTMLDivElement
+    area.scrollTop = 600
+    fireEvent.scroll(area)
+    const latest = area.children[area.children.length - 1] as HTMLDivElement
+    latest.scrollIntoView = vi.fn()
+    const complete: MockMessage[] = [...initial, { id: 'a', role: 'assistant', content: '完成' }]
+    rerender(<TestComponent messages={complete} isBusy={false} />)
+    expect(latest.scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto' })
+    expect(screen.queryByRole('button', { name: '有新回覆' })).not.toBeInTheDocument()
+    area.scrollTop = 100
+    fireEvent.scroll(area)
+    vi.mocked(latest.scrollIntoView).mockClear()
+    rerender(<TestComponent messages={[{ id: 'older', role: 'assistant', content: '較早訊息' }, ...complete]} isBusy={false} />)
+    expect(latest.scrollIntoView).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: '有新回覆' })).not.toBeInTheDocument()
+  })
+
 })

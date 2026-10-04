@@ -14,7 +14,7 @@ import type {
 import { assistantChatServiceProvider } from './assistantChatServiceProvider'
 import type { AssistantChatService, ChatStreamEvent } from '../services/assistantChatService'
 import { userIdProvider } from '../../../providers/authProviders'
-import type { AssistantTurnContext } from '../services/assistantTurnFlow'
+import { buildTurnRequest, type AssistantTurnContext } from '../services/assistantTurnFlow'
 import { dayRevisions } from '../utils/conversationUtils'
 
 export type AssistantTurnOverlay = {
@@ -24,6 +24,7 @@ export type AssistantTurnOverlay = {
   progressLabel: string | null
   error: string | null
   canRetry?: boolean
+  userMessageSaved?: boolean
 }
 
 export type AssistantConversationSnapshot = {
@@ -64,8 +65,23 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     if (!userId || !this.threadId) return IDLE_CONVERSATION
 
     const service = this.ref.watch(assistantChatServiceProvider(this.itineraryId))
-    const { messages, pendingToolCall } = await service.fetchHistory(this.threadId)
+    const { messages, pendingToolCall, interruptedRequest, interruptedMessage } = await service.fetchHistory(this.threadId)
 
+    if (interruptedRequest) {
+      this.retryAction = (context) => this.send({
+        ...interruptedRequest, ...context, dayRevisions: dayRevisions(context.itinerary),
+      })
+    } else if (interruptedMessage) {
+      this.retryAction = (context) => this.send(buildTurnRequest({
+        threadId: this.threadId,
+        turnId: interruptedMessage.turnId,
+        text: interruptedMessage.content,
+        createdAt: interruptedMessage.createdAt,
+        attachments: interruptedMessage.attachments,
+        ...interruptedMessage.generationSettings,
+        context,
+      }))
+    }
     const currentTurn = this.state.data?.turn
     const restored = currentTurn?.phase === 'running' || currentTurn?.phase === 'error'
       ? currentTurn
@@ -77,12 +93,15 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           progressLabel: null,
           error: null,
         }
+      : interruptedRequest || interruptedMessage
+      ? { phase: 'error' as const, streaming: null, pendingToolCall: null, progressLabel: null,
+          error: '上次回覆未完成，可以重新送出 AI 請求。', canRetry: true }
       : null
 
     return { messages, turn: restored }
   }
 
-  async send(request: AssistantTurnRequest): Promise<void> {
+  async send(request: AssistantTurnRequest, onAccepted?: () => void): Promise<void> {
     const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
     if (!service) return
 
@@ -106,6 +125,11 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
         content: request.text.trim(),
         createdAt: request.createdAt ?? new Date().toISOString(),
         attachments: request.attachments ?? null,
+        generationSettings: {
+          selectedModel: request.selectedModel,
+          reasoningEffort: request.reasoningEffort,
+          thinkingBudget: request.thinkingBudget,
+        },
       }
 
       this.state = asyncData({
@@ -120,13 +144,17 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
         },
       })
 
+      let userMessageSaved = false
       try {
         await service.sendStream(request, this.state.data?.messages ?? [], (event) => {
           if (signal.aborted) return
           const cur = this.state.data
           if (!cur) return
 
-          if (event.type === 'progress') {
+          if (event.type === 'user_saved') {
+            userMessageSaved = true
+            onAccepted?.()
+          } else if (event.type === 'progress') {
             this.state = asyncData({
               ...cur,
               turn: cur.turn ? { ...cur.turn, progressLabel: event.label } : null,
@@ -191,6 +219,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
             progressLabel: null,
             error: err.message || '助理暫時無法回覆',
             canRetry: true,
+            userMessageSaved,
           },
         })
       } finally {

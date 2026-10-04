@@ -1,3 +1,4 @@
+import type { BaseMessage } from '@langchain/core/messages'
 import type { ToolRuntime } from '@langchain/core/tools'
 import type {
   AssistantProposalStatus,
@@ -10,6 +11,7 @@ import { interrupt } from '@langchain/langgraph/web'
 
 type AssistantToolState = {
   request?: AssistantTurnRequest | null
+  modelMessages?: BaseMessage[]
 }
 
 type ProposalRuntimeConfig = {

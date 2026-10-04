@@ -6,7 +6,7 @@ import {
   isGraphInterrupt,
   type BaseCheckpointSaver,
 } from '@langchain/langgraph/web'
-import { AIMessage } from '@langchain/core/messages'
+import { AIMessage, ToolMessage } from '@langchain/core/messages'
 import type {
   AssistantGraphDependencies,
   AssistantGraphRunner,
@@ -247,6 +247,12 @@ export const createAssistantGraph = (
           }
         }
 
+        // Resume after an answered question or completed proposal, never replay the tool.
+        if (previous?.request?.turnId === request.turnId && previous.modelMessages.some((message) =>
+          ToolMessage.isInstance(message) && message.artifact)) {
+          return await runWorkflowStream(null, request.threadId, previous.request, onStream, signal)
+        }
+
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??
           request.rehydratedMessages?.find((m) => m.turnId === request.turnId && m.role === 'user')
 
@@ -256,6 +262,12 @@ export const createAssistantGraph = (
           role: 'user',
           content: request.text.trim(),
           createdAt: request.createdAt ?? new Date().toISOString(),
+          attachments: request.attachments ?? null,
+          generationSettings: {
+            selectedModel: request.selectedModel,
+            reasoningEffort: request.reasoningEffort,
+            thinkingBudget: request.thinkingBudget,
+          },
         }
 
         const baseMsgs = previous?.messages ?? request.rehydratedMessages ?? []

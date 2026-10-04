@@ -80,6 +80,7 @@ export async function listAssistantMessages(threadId: string): Promise<Assistant
       codeExecutions: metadata.codeExecutions as AssistantCodeExecution[] | undefined,
       toolCalls: (metadata.toolCalls as AssistantToolCallRecord[]) ?? null,
       attachments: (metadata.attachments as AssistantMessage['attachments']) ?? null,
+      generationSettings: metadata.generationSettings as AssistantMessage['generationSettings'],
     }
   })
 }
@@ -92,6 +93,7 @@ export async function saveAssistantMessage(threadId: string, message: AssistantM
   if (message.codeExecutions) metadata.codeExecutions = message.codeExecutions
   if (message.toolCalls && message.toolCalls.length > 0) metadata.toolCalls = message.toolCalls
   if (message.attachments) metadata.attachments = message.attachments
+  if (message.generationSettings) metadata.generationSettings = message.generationSettings
 
   const { error } = await supabase.from('assistant_messages').upsert({
     id: message.id,

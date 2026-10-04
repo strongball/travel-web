@@ -48,6 +48,8 @@ export const assistantTurnActionsProvider = providerFamily(
         context: AssistantTurnContext
         selectedModel?: string
         reasoningEffort?: ReasoningEffort
+        onAccepted?: () => void
+        onThreadReady?: (threadId: string) => void
       }): Promise<string | null> => {
         const content = input.text.trim()
         if (!content && input.attachments.length === 0) return null
@@ -68,7 +70,9 @@ export const assistantTurnActionsProvider = providerFamily(
         if (title) await notifier.rename(threadId, title).catch(() => {})
 
         // create/rename 都可能讓出 event loop；開始 turn 前必須重新確認刪除狀態。
+        await ref.read(conversationProvider(threadId).promise)
         assertThreadAvailable(threadId)
+        input.onThreadReady?.(threadId)
         await conversationNotifier(threadId).send(buildTurnRequest({
           threadId,
           turnId: crypto.randomUUID(),
@@ -79,7 +83,7 @@ export const assistantTurnActionsProvider = providerFamily(
           reasoningEffort: input.reasoningEffort,
           thinkingBudget: getThinkingBudget(input.reasoningEffort),
           attachments: input.attachments,
-        }))
+        }), input.onAccepted)
         return threadId
       },
 
@@ -93,6 +97,17 @@ export const assistantTurnActionsProvider = providerFamily(
           input.proposal.itineraryId !== itineraryId) return
         if (!threadAvailable(input.threadId)) return
         await conversationNotifier(input.threadId).resumeProposal({ approved: input.approved })
+      },
+
+      refineProposal: async (input: {
+        threadId: string | null
+        proposal: AssistantProposal
+        feedback: string
+      }): Promise<void> => {
+        if (!input.threadId || input.threadId !== input.proposal.threadId ||
+          input.proposal.itineraryId !== itineraryId || !input.feedback.trim()) return
+        if (!threadAvailable(input.threadId)) return
+        await conversationNotifier(input.threadId).resumeProposal({ approved: false, feedback: input.feedback.trim() })
       },
 
       answerQuestion: async (input: {

@@ -86,6 +86,7 @@ describe('AssistantChatService', () => {
     )
     expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', assistant)
     expect(events).toEqual([
+      { type: 'user_saved' },
       { type: 'progress', label: '正在思考並產生回覆…' },
       { type: 'content', text: '回答', turnId: 'turn-1' },
       { type: 'content', text: '內容', turnId: 'turn-1' },
@@ -120,4 +121,17 @@ describe('AssistantChatService', () => {
     await service.resumeProposal('thread', { approved: true }, onEvent)
     expect(onEvent).toHaveBeenCalledWith({ type: 'message', message: assistant })
   })
+  it('reports unfinished checkpoints after reload but never labels completed replies as retryable', async () => {
+    const user = message('user', 'reload-turn', '晚餐 6:30')
+    const request = { turnId: user.turnId, threadId: 'thread', text: user.content }
+    mocks.listAssistantMessages.mockResolvedValue([user])
+    const getState = vi.fn().mockResolvedValue({ messages: [user], request, pendingToolCall: null })
+    const service = createAssistantChatService({ runner: { getState }, onNotice: vi.fn() } as unknown as AssistantConversationRuntime)
+    expect(await service.fetchHistory('thread')).toMatchObject({ interruptedRequest: request, interruptedMessage: user })
+    getState.mockResolvedValue({ messages: [user, message('assistant', user.turnId, '完成')], request: null, pendingToolCall: null })
+    const completed = await service.fetchHistory('thread')
+    expect(completed.interruptedRequest).toBeUndefined()
+    expect(completed.interruptedMessage).toBeUndefined()
+  })
+
 })

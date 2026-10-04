@@ -206,7 +206,8 @@ describe('createAssistantGraph', () => {
     const req = request()
     await graph.sendTurn(req)
     await expect(graph.resumeTurn(req.threadId, { approved: true })).rejects.toThrow('reply interrupted')
-    const result = await graph.resumeTurn(req.threadId, { approved: true })
+    // A fresh runtime after reload must continue from the same checkpoint as well.
+    const result = await graph.sendTurn(req)
     expect(apply).toHaveBeenCalledOnce()
     expect(result.assistantMessage?.proposal?.status).toBe('applied')
     expect(result.assistantMessage?.content).toBe('已完成調整')
@@ -662,5 +663,21 @@ describe('createAssistantGraph', () => {
     const result = await graph.sendTurn(req, undefined, undefined, controller.signal)
     expect(result.assistantMessage).toBeFalsy()
   })
+  it('retains image and PDF contents for a follow-up turn', async () => {
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const first = { ...request(), text: '請看附件', attachments: [
+      { id: 'image', name: '地圖.png', mimeType: 'image/png', size: 3, dataUrl: 'data:image/png;base64,YWJj' },
+      { id: 'pdf', name: '預約.pdf', mimeType: 'application/pdf', size: 3, dataUrl: 'data:application/pdf;base64,YWJj' },
+    ] }
+    await graph.sendTurn(first)
+    await graph.sendTurn({ ...first, turnId: crypto.randomUUID(), text: '附件上寫了什麼？', attachments: null })
+    const messages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
+    const original = messages.filter((message) => HumanMessage.isInstance(message))[0]
+    expect(original.content).toEqual(expect.arrayContaining([
+      { type: 'image_url', image_url: { url: first.attachments[0].dataUrl } },
+      { type: 'media', mimeType: 'application/pdf', data: 'YWJj' },
+    ]))
+  })
+
 })
 

@@ -244,4 +244,22 @@ describe('AssistantConversationNotifier', () => {
     expect(snapshot.turn).toBeNull()
     expect(abortSignalPassed?.aborted).toBe(true)
   })
+  it('restores retry from a persisted unfinished user message with attachments and model settings', async () => {
+    const user = { ...message('user', 'unfinished', '參考預約'),
+      attachments: [{ id: 'pdf', name: '預約.pdf', mimeType: 'application/pdf', size: 3, dataUrl: 'data:application/pdf;base64,YWJj' }],
+      generationSettings: { selectedModel: 'original-model', reasoningEffort: 'high', thinkingBudget: 1024 },
+    }
+    mockService.fetchHistory = vi.fn().mockResolvedValue({ messages: [user], pendingToolCall: null, interruptedMessage: user })
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    expect(container.read(provider).data?.turn).toMatchObject({ phase: 'error', canRetry: true })
+    const itinerary = { id: 'trip-1', title: '最新行程', ownerId: 'user-1', currency: 'TWD' }
+    await notifier.retry({ itinerary, todos: [], todoCategories: [] })
+    expect(mockService.sendStream).toHaveBeenCalledWith(expect.objectContaining({
+      turnId: user.turnId, text: user.content, attachments: user.attachments, itinerary,
+      ...user.generationSettings,
+    }), [user], expect.any(Function), expect.any(AbortSignal))
+    expect(container.read(provider).data?.messages).toEqual([user])
+  })
+
 })

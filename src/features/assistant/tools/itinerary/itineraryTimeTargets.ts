@@ -1,5 +1,5 @@
 import type { TripDay } from '../../../../types/database'
-import type { AssistantOperation } from '../../types'
+import type { AssistantOperation, AssistantProposal } from '../../types'
 import { itineraryTimeTargetsSchema, type ItineraryTimeTarget } from './itineraryToolSchema'
 
 const timeMinutes = (value: string) => {
@@ -20,7 +20,8 @@ export function validateItineraryTimeTargets({
   timeTargets: ItineraryTimeTarget[]
 }) {
   const targets = itineraryTimeTargetsSchema.parse(timeTargets)
-  if (targets.length === 0) return
+  if (targets.length === 0) return []
+  const checks: NonNullable<AssistantProposal['timeChecks']> = []
   const errors: string[] = []
   for (const day of afterDays) {
     if (day.startTime !== beforeDays.find((before) => before.id === day.id)?.startTime) {
@@ -52,12 +53,14 @@ export function validateItineraryTimeTargets({
       arrival += Math.max(item.duration, 0)
     }
     const difference = arrival - timeMinutes(target.startTime)
+    const actual = `${String(Math.floor(arrival / 60)).padStart(2, '0')}:${String(arrival % 60).padStart(2, '0')}`
+    checks.push({ attractionId: attraction.id, name: attraction.name, targetStartTime: target.startTime, actualStartTime: actual, differenceMinutes: difference })
     if (Math.abs(difference) > 15) {
-      const actual = `${String(Math.floor(arrival / 60)).padStart(2, '0')}:${String(arrival % 60).padStart(2, '0')}`
       errors.push(`${attraction.name} 目標 ${target.startTime}，實際開始 ${actual}，差距 ${difference > 0 ? '+' : ''}${difference} 分鐘（允許前後 15 分鐘）`)
     }
   }
   if (errors.length > 0) {
     throw new Error(`行程時間目標未達成：${errors.join('；')}。請以合理停留時間及增減、移動景點修正；不要虛增交通或新增等待項目，無法合理達成時請向使用者釐清。`)
   }
+  return checks
 }

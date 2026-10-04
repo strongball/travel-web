@@ -11,6 +11,7 @@ import {
 import ReactMarkdown from 'react-markdown'
 import type { AssistantMessage } from '../types'
 import { formatAssistantText } from '../utils/formatAssistantText'
+import { AttachmentPreviewButton } from './AttachmentPreviewButton'
 import { AssistantToolExecutionBadge } from './AssistantToolExecutionBadge'
 
 const timeLabel = (value: string) =>
@@ -183,6 +184,7 @@ export function MessageBubble({
             <Stack spacing={1} sx={{ mb: message.content ? 1 : 0 }}>
               {message.attachments.map((att) => (
                 <Box key={att.id}>
+                  <AttachmentPreviewButton attachment={att}>
                   {att.mimeType.startsWith('image/') && att.dataUrl ? (
                     <Box
                       component="img"
@@ -218,6 +220,7 @@ export function MessageBubble({
                       </Typography>
                     </Stack>
                   )}
+                  </AttachmentPreviewButton>
                 </Box>
               ))}
             </Stack>

@@ -9,6 +9,7 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
+import { AttachmentPreviewButton } from './AttachmentPreviewButton'
 import type { AssistantAttachment } from '../types'
 
 const formatSize = (bytes: number) => {
@@ -61,50 +62,54 @@ export function AttachmentPreviewList({
               maxWidth: 220,
             }}
           >
-            {isImage && att.dataUrl ? (
-              <Box
-                component="img"
-                src={att.dataUrl}
-                alt={att.name}
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 1.5,
-                  objectFit: 'cover',
-                }}
-              />
-            ) : (
-              <Avatar
-                variant="rounded"
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 1.5,
-                  bgcolor: 'surfaceSubtle',
-                  color: 'primary.main',
-                }}
-              >
-                {isImage ? <ImageIcon fontSize="small" /> : <DescriptionRoundedIcon fontSize="small" />}
-              </Avatar>
-            )}
+            <AttachmentPreviewButton attachment={att}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0 }}>
+              {isImage && att.dataUrl ? (
+                <Box
+                  component="img"
+                  src={att.dataUrl}
+                  alt={att.name}
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 1.5,
+                    objectFit: 'cover',
+                  }}
+                />
+              ) : (
+                <Avatar
+                  variant="rounded"
+                  sx={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 1.5,
+                    bgcolor: 'surfaceSubtle',
+                    color: 'primary.main',
+                  }}
+                >
+                  {isImage ? <ImageIcon fontSize="small" /> : <DescriptionRoundedIcon fontSize="small" />}
+                </Avatar>
+              )}
 
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                noWrap
-                variant="body2"
-                sx={{ fontSize: '0.78rem', fontWeight: 700 }}
-              >
-                {att.name}
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ fontSize: '0.68rem' }}
-              >
-                {formatSize(att.size)}
-              </Typography>
-            </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography
+                  noWrap
+                  variant="body2"
+                  sx={{ fontSize: '0.78rem', fontWeight: 700 }}
+                >
+                  {att.name}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ fontSize: '0.68rem' }}
+                >
+                  {formatSize(att.size)}
+                </Typography>
+              </Box>
 
+              </Stack>
+            </AttachmentPreviewButton>
             <IconButton
               size="small"
               onClick={() => onRemoveAttachment(att.id)}

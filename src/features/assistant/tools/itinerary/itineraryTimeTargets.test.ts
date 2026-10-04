@@ -94,4 +94,11 @@ describe('continuous itinerary time targets', () => {
       { type: 'update_attraction', attractionId: 'visit', changes: { duration: 1440 } },
     ], [{ attractionId: 'dinner', startTime: '09:30' }])).toThrow('+1440 分鐘')
   })
+  it('returns the validated arrival and signed difference for proposal presentation', () => {
+    const operations: AssistantOperation[] = [{ type: 'update_attraction', attractionId: 'visit', changes: { duration: 535 } }]
+    expect(validateItineraryTimeTargets({ beforeDays: itinerary.days!, afterDays: applyItineraryOperations(itinerary, operations), operations,
+      timeTargets: [{ attractionId: 'dinner', startTime: '18:30' }],
+    })).toEqual([{ attractionId: 'dinner', name: '晚餐', targetStartTime: '18:30', actualStartTime: '18:25', differenceMinutes: -5 }])
+  })
+
 })

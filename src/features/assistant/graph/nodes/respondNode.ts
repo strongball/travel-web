@@ -1,12 +1,12 @@
-import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages'
+import { AIMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages'
 import { getWriter, type LangGraphRunnableConfig } from '@langchain/langgraph/web'
 import {
   buildAssistantSystemPrompt,
-  buildAssistantUserPrompt,
   invokeAssistantModel,
 } from '../../services'
 import type { AssistantProgressPhase } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
+import { buildHumanMessage, validateModelInputSize } from '../../utils/modelMessages'
 
 type RespondNodeOptions = {
   emitProgress: (threadId: string, phase: AssistantProgressPhase) => void
@@ -19,33 +19,13 @@ export function createRespondNode(options: RespondNodeOptions) {
 
     options.emitProgress(request.threadId, 'generating_response')
     const systemPrompt = buildAssistantSystemPrompt(request.itinerary, state.summary || null)
-    const promptText = buildAssistantUserPrompt(
-      request.text,
-      request.attachments ?? [],
-    )
-
-    const imageAttachments = (request.attachments ?? []).filter(
-      (att) => att.mimeType.startsWith('image/') && att.dataUrl,
-    )
-
-    const initialHumanMessage =
-      imageAttachments.length > 0
-        ? new HumanMessage({
-            content: [
-              { type: 'text', text: promptText },
-              ...imageAttachments.map((att) => ({
-                type: 'image_url',
-                image_url: { url: att.dataUrl },
-              })),
-            ],
-          })
-        : new HumanMessage(promptText)
+    const initialHumanMessage = buildHumanMessage({ text: request.text, attachments: request.attachments })
 
     const historyMessages: BaseMessage[] = state.messages
       .filter((m) => m.turnId !== request.turnId)
       .map((m) =>
         m.role === 'user'
-          ? new HumanMessage(m.content)
+          ? buildHumanMessage({ text: m.content, attachments: m.attachments })
           : new AIMessage(m.content),
       )
 
@@ -54,6 +34,7 @@ export function createRespondNode(options: RespondNodeOptions) {
       state.modelMessages.length > 0
         ? state.modelMessages
         : [systemMessage, ...historyMessages, initialHumanMessage]
+    validateModelInputSize(modelMessages)
     const writer = getWriter(config)
     const response = await invokeAssistantModel(
       modelMessages,

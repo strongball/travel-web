@@ -59,6 +59,12 @@ export type AssistantToolCallRecord = {
   args?: Record<string, unknown>
 }
 
+export type AssistantGenerationSettings = {
+  selectedModel?: string
+  reasoningEffort?: string
+  thinkingBudget?: number
+}
+
 export type AssistantMessage = {
   id: string
   turnId: string
@@ -76,6 +82,7 @@ export type AssistantMessage = {
   grounding?: AssistantGroundingMetadata | null
   codeExecutions?: AssistantCodeExecution[] | null
   attachments?: AssistantAttachment[] | null
+  generationSettings?: AssistantGenerationSettings
   toolCalls?: AssistantToolCallRecord[] | null
 }
 
@@ -132,6 +139,7 @@ export type AssistantProposal = BaseAssistantProposal & {
   operations?: AssistantOperation[]
   beforeDays: TripDay[]
   afterDays: TripDay[]
+  timeChecks?: Array<{ attractionId: string; name: string; targetStartTime: string; actualStartTime: string; differenceMinutes: number }>
   proposedTodos: Array<{ title: string; category: string }>
   proposedCategories: string[]
 }

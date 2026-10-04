@@ -171,23 +171,32 @@ export function AssistantConversationView({
       selectedModel?: string
       reasoningEffort?: ReasoningEffort
     },
+    onAccepted?: () => void,
   ) => {
     const submittedThreadId = threadIdRef.current
     const submissionGeneration = selectionGenerationRef.current
     setError(null)
     ref.set(assistantNoticeProvider(itineraryId), null)
-    void turnActions.sendMessage({
+    return turnActions.sendMessage({
       ...payload,
       threadId: submittedThreadId,
       context: { itinerary, todos, todoCategories },
+      onAccepted,
+      onThreadReady: (readyThreadId) => {
+        if (selectionGenerationRef.current === submissionGeneration && readyThreadId !== submittedThreadId) select(readyThreadId)
+      },
     })
       .then((usedThreadId) => {
-        if (selectionGenerationRef.current !== submissionGeneration) return
+        const turn = usedThreadId ? ref.read(assistantConversationsProvider({ itineraryId, threadId: usedThreadId })).data?.turn : null
+        const accepted = Boolean(usedThreadId) && turn?.userMessageSaved !== false
+        if (selectionGenerationRef.current !== submissionGeneration) return accepted
         if (usedThreadId && usedThreadId !== submittedThreadId) select(usedThreadId)
+        return accepted
       })
       .catch((sendError: unknown) => {
-        if (selectionGenerationRef.current !== submissionGeneration) return
+        if (selectionGenerationRef.current !== submissionGeneration) return false
         setError(friendlyError(sendError, '助理暫時無法回覆'))
+        return false
       })
   }, [itinerary, itineraryId, ref, select, todoCategories, todos, turnActions])
 
@@ -206,17 +215,6 @@ export function AssistantConversationView({
       turnActions.cancelTurn(threadId)
     }
   }, [threadId, turnActions])
-
-  const prevSendingRef = useRef(sending)
-
-  useEffect(() => {
-    if (prevSendingRef.current && !sending) {
-      requestAnimationFrame(() => {
-        composerRef.current?.focus()
-      })
-    }
-    prevSendingRef.current = sending
-  }, [sending])
 
   if (threadsState.isLoading && (threadsState.data ?? []).length === 0) {
     return (
@@ -257,8 +255,8 @@ export function AssistantConversationView({
         }
       />
 
-      {collectionError || (!threadId && error) ? (
-        <Alert severity="error">{collectionError ?? error}</Alert>
+      {collectionError ? (
+        <Alert severity="error">{collectionError}</Alert>
       ) : null}
 
       <Box
@@ -302,17 +300,20 @@ export function AssistantConversationView({
             online={online}
             onQuickPrompt={(prompt) => composerRef.current?.setText(prompt)}
             onDecision={(proposal, approved) => void handleDecision(proposal, approved)}
+            onRefine={(proposal, feedback) => {
+              void turnActions.refineProposal({ threadId, proposal, feedback })
+            }}
             onQuestionAnswer={(answer) => void handleQuestionAnswer(answer)}
             onRetry={() => {
               if (threadId) void turnActions.retryTurn(threadId, { itinerary, todos, todoCategories })
             }}
           />
 
-          {threadId ? (
-            <ChatComposer
+          <ChatComposer
+              key={threadId ?? 'new-conversation'}
               ref={composerRef}
               itineraryId={itineraryId}
-              threadId={threadId}
+              threadId={threadId ?? ''}
               online={online}
               onSubmit={handleSubmit}
               onCancel={handleCancel}
@@ -324,7 +325,6 @@ export function AssistantConversationView({
               }}
               onClearNotice={() => ref.set(assistantNoticeProvider(itineraryId), null)}
             />
-          ) : null}
         </Stack>
       </Box>
     </Box>

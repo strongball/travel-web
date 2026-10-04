@@ -13,6 +13,7 @@ import {
   Collapse,
   Stack,
   Typography,
+  TextField,
 } from '@mui/material'
 import type { AssistantProposal } from '../types'
 import { ItineraryProposalView, TodoProposalView } from '../tools'
@@ -24,14 +25,18 @@ export function ProposalCard({
   online,
   onDecision,
   isHistory,
+  onRefine,
 }: {
   proposal: AssistantProposal
   busy: boolean
   online: boolean
   onDecision: (proposal: AssistantProposal, approved: boolean) => void
   isHistory?: boolean
+  onRefine?: (proposal: AssistantProposal, feedback: string) => void
 }) {
   const isHistorical = isHistory ?? (proposal.status !== 'pending')
+  const [refining, setRefining] = useState(false)
+  const [feedback, setFeedback] = useState('')
   const [historyExpanded, setHistoryExpanded] = useState(false)
   const contentId = `proposal-${proposal.id}-content`
 
@@ -218,7 +223,7 @@ export function ProposalCard({
 
             <Stack spacing={1.5} sx={{ mt: 1.75 }}>
               <TodoProposalView proposedTodos={proposedTodos} />
-              <ItineraryProposalView afterDays={afterDays} beforeDays={beforeDays} />
+              <ItineraryProposalView timeChecks={proposal.timeChecks} afterDays={afterDays} beforeDays={beforeDays} />
             </Stack>
           </Box>
         </Collapse>
@@ -281,8 +286,33 @@ export function ProposalCard({
 
       <Stack spacing={1.5} sx={{ mt: 1.75 }}>
         <TodoProposalView proposedTodos={proposedTodos} />
-        <ItineraryProposalView afterDays={afterDays} beforeDays={beforeDays} />
+        <ItineraryProposalView timeChecks={proposal.timeChecks} afterDays={afterDays} beforeDays={beforeDays} />
       </Stack>
+
+      {proposal.status === 'pending' && onRefine ? (
+        <Stack spacing={1} sx={{ mt: 2 }}>
+          {refining ? (
+            <>
+              <TextField
+                autoFocus fullWidth multiline minRows={2} maxRows={6}
+                label="想怎麼修改這份建議？"
+                placeholder="例如：保留晚餐，移除第二個景點，步調放慢"
+                value={feedback} onChange={(event) => setFeedback(event.target.value)}
+                disabled={busy || !online}
+              />
+              <Stack direction="row" spacing={1} sx={{ justifyContent: 'flex-end' }}>
+                <Button disabled={busy} onClick={() => setRefining(false)}>取消修改</Button>
+                <Button variant="outlined" disabled={busy || !online || !feedback.trim()}
+                  onClick={() => onRefine(proposal, feedback.trim())}>送出修改需求</Button>
+              </Stack>
+            </>
+          ) : (
+            <Button variant="text" disabled={busy || !online} onClick={() => setRefining(true)}>
+              修改這份建議
+            </Button>
+          )}
+        </Stack>
+      ) : null}
 
       {proposal.status === 'pending' ? (
         <Stack

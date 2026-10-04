@@ -33,65 +33,50 @@ const isImageFile = (file: File) => {
 
 const compressImage = async (file: File): Promise<{ dataUrl: string; size: number }> => {
   if (typeof document === 'undefined' || typeof Image === 'undefined') {
-    const rawDataUrl = await readFile(file, 'data-url')
-    return { dataUrl: rawDataUrl, size: file.size }
+    return { dataUrl: await readFile(file, 'data-url'), size: file.size }
   }
-
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let resolved = false
+    let objectUrl: string | undefined
+    const cleanup = () => {
+      clearTimeout(timer)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
     const fallback = () => {
       if (resolved) return
       resolved = true
-      void readFile(file, 'data-url').then((dataUrl) => resolve({ dataUrl, size: file.size }))
+      cleanup()
+      void readFile(file, 'data-url').then((dataUrl) => resolve({ dataUrl, size: file.size }), reject)
     }
-
     const timer = setTimeout(fallback, 1500)
-
     try {
       const img = new Image()
-      const objectUrl = URL.createObjectURL(file)
-
+      objectUrl = URL.createObjectURL(file)
       img.onload = () => {
         if (resolved) return
-        clearTimeout(timer)
-        resolved = true
-        URL.revokeObjectURL(objectUrl)
-        let { width, height } = img
-        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-          if (width > height) {
-            height = Math.round((height * MAX_IMAGE_DIMENSION) / width)
-            width = MAX_IMAGE_DIMENSION
-          } else {
-            width = Math.round((width * MAX_IMAGE_DIMENSION) / height)
-            height = MAX_IMAGE_DIMENSION
-          }
-        }
-
-        const canvas = document.createElement('canvas')
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
+        try {
+          let { width, height } = img
+          const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(width, height))
+          width = Math.round(width * scale)
+          height = Math.round(height * scale)
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')
+          if (!ctx) { fallback(); return }
+          ctx.drawImage(img, 0, 0, width, height)
+          const mimeType = file.type === 'image/png' || file.type === 'image/webp' ? file.type : 'image/jpeg'
+          const dataUrl = canvas.toDataURL(mimeType, IMAGE_QUALITY)
+          resolved = true
+          cleanup()
+          resolve({ dataUrl, size: Math.round((dataUrl.length * 3) / 4) })
+        } catch {
           fallback()
-          return
         }
-
-        ctx.drawImage(img, 0, 0, width, height)
-        const mimeType = file.type === 'image/png' || file.type === 'image/webp' ? file.type : 'image/jpeg'
-        const dataUrl = canvas.toDataURL(mimeType, IMAGE_QUALITY)
-        const approxBytes = Math.round((dataUrl.length * 3) / 4)
-        resolve({ dataUrl, size: approxBytes })
       }
-
-      img.onerror = () => {
-        clearTimeout(timer)
-        URL.revokeObjectURL(objectUrl)
-        fallback()
-      }
-
+      img.onerror = fallback
       img.src = objectUrl
     } catch {
-      clearTimeout(timer)
       fallback()
     }
   })
@@ -112,6 +97,11 @@ export const readAssistantAttachments = async (
 
     const textFile = isTextFile(file)
     const imageFile = isImageFile(file)
+    const pdfFile = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    if (!textFile && !imageFile && !pdfFile) {
+      errors.push(`無法分析檔案「${file.name}」，請使用圖片、PDF 或文字檔`)
+      continue
+    }
 
     try {
       if (textFile) {
@@ -128,16 +118,16 @@ export const readAssistantAttachments = async (
         attachments.push({
           id: crypto.randomUUID(),
           name: file.name,
-          mimeType: file.type || 'image/jpeg',
+          mimeType: dataUrl.match(/^data:([^;]+);/)?.[1] ?? (file.type || 'image/jpeg'),
           size,
           dataUrl,
         })
       } else {
-        const dataUrl = await readFile(file, 'data-url')
+        const dataUrl = (await readFile(file, 'data-url')).replace(/^data:[^;]*;base64,/, 'data:application/pdf;base64,')
         attachments.push({
           id: crypto.randomUUID(),
           name: file.name,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType: 'application/pdf',
           size: file.size,
           dataUrl,
         })
