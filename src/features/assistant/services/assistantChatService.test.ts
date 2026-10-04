@@ -93,4 +93,31 @@ describe('AssistantChatService', () => {
       { type: 'message', message: assistant },
     ])
   })
+
+  it('reuses the persisted user message when resending the same turn', async () => {
+    const user = message('user', 'retry-turn', '晚餐 6:30')
+    const runtime = {
+      runner: { sendTurn: vi.fn().mockResolvedValue({ assistantMessage: null, pendingToolCall: null }) },
+    } as unknown as AssistantConversationRuntime
+    await createAssistantChatService(runtime).sendStream({
+      threadId: 'thread', turnId: user.turnId, text: user.content,
+      itinerary: { id: 'trip', title: '', ownerId: 'user', currency: 'TWD' }, dayRevisions: {},
+    }, [user], vi.fn())
+    expect(mocks.saveAssistantMessage).toHaveBeenLastCalledWith('thread', user)
+  })
+
+  it('recovers a completed checkpoint reply after message synchronization fails', async () => {
+    const assistant = message('assistant', 'retry-turn', '行程已套用')
+    const runtime = {
+      runner: { resumeTurn: vi.fn().mockResolvedValue({ assistantMessage: assistant, pendingToolCall: null }) },
+      updateSummary: vi.fn(),
+    } as unknown as AssistantConversationRuntime
+    const service = createAssistantChatService(runtime)
+    mocks.saveAssistantMessage.mockRejectedValueOnce(new Error('sync failed')).mockResolvedValueOnce(undefined)
+    const onEvent = vi.fn()
+    await expect(service.resumeProposal('thread', { approved: true }, onEvent)).rejects.toThrow('sync failed')
+    expect(onEvent).not.toHaveBeenCalled()
+    await service.resumeProposal('thread', { approved: true }, onEvent)
+    expect(onEvent).toHaveBeenCalledWith({ type: 'message', message: assistant })
+  })
 })

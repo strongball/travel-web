@@ -155,6 +155,7 @@ export function MessageList({
   onQuickPrompt,
   onDecision,
   onQuestionAnswer,
+  onRetry,
 }: {
   itineraryId: string
   /** 目標對話;訊息與生成中的狀態由此元件自行訂閱(graph → river → component)。 */
@@ -164,6 +165,7 @@ export function MessageList({
   onQuickPrompt: (text: string) => void
   onDecision: (proposal: AssistantProposal, approved: boolean) => void
   onQuestionAnswer?: (answer: AssistantQuestionDecision) => void
+  onRetry?: () => void
 }) {
   const conversationState = useRiverWatch(
     assistantConversationsProvider({ itineraryId, threadId: threadId ?? '' }),
@@ -291,6 +293,22 @@ export function MessageList({
           ) : null}
         </Stack>
       ))}
+
+      {turn?.phase === 'error' && turn.error ? (
+        <Box role="alert">
+          <MessageBubble
+            message={{
+              id: `failed-${threadId}`,
+              turnId: messages.at(-1)?.turnId ?? threadId,
+              role: 'assistant',
+              content: turn.error,
+              createdAt: messages.at(-1)?.createdAt ?? new Date().toISOString(),
+            }}
+            onRetry={turn.canRetry ? onRetry : undefined}
+            retryDisabled={!online || sending}
+          />
+        </Box>
+      ) : null}
 
       {isStreaming && (
         <Stack spacing={1.25}>

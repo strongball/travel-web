@@ -157,6 +157,64 @@ describe('AssistantConversationNotifier', () => {
     expect(mockService.resumeQuestion).toHaveBeenCalledWith('thread-1', answer, expect.any(Function), expect.any(AbortSignal))
   })
 
+  it('retries the original turn with fresh context and no duplicate or partial messages', async () => {
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    const attachments = [{ id: 'file', name: 'notes.txt', mimeType: 'text/plain', size: 6, text: '晚餐' }]
+    const request = {
+      threadId: 'thread-1', turnId: 'retry-turn', text: '晚餐 6:30',
+      itinerary: { id: 'trip-1', title: '旅行', ownerId: 'user', currency: 'TWD' },
+      dayRevisions: {}, attachments, selectedModel: 'original-model', thinkingBudget: 2000,
+    }
+    mockService.sendStream = vi.fn().mockImplementationOnce(async (_req, _history, onEvent) => {
+      onEvent({ type: 'content', text: '半成品', turnId: request.turnId })
+      throw new Error('stream failed')
+    }).mockImplementationOnce(async (_req, _history, onEvent) => {
+      expect(container.read(provider).data?.turn?.streaming).toBeNull()
+      onEvent({ type: 'message', message: message('assistant', request.turnId, '完成') })
+    })
+    await notifier.send(request)
+    expect(container.read(provider).data?.turn?.canRetry).toBe(true)
+    const context = {
+      itinerary: { ...request.itinerary, title: '最新行程' }, todos: [], todoCategories: [],
+    }
+    await notifier.retry(context)
+    expect(mockService.sendStream).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ...request, ...context }), expect.any(Array), expect.any(Function), expect.any(AbortSignal),
+    )
+    const messages = container.read(provider).data!.messages
+    expect(messages.map((item) => item.content)).toEqual(['晚餐 6:30', '完成'])
+    expect(messages[0].attachments).toEqual(attachments)
+    expect(container.read(provider).data?.turn).toBeNull()
+  })
+
+  it('deduplicates retry clicks and stops offering retry after cancellation', async () => {
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    mockService.sendStream = vi.fn().mockRejectedValueOnce(new Error('offline'))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    const context = { itinerary: { id: 'trip-1', title: '', ownerId: 'user', currency: 'TWD' }, todos: [], todoCategories: [] }
+    await notifier.send({ ...context, threadId: 'thread-1', turnId: 'turn', text: 'hello', dayRevisions: {} })
+    void notifier.retry(context)
+    void notifier.retry(context)
+    expect(mockService.sendStream).toHaveBeenCalledTimes(2)
+    notifier.cancel()
+    await notifier.retry(context)
+    expect(mockService.sendStream).toHaveBeenCalledTimes(2)
+    expect(container.read(provider).data?.turn).toBeNull()
+  })
+
+  it('retries a failed proposal continuation instead of sending a new user message', async () => {
+    const { notifier, provider } = createTestProvider()
+    await container.read(provider.promise)
+    mockService.resumeProposal = vi.fn().mockRejectedValueOnce(new Error('reply failed')).mockResolvedValueOnce(undefined)
+    await notifier.resumeProposal({ approved: true })
+    await notifier.retry({ itinerary: { id: 'trip-1', title: '', ownerId: 'user', currency: 'TWD' }, todos: [], todoCategories: [] })
+    expect(mockService.resumeProposal).toHaveBeenCalledTimes(2)
+    expect(mockService.sendStream).not.toHaveBeenCalled()
+    expect(container.read(provider).data?.turn).toBeNull()
+  })
+
   it('cancels an in-flight turn and resets turn state to null', async () => {
     const { notifier, provider } = createTestProvider()
     await container.read(provider.promise)
@@ -187,4 +245,3 @@ describe('AssistantConversationNotifier', () => {
     expect(abortSignalPassed?.aborted).toBe(true)
   })
 })
-

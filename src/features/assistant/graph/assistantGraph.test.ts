@@ -169,6 +169,78 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.assistantMessage?.content).toBe('第一段第二段')
   })
 
+  it('feeds a missed time target back to the model before showing a corrected proposal', async () => {
+    const proposalResponse = (duration: number) => new AIMessage({
+      content: '',
+      tool_calls: [{ id: `target-${duration}`, name: 'propose_itinerary_edit', type: 'tool_call', args: {
+        operations: [
+          { type: 'update_attraction', attractionId: 'place-1', changes: { duration } },
+          { type: 'add_attraction', dayId: 'day-1', name: '晚餐', duration: 60, travelTime: 30 },
+        ],
+        timeTargets: [{ addOperationIndex: 1, startTime: '18:30' }],
+      } }],
+    })
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(proposalResponse(480))
+      .mockResolvedValueOnce(proposalResponse(540))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn({ ...request(), text: '晚餐訂在 6:30' })
+    const correctionMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
+    const feedback = correctionMessages.find((item) => ToolMessage.isInstance(item))
+    expect(feedback?.content).toContain('實際開始 17:30')
+    const proposed = result.pendingToolCall?.proposal
+    expect(proposed?.afterDays[0].attractions[1].startTime).toBe('2026-09-01T18:30:00')
+    expect(proposed?.afterDays[0].startTime).toBe(itinerary.days![0].startTime)
+    expect(proposed?.afterDays[0].attractions).toHaveLength(2)
+    expect(proposed).not.toHaveProperty('timeTargets')
+  })
+
+  it('continues a failed reply after approval without applying the proposal again', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{
+      id: 'retry-proposal', name: 'propose_itinerary_edit', type: 'tool_call', args: {
+        operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
+      },
+    }] })).mockRejectedValueOnce(new Error('reply interrupted'))
+      .mockResolvedValueOnce(new AIMessage({ content: '已完成調整' }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    await graph.sendTurn(req)
+    await expect(graph.resumeTurn(req.threadId, { approved: true })).rejects.toThrow('reply interrupted')
+    const result = await graph.resumeTurn(req.threadId, { approved: true })
+    expect(apply).toHaveBeenCalledOnce()
+    expect(result.assistantMessage?.proposal?.status).toBe('applied')
+    expect(result.assistantMessage?.content).toBe('已完成調整')
+    expect((await graph.resumeTurn(req.threadId, { approved: true })).assistantMessage).toEqual(result.assistantMessage)
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('keeps proposal persistence errors in the existing tool feedback flow', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{
+      id: 'retry-save', name: 'propose_itinerary_edit', type: 'tool_call', args: {
+        operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }],
+      },
+    }] })).mockResolvedValueOnce(new AIMessage({ content: '暫時無法儲存' }))
+    const apply = vi.fn().mockRejectedValue(new Error('database offline'))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    await graph.sendTurn(req)
+    const result = await graph.resumeTurn(req.threadId, { approved: true })
+    expect(apply).toHaveBeenCalledOnce()
+    const modelMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
+    expect(modelMessages.find((item) => ToolMessage.isInstance(item))?.content).toContain('database offline')
+    expect(result.assistantMessage?.content).toBe('暫時無法儲存')
+  })
+
+  it('rejects invalid tool calls instead of treating partial text as a completed reply', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({
+      content: '尚未完成', invalid_tool_calls: [{ name: 'propose_itinerary_edit', args: '{', id: 'invalid', error: 'invalid JSON' }],
+    }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const req = request()
+    await expect(graph.sendTurn(req)).rejects.toThrow('無法解析的工具參數')
+    expect((await graph.getState(req.threadId))?.assistantMessage).toBeNull()
+  })
+
   it('does not persist partial streamed text when the model stream fails and can retry', async () => {
     assistantGraphMocks.invokeAssistantModel
       .mockImplementationOnce(async (

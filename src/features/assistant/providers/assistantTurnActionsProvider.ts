@@ -109,6 +109,11 @@ export const assistantTurnActionsProvider = providerFamily(
         await conversationNotifier(threadId).summarize()
       },
 
+      retryTurn: async (threadId: string, context: AssistantTurnContext): Promise<void> => {
+        if (!threadAvailable(threadId)) return
+        await conversationNotifier(threadId).retry(context)
+      },
+
       cancelTurn: (threadId: string | null): void => {
         if (!threadId) return
         conversationNotifier(threadId).cancel()

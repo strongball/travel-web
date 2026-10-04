@@ -64,6 +64,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         signal,
       )
 
+      if (signal?.aborted) return
       if (state.pendingToolCall) {
         onEvent({ type: 'proposal', pendingToolCall: state.pendingToolCall })
       } else if (state.assistantMessage) {
@@ -100,7 +101,8 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
       },
 
       sendStream: async (request, rehydratedMessages, onEvent, signal) => {
-        const userMessage: AssistantMessage = {
+        const userMessage: AssistantMessage = rehydratedMessages.find((message) =>
+          message.role === 'user' && message.turnId === request.turnId) ?? {
           id: crypto.randomUUID(),
           turnId: request.turnId,
           role: 'user',

@@ -7,6 +7,7 @@ import {
 } from '../../services/assistantOperations'
 import { itineraryToolInputSchema } from './itineraryToolSchema'
 import { applyItineraryOperations, changedDays } from './itineraryOperations'
+import { validateItineraryTimeTargets } from './itineraryTimeTargets'
 import {
   proposalIdForRequest,
   proposalRuntimeContext,
@@ -33,9 +34,16 @@ export const proposeItineraryEditTool = tool(
     }
 
     const allBeforeDays = request?.itinerary.days ?? []
-    const afterDays = request?.itinerary
-      ? changedDays(allBeforeDays, applyItineraryOperations(request.itinerary, operations))
+    const allAfterDays = request?.itinerary
+      ? applyItineraryOperations(request.itinerary, operations)
       : []
+    validateItineraryTimeTargets({
+      beforeDays: allBeforeDays,
+      afterDays: allAfterDays,
+      operations,
+      timeTargets: input.timeTargets ?? [],
+    })
+    const afterDays = changedDays(allBeforeDays, allAfterDays)
     const affectedDayIds = new Set(afterDays.map((day) => day.id))
 
     const proposal: AssistantProposal = {

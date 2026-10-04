@@ -166,9 +166,26 @@ export const itineraryOperationItemSchema = z.object({
   changes: assistantAttractionItemSchema.optional().describe('修改景點之變更內容（選填）'),
 })
 
+export const itineraryTimeTargetSchema = z.object({
+  attractionId: z.string().trim().min(1).optional().describe('既有目標景點 ID；與 addOperationIndex 擇一'),
+  addOperationIndex: z.number().int().min(0).optional().describe('目標新增景點在 operations 中的位置（0-indexed）；與 attractionId 擇一'),
+  startTime: timeSchema.describe('期望開始時間，24 小時 HH:mm；晚餐 6:30 請填 18:30'),
+})
+
+export type ItineraryTimeTarget = z.infer<typeof itineraryTimeTargetSchema>
+export const itineraryTimeTargetsSchema = z.array(itineraryTimeTargetSchema)
+
+// Keep provider declarations simple; enforce constraints at the execution boundary.
+const itineraryTimeTargetItemSchema = z.object({
+  attractionId: z.string().optional().describe('既有目標景點 ID；與 addOperationIndex 擇一'),
+  addOperationIndex: z.number().optional().describe('目標新增景點在 operations 中的位置（0-indexed）；與 attractionId 擇一'),
+  startTime: z.string().describe('期望開始時間，24 小時 HH:mm；晚餐 6:30 請填 18:30'),
+})
+
 export const itineraryToolInputSchema = z.object({
   reply: z.string().optional().describe('對使用者的簡短說明或回覆'),
   title: z.string().optional().describe('提案標題'),
   explanation: z.string().optional().describe('提案詳細說明'),
   operations: z.array(itineraryOperationItemSchema).min(1).describe('要執行的行程操作清單'),
+  timeTargets: z.array(itineraryTimeTargetItemSchema).optional().describe('使用者指定的本次開始時間目標，全部列入；依連續排程驗算，允許前後 15 分鐘，不會鎖定或儲存時間'),
 })

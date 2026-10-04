@@ -106,6 +106,7 @@ export async function createLangChainChatModel(
     model: targetModel,
     apiKey: 'proxied-by-edge-function',
     temperature: 0,
+    maxRetries: 0,
     thinkingBudget,
     ...(baseUrl ? { baseUrl } : {}),
     ...(customHeaders ? { customHeaders } : {}),

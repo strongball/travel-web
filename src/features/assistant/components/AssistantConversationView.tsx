@@ -303,6 +303,9 @@ export function AssistantConversationView({
             onQuickPrompt={(prompt) => composerRef.current?.setText(prompt)}
             onDecision={(proposal, approved) => void handleDecision(proposal, approved)}
             onQuestionAnswer={(answer) => void handleQuestionAnswer(answer)}
+            onRetry={() => {
+              if (threadId) void turnActions.retryTurn(threadId, { itinerary, todos, todoCategories })
+            }}
           />
 
           {threadId ? (

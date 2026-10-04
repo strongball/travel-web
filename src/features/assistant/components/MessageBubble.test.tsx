@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MessageBubble } from './MessageBubble'
 import type { AssistantMessage } from '../types'
 
@@ -12,6 +12,17 @@ const assistantMessage: AssistantMessage = {
 }
 
 describe('MessageBubble', () => {
+  it('places manual retry inside the bubble and disables it offline or while streaming', () => {
+    const onRetry = vi.fn()
+    const { rerender } = render(<MessageBubble message={{ ...assistantMessage, content: '生成失敗' }} onRetry={onRetry} />)
+    fireEvent.click(screen.getByRole('button', { name: '重試' }))
+    expect(onRetry).toHaveBeenCalledOnce()
+    rerender(<MessageBubble message={assistantMessage} onRetry={onRetry} retryDisabled />)
+    expect(screen.getByRole('button', { name: '重試' })).toBeDisabled()
+    rerender(<MessageBubble message={assistantMessage} onRetry={onRetry} streaming />)
+    expect(screen.getByRole('button', { name: '重試' })).toBeDisabled()
+  })
+
   it('renders streamed Markdown with an active typing caret', () => {
     const { container } = render(<MessageBubble message={assistantMessage} streaming />)
 

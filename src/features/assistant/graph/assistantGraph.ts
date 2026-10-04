@@ -297,7 +297,15 @@ export const createAssistantGraph = (
     const run = (async () => {
       if (onProgress) progressListeners.set(threadId, onProgress)
       try {
-        return await runWorkflowStream(new Command({ resume: decision }), threadId, null, onStream, signal)
+        const previous = await getState(threadId)
+        if (!previous) throw new Error('找不到可恢復的對話進度')
+        if (previous.graphVersion !== version) {
+          throw new AssistantGraphVersionError(previous.graphVersion, version)
+        }
+        // A failed final reply must continue after the tool, not apply its decision again.
+        if (!previous.request && previous.assistantMessage) return previous
+        const input = previous.pendingToolCall ? new Command({ resume: decision }) : null
+        return await runWorkflowStream(input, threadId, previous.request, onStream, signal)
       } finally {
         progressListeners.delete(threadId)
       }

@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type KeyboardEvent,
 } from 'react'
 import { useRiverWatch } from '@stball/react-river'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
@@ -49,14 +48,6 @@ function useStoredPreference<T extends string>(key: string, fallback: T) {
   }, [key])
 
   return [value, setValue] as const
-}
-
-const handleComposerKeyDown = (event: KeyboardEvent<HTMLDivElement | HTMLTextAreaElement>) => {
-  if (event.nativeEvent.isComposing || event.keyCode === 229) return
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    event.currentTarget.closest('form')?.requestSubmit()
-  }
 }
 
 export interface ChatComposerHandle {
@@ -186,10 +177,10 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     ? '請先點選上方偏好選項卡片…'
     : hasPendingProposal
     ? '請先確認或拒絕待處理的行程提案'
-    : '輸入訊息…（Enter 送出，Shift+Enter 換行）'
+    : '輸入訊息…（Enter 換行，點擊箭頭送出）'
 
   const disabled = loading || unavailable || sending || hasPendingInterrupt || !online
-  const displayError = turn?.error ?? feedbackError ?? localError
+  const displayError = feedbackError ?? localError
 
   return (
     <Stack
@@ -301,7 +292,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
           placeholder={isListening ? '正在聆聽您的語音輸入…' : composerPlaceholder}
           value={text}
           onChange={(event) => setText(event.target.value)}
-          onKeyDown={handleComposerKeyDown}
           disabled={disabled}
           sx={{
             px: 0.5,

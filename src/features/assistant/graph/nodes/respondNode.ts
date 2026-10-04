@@ -68,6 +68,9 @@ export function createRespondNode(options: RespondNodeOptions) {
       request.thinkingBudget,
       config?.signal,
     )
+    if (response.invalid_tool_calls?.length) {
+      throw new Error('模型回傳了無法解析的工具參數，請重試')
+    }
     const toolCalls = (response.tool_calls ?? []).map((call, index) => ({
       ...call,
       id: typeof call.id === 'string' && call.id ? call.id : `assistant-tool-${state.toolRound}-${index}`,

@@ -1,7 +1,9 @@
+import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
   Avatar,
   Box,
+  Button,
   Paper,
   Stack,
   Typography,
@@ -21,9 +23,13 @@ const timeLabel = (value: string) =>
 export function MessageBubble({
   message,
   streaming = false,
+  onRetry,
+  retryDisabled = false,
 }: {
   message: AssistantMessage
   streaming?: boolean
+  onRetry?: () => void
+  retryDisabled?: boolean
 }) {
   const user = message.role === 'user'
   return (
@@ -226,6 +232,18 @@ export function MessageBubble({
             >
               {formatAssistantText(message.content)}
             </ReactMarkdown>
+          ) : null}
+          {onRetry ? (
+            <Button
+              type="button"
+              size="small"
+              startIcon={<ReplayRoundedIcon />}
+              disabled={retryDisabled || streaming}
+              onClick={onRetry}
+              sx={{ mt: 1 }}
+            >
+              重試
+            </Button>
           ) : null}
           {streaming ? (
             <Box component="span" className="assistant-typing-caret" aria-hidden="true">
