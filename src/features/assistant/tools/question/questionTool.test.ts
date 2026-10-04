@@ -61,4 +61,12 @@ describe('askQuestion runtime function', () => {
   it('exposes tool name correctly', () => {
     expect(askClarifyingQuestionTool.name).toBe(ASK_CLARIFYING_QUESTION_TOOL_NAME)
   })
+  it.each([
+    { question: '', options: [{ id: '1', label: 'A' }, { id: '2', label: 'B' }] },
+    { question: '問題', options: [{ id: '1', label: ' ' }, { id: '2', label: 'B' }] },
+    { question: '問題', options: [{ id: 'same', label: 'A' }, { id: 'same', label: 'B' }] },
+  ])('rejects unusable question cards before interrupting (%j)', async (input) => {
+    await expect(askClarifyingQuestionTool.invoke(input)).rejects.toThrow('問題與選項文字不得為空')
+  })
+
 })

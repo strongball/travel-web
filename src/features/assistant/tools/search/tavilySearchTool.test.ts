@@ -39,6 +39,7 @@ describe('tavilySearchTool', () => {
     const result = await tavilySearchTool.invoke({ query: '東京晴空塔 門票' })
     expect(supabase.functions.invoke).toHaveBeenCalledWith('tavily-proxy', {
       body: { query: '東京晴空塔 門票' },
+      signal: undefined, timeout: 30_000,
     })
     expect(result).toContain('【即時搜尋摘要】：\n東京晴空塔目前成人票價約為 2100 日圓，建議提前預約。')
     expect(result).toContain('1. [東京晴空塔官網](https://www.tokyo-skytree.jp)\n營業時間為 09:00 至 21:00，網路購票可享優惠。')

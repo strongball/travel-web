@@ -58,6 +58,10 @@ export async function askQuestion(
 
 export const askClarifyingQuestionTool = tool(
   async (input, runtime: AssistantQuestionToolRuntime) => {
+    if (!input.question.trim() || input.options.some((option) => !option.id.trim() || !option.label.trim()) ||
+      new Set(input.options.map((option) => option.id.trim())).size !== input.options.length) {
+      throw new Error('問題與選項文字不得為空，選項 ID 必須唯一；請修正後再向使用者提問')
+    }
     const questionData: AssistantQuestionData = {
       question: input.question,
       options: input.options.map((opt) => ({

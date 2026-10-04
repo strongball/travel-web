@@ -1,4 +1,4 @@
-import { tool } from '@langchain/core/tools'
+import { tool, type ToolRuntime } from '@langchain/core/tools'
 import { z } from 'zod'
 import { supabase } from '../../../../lib/supabase'
 
@@ -23,7 +23,7 @@ export interface TavilySearchResponse {
 }
 
 export const tavilySearchTool = tool(
-  async (input: TavilySearchInput) => {
+  async (input: TavilySearchInput, runtime: ToolRuntime) => {
     const query = input.query?.trim()
     if (!query) {
       return '搜尋關鍵字不能為空。'
@@ -36,6 +36,8 @@ export const tavilySearchTool = tool(
     try {
       const { data, error } = await supabase.functions.invoke<TavilySearchResponse>('tavily-proxy', {
         body: { query },
+        signal: runtime.signal,
+        timeout: 30_000,
       })
 
       if (error) {

@@ -53,7 +53,7 @@ vi.mock('../../../lib/supabase', () => ({
 
 vi.mock('../../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
-vi.mock('../tools', () => ({ enrichAppliedProposalPlaces: mocks.enrichAppliedProposalPlaces }))
+vi.mock('../tools', () => ({ enrichAppliedProposalPlaces: mocks.enrichAppliedProposalPlaces, assistantProposalTools: [] }))
 
 vi.mock('../graph', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../graph')>()),

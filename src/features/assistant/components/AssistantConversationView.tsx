@@ -244,6 +244,7 @@ export function AssistantConversationView({
             <AssistantAppBarActions
               thread={currentThread}
               sending={sending}
+              summarizeDisabled={Boolean(turn)}
               messageCount={messages.length}
               online={online}
               onConversationList={() => setShowConversationList(true)}

@@ -126,9 +126,9 @@ describe('assistant graph routing', () => {
     expect(routeAfterRespond(stateWithAiMessage([], 0))).toBe('finalize_response')
   })
 
-  it('throws on unsupported tool', () => {
+  it('routes unsupported tools through ToolNode error feedback', () => {
     const unsupportedCall = { id: '1', name: 'unsupported_tool', args: {}, type: 'tool_call' as const }
-    expect(() => routeAfterRespond(stateWithAiMessage([unsupportedCall], 0))).toThrow('不支援的工具：unsupported_tool')
+    expect(routeAfterRespond(stateWithAiMessage([unsupportedCall], 0))).toBe('execute_tools')
   })
 })
 
@@ -677,6 +677,103 @@ describe('createAssistantGraph', () => {
       { type: 'image_url', image_url: { url: first.attachments[0].dataUrl } },
       { type: 'media', mimeType: 'application/pdf', data: 'YWJj' },
     ]))
+  })
+
+  it('returns unknown tool names and invalid parameter types to the model for correction', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'unknown', name: 'nonexistent_tool', args: {}, type: 'tool_call' },
+      { id: 'bad-args', name: 'view_itinerary', args: { dayNumbers: 'one' }, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'corrected', name: 'view_itinerary', args: { dayNumbers: [1] }, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '已讀取第一天行程' }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn(request())
+    const feedback = (assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]).filter(ToolMessage.isInstance)
+    expect(feedback).toHaveLength(2)
+    expect(feedback.every((message) => message.status === 'error')).toBe(true)
+    expect(result.assistantMessage?.content).toBe('已讀取第一天行程')
+  })
+
+  it('does not execute a batch containing multiple interactive tools', async () => {
+    const proposalCall = (id: string) => ({ id, name: 'propose_itinerary_edit', args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] }, type: 'tool_call' as const })
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [proposalCall('one'), proposalCall('two')] }))
+      .mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [proposalCall('only')] }))
+      .mockResolvedValueOnce(new AIMessage({ content: '已完成' }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    const paused = await graph.sendTurn(req)
+    const feedback = (assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]).filter(ToolMessage.isInstance)
+    expect(feedback).toHaveLength(2)
+    expect(feedback.every((message) => String(message.content).includes('本批工具尚未執行'))).toBe(true)
+    expect(paused.pendingToolCall?.id).toBe('only')
+    expect(apply).not.toHaveBeenCalled()
+    await graph.resumeTurn(req.threadId, { approved: true })
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('replaces reused tool IDs so a corrected call is not silently skipped', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'reused', name: 'view_itinerary', args: { dayNumbers: 'one' }, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'reused', name: 'view_itinerary', args: { dayNumbers: [1] }, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '已讀取' }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    await graph.sendTurn(request())
+    const feedback = (assistantGraphMocks.invokeAssistantModel.mock.calls[2][0] as BaseMessage[]).filter(ToolMessage.isInstance)
+    expect(feedback).toHaveLength(2)
+    expect(feedback[0].tool_call_id).not.toBe(feedback[1].tool_call_id)
+    expect(String(feedback[1].content)).toContain('淺草寺')
+  })
+
+  it('regenerates an empty reply after an applied proposal on manual retry', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'apply-empty', name: 'propose_itinerary_edit', args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] }, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '' })).mockResolvedValueOnce(new AIMessage({ content: '已套用，重新產生回覆成功' }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    await graph.sendTurn(req)
+    await expect(graph.resumeTurn(req.threadId, { approved: true })).rejects.toThrow('空的文字')
+    const recovered = await graph.sendTurn(req)
+    expect(recovered.assistantMessage?.content).toContain('重新產生回覆成功')
+    expect(recovered.assistantMessage?.proposal?.status).toBe('applied')
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('stops repeated tool failures with a retryable error instead of exhausting graph recursion', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '', tool_calls: [
+      { id: 'loop', name: 'view_itinerary', args: { dayNumbers: 'bad' }, type: 'tool_call' },
+    ] }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const req = request()
+    await expect(graph.sendTurn(req)).rejects.toThrow('工具修正次數已達上限')
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(10)
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '重試成功' }))
+    expect((await graph.sendTurn(req)).assistantMessage?.content).toBe('重試成功')
+  })
+
+  it('does not allow summarization to overwrite a pending interactive checkpoint', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'pending-summary', name: 'propose_itinerary_edit', args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] }, type: 'tool_call' },
+    ] }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const req = request()
+    await graph.sendTurn(req)
+    await expect(graph.summarizeThread(req.threadId)).rejects.toThrow('請先完成目前回合')
+    expect((await graph.getState(req.threadId))?.pendingToolCall?.id).toBe('pending-summary')
+    expect(assistantGraphMocks.summarizeWithGemini).not.toHaveBeenCalled()
+  })
+
+  it('does not let null arguments in a failed proposal poison subsequent valid proposals', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'null-args', name: 'propose_itinerary_edit', args: null as unknown as Record<string, unknown>, type: 'tool_call' },
+    ] })).mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [
+      { id: 'valid-args', name: 'propose_itinerary_edit', args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] }, type: 'tool_call' },
+    ] }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    expect((await graph.sendTurn(request())).pendingToolCall?.id).toBe('valid-args')
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(2)
   })
 
 })

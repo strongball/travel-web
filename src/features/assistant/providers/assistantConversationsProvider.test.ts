@@ -262,4 +262,58 @@ describe('AssistantConversationNotifier', () => {
     expect(container.read(provider).data?.messages).toEqual([user])
   })
 
+  it.each([null, 'stream broken', { message: 'plain object failure' }])('renders non-Error failures without leaving the composer permanently running (%j)', async (failure) => {
+    mockService.sendStream = vi.fn().mockRejectedValueOnce(failure)
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    const itinerary = { id: 'trip-1', title: '', ownerId: 'user', currency: 'TWD' }
+    await notifier.send({ threadId: 'thread-1', turnId: 'odd-error', text: '安排旅程', itinerary, dayRevisions: {} })
+    expect(container.read(provider).data?.turn).toMatchObject({ phase: 'error', canRetry: true, error: expect.any(String) })
+    mockService.sendStream = vi.fn().mockResolvedValueOnce(undefined)
+    await notifier.retry({ itinerary, todos: [], todoCategories: [] })
+    expect(container.read(provider).data?.turn).toBeNull()
+  })
+
+  it('rejects a new send while a cancelled request is settling without adding or accepting its message', async () => {
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    let finish!: () => void
+    mockService.sendStream = vi.fn(() => new Promise<void>((resolve) => { finish = resolve }))
+    const request = { threadId: 'thread-1', turnId: 'old', text: '第一則', itinerary: { id: 'trip-1', title: '', ownerId: 'user', currency: 'TWD' }, dayRevisions: {} }
+    const pending = notifier.send(request)
+    notifier.cancel()
+    const accepted = vi.fn()
+    await expect(notifier.send({ ...request, turnId: 'new', text: '下一則草稿' }, accepted)).rejects.toThrow('上一個請求仍在結束中')
+    expect(accepted).not.toHaveBeenCalled()
+    expect(container.read(provider).data?.messages).toHaveLength(1)
+    finish()
+    await pending
+    mockService.sendStream = vi.fn().mockResolvedValue(undefined)
+    await notifier.send({ ...request, turnId: 'new', text: '下一則草稿' })
+    expect(mockService.sendStream).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a pending proposal intact when asked to summarize', async () => {
+    const pending = pendingToolCall()
+    mockService.fetchHistory = vi.fn().mockResolvedValue({ messages: [message('user', 'paused', '調整')], pendingToolCall: pending })
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    await notifier.summarize()
+    expect(mockService.summarize).not.toHaveBeenCalled()
+    expect(container.read(provider).data?.turn?.pendingToolCall).toEqual(pending)
+  })
+
+  it('can retry a failed manual summary without clearing or duplicating messages', async () => {
+    const user = message('user', 'finished', '行程')
+    mockService.fetchHistory = vi.fn().mockResolvedValue({ messages: [user], pendingToolCall: null })
+    mockService.summarize = vi.fn().mockRejectedValueOnce(null).mockResolvedValueOnce(undefined)
+    const { provider, notifier } = createTestProvider()
+    await container.read(provider.promise)
+    await notifier.summarize()
+    expect(container.read(provider).data?.turn).toMatchObject({ phase: 'error', canRetry: true })
+    await notifier.retry({ itinerary: { id: 'trip-1', title: '', ownerId: 'user', currency: 'TWD' }, todos: [], todoCategories: [] })
+    expect(mockService.summarize).toHaveBeenCalledTimes(2)
+    expect(container.read(provider).data).toMatchObject({ messages: [user], turn: null })
+  })
+
 })

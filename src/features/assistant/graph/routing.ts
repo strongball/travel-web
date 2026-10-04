@@ -1,5 +1,4 @@
 import { AIMessage, type ToolCall } from '@langchain/core/messages'
-import { isAssistantToolName } from '../tools'
 import type { AssistantGraphNodeState } from './graphState'
 
 export type AssistantGraphRoute =
@@ -15,9 +14,6 @@ export function routeAfterRespond(state: AssistantGraphNodeState): AssistantGrap
   const toolCalls = getLatestAssistantToolCalls(state)
   if (toolCalls.length === 0) return 'finalize_response'
 
-  // Validate tool names
-  const unknownCall = toolCalls.find((call) => !isAssistantToolName(call.name))
-  if (unknownCall) throw new Error(`不支援的工具：${unknownCall.name}`)
-
+  // ToolNode returns unknown names and invalid arguments to the model for correction.
   return 'execute_tools'
 }

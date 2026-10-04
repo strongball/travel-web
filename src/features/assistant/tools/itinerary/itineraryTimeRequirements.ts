@@ -66,7 +66,7 @@ export function validateRequiredItineraryTimeTargets({ text, modelMessages, targ
     if (!AIMessage.isInstance(message)) continue
     for (const call of message.tool_calls ?? []) {
       if (call.name !== 'propose_itinerary_edit') continue
-      const parsed = itineraryTimeTargetsSchema.safeParse(call.args.timeTargets)
+      const parsed = itineraryTimeTargetsSchema.safeParse(call.args?.timeTargets)
       if (parsed.success && parsed.data.length > previous.length) previous = parsed.data
     }
   }

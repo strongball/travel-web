@@ -18,6 +18,7 @@ import type { AssistantThread } from '../../../lib/repositories/assistantReposit
 export function AssistantAppBarActions({
   thread,
   sending,
+  summarizeDisabled = false,
   messageCount,
   online,
   onConversationList,
@@ -27,6 +28,7 @@ export function AssistantAppBarActions({
 }: {
   thread: AssistantThread | null
   sending: boolean
+  summarizeDisabled?: boolean
   messageCount: number
   online: boolean
   onConversationList: () => void
@@ -72,7 +74,7 @@ export function AssistantAppBarActions({
             }}
           >
             <MenuItem
-              disabled={sending || messageCount === 0 || !online}
+              disabled={sending || summarizeDisabled || messageCount === 0 || !online}
               onClick={() => {
                 setMenuAnchor(null)
                 onSummarize()

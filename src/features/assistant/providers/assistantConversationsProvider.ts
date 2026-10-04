@@ -15,7 +15,7 @@ import { assistantChatServiceProvider } from './assistantChatServiceProvider'
 import type { AssistantChatService, ChatStreamEvent } from '../services/assistantChatService'
 import { userIdProvider } from '../../../providers/authProviders'
 import { buildTurnRequest, type AssistantTurnContext } from '../services/assistantTurnFlow'
-import { dayRevisions } from '../utils/conversationUtils'
+import { dayRevisions, friendlyError } from '../utils/conversationUtils'
 
 export type AssistantTurnOverlay = {
   phase: 'running' | 'paused' | 'error'
@@ -105,7 +105,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
     if (!service) return
 
-    if (this.activeTurn) return this.activeTurn
+    if (this.activeTurn) throw new Error('上一個請求仍在結束中，請稍後再送出；草稿會保留。')
 
     this.retryAction = (context) => this.send({
       ...request,
@@ -217,7 +217,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
             streaming: null,
             pendingToolCall: null,
             progressLabel: null,
-            error: err.message || '助理暫時無法回覆',
+            error: friendlyError(err, '助理暫時無法回覆'),
             canRetry: true,
             userMessageSaved,
           },
@@ -352,7 +352,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
             streaming: null,
             pendingToolCall: null,
             progressLabel: null,
-            error: err.message || options.errorMessage,
+            error: friendlyError(err, options.errorMessage),
             canRetry: true,
           },
         })
@@ -380,42 +380,34 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
   }
 
   async summarize(): Promise<void> {
-    if (this.activeTurn || this.state.data?.turn?.phase === 'running') return
-    this.retryAction = () => this.summarize()
+    if (this.activeTurn || this.state.data?.turn) return
     const service = this.ref.read(assistantChatServiceProvider(this.itineraryId))
     if (!service) return
-
     const current = this.state.data
     if (!current?.messages.length) return
 
-    this.state = asyncData({
-      ...current,
-      turn: {
-        phase: 'running',
-        streaming: null,
-        pendingToolCall: null,
-        progressLabel: '正在壓縮較早的對話內容…',
-        error: null,
-      },
-    })
-
-    try {
-      await service.summarize(this.threadId)
-      this.retryAction = null
-      this.state = asyncData({ ...this.state.data!, turn: null })
-    } catch (err: any) {
-      this.state = asyncData({
-        ...this.state.data!,
-        turn: {
-          phase: 'error',
-          streaming: null,
-          pendingToolCall: null,
-          progressLabel: null,
-          error: err.message || '無法壓縮對話',
-          canRetry: true,
-        },
-      })
+    this.retryAction = () => { this.dismissFailure(); return this.summarize() }
+    this.state = asyncData({ ...current, turn: {
+      phase: 'running', streaming: null, pendingToolCall: null,
+      progressLabel: '正在壓縮較早的對話內容…', error: null,
+    } })
+    const execute = async () => {
+      try {
+        await service.summarize(this.threadId)
+        if (this.state.data?.turn?.phase === 'running') this.state = asyncData({ ...this.state.data, turn: null })
+      } catch (err) {
+        if (this.state.data?.turn?.phase !== 'running') return
+        this.state = asyncData({ ...this.state.data, turn: {
+          phase: 'error', streaming: null, pendingToolCall: null, progressLabel: null,
+          error: friendlyError(err, '無法壓縮對話'), canRetry: true,
+        } })
+      } finally {
+        if (this.state.data?.turn?.phase !== 'error') this.retryAction = null
+        this.activeTurn = null
+      }
     }
+    this.activeTurn = execute()
+    return this.activeTurn
   }
 
   async retry(context: AssistantTurnContext): Promise<void> {

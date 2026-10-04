@@ -215,6 +215,29 @@ export const createAssistantGraph = (
     return stateWithSnapshot(values, snapshot)
   }
 
+  const continueAfterFailure = async (
+    previous: AssistantGraphState,
+    threadId: string,
+    request: AssistantTurnRequest,
+    onStream?: AssistantStreamListener,
+    signal?: AbortSignal,
+  ) => {
+    const modelMessages = [...previous.modelMessages]
+    const last = modelMessages.at(-1)
+    // Empty final replies must regenerate a reply, rather than retrying finalize forever.
+    if (last && AIMessage.isInstance(last) && !last.tool_calls?.length) modelMessages.pop()
+    const answeredIds = new Set(modelMessages.filter(ToolMessage.isInstance).map((message) => message.tool_call_id))
+    const latestAi = modelMessages.findLast(AIMessage.isInstance)
+    for (const call of latestAi?.tool_calls ?? []) {
+      if (call.id && !answeredIds.has(call.id)) modelMessages.push(new ToolMessage({
+        tool_call_id: call.id, name: call.name, status: 'error',
+        content: '上次工具執行未完成；請重新檢查參數及目前行程。已確認套用的提案結果仍在對話中，不得重複套用。',
+      }))
+    }
+    await workflow.updateState(config(threadId, request), { request, modelMessages, toolRound: 0 }, 'execute_tools')
+    return runWorkflowStream(null, threadId, request, onStream, signal)
+  }
+
   const sendTurn = async (
     request: AssistantTurnRequest,
     onProgress?: AssistantProgressListener,
@@ -250,7 +273,7 @@ export const createAssistantGraph = (
         // Resume after an answered question or completed proposal, never replay the tool.
         if (previous?.request?.turnId === request.turnId && previous.modelMessages.some((message) =>
           ToolMessage.isInstance(message) && message.artifact)) {
-          return await runWorkflowStream(null, request.threadId, previous.request, onStream, signal)
+          return await continueAfterFailure(previous, request.threadId, request, onStream, signal)
         }
 
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??
@@ -271,7 +294,8 @@ export const createAssistantGraph = (
         }
 
         const baseMsgs = previous?.messages ?? request.rehydratedMessages ?? []
-        const messages = existingUser ? baseMsgs : [...baseMsgs, userMessage]
+        const messages = baseMsgs.some((message) => message.role === 'user' && message.turnId === request.turnId)
+          ? baseMsgs : [...baseMsgs, userMessage]
 
         return await runWorkflowStream({
           graphVersion: version,
@@ -316,8 +340,9 @@ export const createAssistantGraph = (
         }
         // A failed final reply must continue after the tool, not apply its decision again.
         if (!previous.request && previous.assistantMessage) return previous
-        const input = previous.pendingToolCall ? new Command({ resume: decision }) : null
-        return await runWorkflowStream(input, threadId, previous.request, onStream, signal)
+        if (previous.pendingToolCall) return await runWorkflowStream(new Command({ resume: decision }), threadId, previous.request, onStream, signal)
+        if (!previous.request) throw new Error('找不到可恢復的回合，請重新送出訊息')
+        return await continueAfterFailure(previous, threadId, previous.request, onStream, signal)
       } finally {
         progressListeners.delete(threadId)
       }
@@ -337,6 +362,7 @@ export const createAssistantGraph = (
     async summarizeThread(threadId) {
       const prev = await getState(threadId)
       if (!prev) throw new Error('Assistant thread has no checkpoint to summarize')
+      if (inFlightTurns.has(threadId) || prev.request || prev.pendingToolCall) throw new Error('請先完成目前回合或提案確認，再壓縮對話')
       if (prev.graphVersion !== version) throw new AssistantGraphVersionError(prev.graphVersion, version)
 
       const summary = await summarizeWithGemini(prev.summary, prev.messages)

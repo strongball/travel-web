@@ -16,12 +16,18 @@ export const createAssistantRuntime = (
         const status = await applyAssistantOperations(proposal.threadId, proposal)
         if (status === 'applied') {
           if (proposal.afterDays.length > 0) {
-            const enrichment = await enrichAppliedProposalPlaces(proposal)
-            if (enrichment.failed > 0) {
-              onNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+            try {
+              const enrichment = await enrichAppliedProposalPlaces(proposal)
+              if (enrichment.failed > 0) onNotice(`行程已套用；${enrichment.failed} 個景點暫時無法取得 Google 地點資料，可稍後手動補上。`)
+            } catch {
+              onNotice('提案已成功套用，但地點資料補充失敗，可稍後手動補上。')
             }
           }
-          await refreshWorkspace()
+          try {
+            await refreshWorkspace()
+          } catch {
+            onNotice('提案已成功套用，但畫面更新失敗，請重新整理行程查看。')
+          }
         }
         return status
       },
