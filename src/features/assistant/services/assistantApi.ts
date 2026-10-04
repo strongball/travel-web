@@ -242,9 +242,10 @@ export async function invokeAssistantModel(
   modelName?: string,
   thinkingBudget?: number,
   signal?: AbortSignal,
+  options?: { allowTools: boolean },
 ): Promise<AIMessage> {
   const model = await createLangChainChatModel(modelName, thinkingBudget)
-  const assistantModel = bindAssistantTools(model)
+  const assistantModel = options?.allowTools === false ? model : bindAssistantTools(model)
   const callConfig = signal ? { signal } : undefined
   if (!onTextDelta) {
     const response = await assistantModel.invoke(messages, callConfig)

@@ -203,7 +203,7 @@ export function MessageList({
     messagesEndRef,
   } = useActiveTurnScroll(visibleMessages, sending || isStreaming, {
     conversationKey: threadId,
-    activityKey: turn?.streaming?.content ?? pendingToolCall?.id ?? turn?.error,
+    activityKey: [turn?.streaming?.content, turn?.progressLabel, pendingToolCall?.id, turn?.error].join('|'),
   })
 
   const hasMessages = visibleMessages.length > 0
@@ -293,13 +293,12 @@ export function MessageList({
         </Box>
       ) : null}
 
-      {isStreaming && (
+      {(sending || isStreaming) && (
         <Stack spacing={1.25}>
           {turn?.streaming ? (
             <MessageBubble message={turn.streaming} streaming />
-          ) : (
-            <AssistantProgress label={turn?.progressLabel || '正在思考並產生回覆…'} />
-          )}
+          ) : null}
+          {sending ? <AssistantProgress label={turn?.progressLabel || '正在思考並產生回覆…'} startedAt={turn?.startedAt} /> : null}
         </Stack>
       )}
 

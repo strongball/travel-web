@@ -1,6 +1,7 @@
 import type { BaseMessage } from '@langchain/core/messages'
 import type { ToolRuntime } from '@langchain/core/tools'
 import type {
+  AssistantProgressListener,
   AssistantProposalStatus,
   AssistantProposalExecution,
   AssistantUserDecision,
@@ -17,6 +18,7 @@ type AssistantToolState = {
 type ProposalRuntimeConfig = {
   request?: AssistantTurnRequest | null
   applyProposal?: AssistantProposalExecution['apply']
+  onProgress?: AssistantProgressListener
 }
 
 export type AssistantProposalToolRuntime = ToolRuntime<AssistantToolState>
@@ -33,6 +35,7 @@ export function proposalRuntimeContext(runtime: AssistantProposalToolRuntime) {
   return {
     request,
     applyProposal: configured.applyProposal,
+    onProgress: configured.onProgress,
   }
 }
 
@@ -59,7 +62,8 @@ export async function reviewProposal(
 
   let status: AssistantProposalStatus
   if (decision.approved) {
-    const { applyProposal } = proposalRuntimeContext(runtime)
+    const { applyProposal, onProgress } = proposalRuntimeContext(runtime)
+    onProgress?.('applying_proposal', `正在套用「${proposal.title}」…`)
     if (!applyProposal) throw new Error('Proposal execution is unavailable')
     status = await applyProposal({ ...proposal, status: 'approved' }) ?? 'applied'
   } else {

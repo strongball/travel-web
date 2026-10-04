@@ -78,7 +78,7 @@ export const setDayStartTimeOperationSchema = z.object({
 
 export const addAttractionOperationSchema = z.object({
   type: operationType('add_attraction'),
-  dayId: idSchema.optional().default('day-1'),
+  dayId: idSchema,
   attraction: assistantAttractionDraftSchema.optional(),
   name: nonEmptyTextSchema.optional(),
   description: z.string().trim().optional(),
@@ -131,7 +131,6 @@ export const itineraryOperationSchema = z.discriminatedUnion('type', [
 ])
 
 export const assistantAttractionItemSchema = z.object({
-  id: z.string().optional().describe('景點 ID'),
   name: z.string().optional().describe('景點名稱'),
   description: z.string().optional().describe('景點說明'),
   cost: z.number().optional().describe('花費預算'),
@@ -150,13 +149,14 @@ export const itineraryOperationItemSchema = z.object({
     'move_attraction',
     'reorder_attractions',
   ]).describe('操作類型'),
-  dayId: z.string().optional().describe('目標天數 ID（例如 day-1）'),
+  dayId: z.string().optional().describe('目標日期 ID，使用 view_itinerary 的 Day ID。新增景點必填'),
   targetDayId: z.string().optional().describe('移動目的地天數 ID'),
   attractionId: z.string().optional().describe('景點 ID'),
-  attractionIds: z.array(z.string()).optional().describe('重新排序後的景點 ID 清單'),
+  attractionIds: z.array(z.string()).optional().describe('當天全部既有景點 ID，不得遺漏或重複。新增景點請用 index 定位，不能猜測新增 ID'),
   startTime: z.string().optional().describe('當天開始時間（HH:mm）'),
   name: z.string().optional().describe('景點名稱'),
   description: z.string().optional().describe('景點簡短說明'),
+  cost: z.number().optional().describe('花費預算'),
   duration: z.number().optional().describe('停留時間（分鐘）'),
   transportMode: z.enum(['driving', 'walking', 'transit', 'bicycling']).optional().describe('交通方式'),
   travelTime: z.number().optional().describe('前往交通時間（分鐘）'),

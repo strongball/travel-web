@@ -1,3 +1,4 @@
+import { itineraryToolInputSchema } from '../tools/itinerary/itineraryToolSchema'
 import { describe, expect, it } from 'vitest'
 import type { Itinerary } from '../../../types/database'
 import {
@@ -68,6 +69,23 @@ const canonicalAttraction = (id: string) => ({
 })
 
 describe('assistant operation contract', () => {
+  it('preserves a flat attraction budget across tool input parsing', () => {
+    const input = itineraryToolInputSchema.parse({ operations: [{
+      type: 'add_attraction', dayId: 'day-2', name: 'New place', cost: 1200,
+    }] })
+    const operation = parseAssistantOperations(input.operations)[0]
+    expect(operation.type === 'add_attraction' && operation.attraction.cost).toBe(1200)
+  })
+
+  it('rejects an omitted target day instead of silently adding to day one', () => {
+    expect(() => parseAssistantOperations([{ type: 'add_attraction', name: '第五天晚餐' }])).toThrow('dayId')
+  })
+
+  it('returns valid day IDs and the complete reorder set for model correction', () => {
+    expect(() => validateAssistantOperations(itinerary, [{ type: 'set_day_start_time', dayId: 'unknown', startTime: '10:00' }])).toThrow('第 2 天 = day-2')
+    expect(() => validateAssistantOperations(itinerary, [{ type: 'reorder_attractions', dayId: 'day-1', attractionIds: [] }])).toThrow('a-1')
+  })
+
   it('validates operation branches and supports both flat and nested updates', () => {
     expect(() => parseAssistantOperations([{
       type: 'add_attraction',

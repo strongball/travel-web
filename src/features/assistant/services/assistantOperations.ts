@@ -165,13 +165,13 @@ export function validateAssistantOperations(
 
   const requireDay = (dayId: string) => {
     const resolvedId = resolveDayId(itineraryDays, dayId)
-    if (!days.has(resolvedId)) throw new Error(`找不到日期 ${dayId}`)
+    if (!days.has(resolvedId)) throw new Error(`找不到日期 ${dayId}。可用日期：${itineraryDays.map((day, index) => `第 ${index + 1} 天 = ${day.id}`).join("；")}。請使用讀取結果中的 Day ID。`)
     return days.get(resolvedId)!
   }
 
   const requireAttraction = (attractionId: string) => {
     const dayId = attractionToDay.get(attractionId)
-    if (!dayId) throw new Error(`找不到景點 ${attractionId}`)
+    if (!dayId) throw new Error(`找不到景點 ${attractionId}。請使用本回合 view_itinerary 回傳的景點 ID；新景點請用 add_attraction 的 index 放到指定位置，不要猜測新增 ID。`)
     return dayId
   }
 
@@ -212,7 +212,7 @@ export function validateAssistantOperations(
       if (requestedIds.size !== operation.attractionIds.length ||
         requestedIds.size !== dayAttractions.size ||
         operation.attractionIds.some((id) => !dayAttractions.has(id))) {
-        throw new Error(`日期 ${operation.dayId} 的景點排序資料不完整`)
+        throw new Error(`日期 ${operation.dayId} 的景點排序資料不完整。attractionIds 必須包含操作執行到此處時的全部景點 ID，且不得重複：${[...dayAttractions].join(", ")}。新增景點請用 index 定位，避免引用尚未取得的 ID。`)
       }
       continue
     }

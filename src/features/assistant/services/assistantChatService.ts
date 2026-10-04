@@ -62,7 +62,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
       const state = await runtime.runner.resumeTurn(
         threadId,
         payload,
-        (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
+        (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
         (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
         signal,
       )
@@ -140,7 +140,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         try {
           graphState = await runtime.runner.sendTurn(
             input,
-            (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
+            (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
             signal,
           )
@@ -150,7 +150,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           await runtime.checkpointer.deleteThread(request.threadId)
           graphState = await runtime.runner.sendTurn(
             input,
-            (phase) => onEvent({ type: 'progress', label: visibleProgressLabel(phase) }),
+            (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
             signal,
           )

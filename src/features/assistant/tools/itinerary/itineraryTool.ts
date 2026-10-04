@@ -23,7 +23,8 @@ export const PROPOSAL_TOOL_NAME = 'propose_itinerary_edit'
  */
 export const proposeItineraryEditTool = tool(
   async (input, runtime: AssistantProposalToolRuntime) => {
-    const { request } = proposalRuntimeContext(runtime)
+    const { request, onProgress } = proposalRuntimeContext(runtime)
+    onProgress?.('validating_response', '正在檢查景點操作與連續排程時間…')
     const proposalId = proposalIdForRequest(request)
 
     let operations = parseAssistantOperations(input.operations)

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import {
   Avatar,
@@ -8,7 +9,15 @@ import {
   Typography,
 } from '@mui/material'
 
-export function AssistantProgress({ label }: { label: string }) {
+export function AssistantProgress({ label, startedAt }: { label: string; startedAt?: number }) {
+  const [elapsed, setElapsed] = useState(0)
+  useEffect(() => {
+    if (!startedAt) return
+    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+    update()
+    const timer = setInterval(update, 1000)
+    return () => clearInterval(timer)
+  }, [startedAt])
   return (
     <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
       <Avatar
@@ -43,6 +52,9 @@ export function AssistantProgress({ label }: { label: string }) {
             {label}
           </Typography>
         </Stack>
+        {startedAt ? <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+          已進行 {elapsed} 秒{elapsed >= 30 ? ' · 處理時間較長，可按停止取消' : ''}
+        </Typography> : null}
       </Paper>
     </Stack>
   )

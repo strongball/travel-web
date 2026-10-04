@@ -22,6 +22,7 @@ export type AssistantTurnOverlay = {
   streaming: AssistantMessage | null
   pendingToolCall: AssistantPendingToolCall | null
   progressLabel: string | null
+  startedAt?: number
   error: string | null
   canRetry?: boolean
   userMessageSaved?: boolean
@@ -137,6 +138,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           !(message.role === 'user' && message.turnId === request.turnId)), userMessage],
         turn: {
           phase: 'running',
+          startedAt: Date.now(),
           streaming: null,
           pendingToolCall: null,
           progressLabel: null,
@@ -276,6 +278,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
         ...current,
         turn: {
           phase: 'running',
+          startedAt: Date.now(),
           streaming: null,
           pendingToolCall: current.turn?.pendingToolCall ?? null,
           progressLabel: options.progressLabel,
@@ -388,7 +391,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
 
     this.retryAction = () => { this.dismissFailure(); return this.summarize() }
     this.state = asyncData({ ...current, turn: {
-      phase: 'running', streaming: null, pendingToolCall: null,
+      phase: 'running', startedAt: Date.now(), streaming: null, pendingToolCall: null,
       progressLabel: '正在壓縮較早的對話內容…', error: null,
     } })
     const execute = async () => {

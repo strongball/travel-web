@@ -1,3 +1,4 @@
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai'
 import { MemorySaver } from '@langchain/langgraph/web'
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -741,13 +742,78 @@ describe('createAssistantGraph', () => {
     expect(apply).toHaveBeenCalledOnce()
   })
 
+  it.each([1, 3, 7])('shows day %i lookup progress and corrects an incomplete reorder', async (dayNumber) => {
+    const req = request()
+    req.text = `幫我調整第 ${dayNumber} 天順序`
+    req.itinerary = { ...itinerary, days: Array.from({ length: 7 }, (_, index) => ({
+      ...itinerary.days![0], id: `actual-day-${index + 1}`,
+      attractions: ['first', 'second'].map((suffix) => ({
+        ...itinerary.days![0].attractions[0], id: `place-${index + 1}-${suffix}`, dayId: `actual-day-${index + 1}`,
+      })),
+    })) }
+    const reorderCall = (ids: string[]) => new AIMessage({ content: '', tool_calls: [{
+      id: 'reorder', name: 'propose_itinerary_edit', type: 'tool_call',
+      args: { operations: [{ type: 'reorder_attractions', dayId: `day-${dayNumber}`, attractionIds: ids }] },
+    }] })
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{ id: 'read', name: 'view_itinerary', args: { dayNumbers: [dayNumber] }, type: 'tool_call' }] }))
+      .mockResolvedValueOnce(reorderCall([`place-${dayNumber}-second`]))
+      .mockResolvedValueOnce(reorderCall([`place-${dayNumber}-second`, `place-${dayNumber}-first`]))
+    const progress = vi.fn()
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn(req, progress)
+    expect(progress).toHaveBeenCalledWith('executing_tools', `正在檢視第 ${dayNumber} 天行程（第 1 輪）`)
+    expect(progress).toHaveBeenCalledWith('validating_response', '正在檢查景點操作與連續排程時間…')
+    expect(progress).toHaveBeenCalledWith('generating_response', '工具回報問題，正在修正安排（第 2 輪）')
+    const feedback = (assistantGraphMocks.invokeAssistantModel.mock.calls[2][0] as BaseMessage[]).filter(ToolMessage.isInstance)
+    expect(String(feedback.at(-1)?.content)).toContain(`place-${dayNumber}-first`)
+    const proposal = result.pendingToolCall?.kind === 'proposal' ? result.pendingToolCall.proposal : undefined
+    expect(proposal?.afterDays.map((day) => day.id)).toEqual([`actual-day-${dayNumber}`])
+    expect(proposal?.afterDays[0].attractions.map((place) => place.id)).toEqual([`place-${dayNumber}-second`, `place-${dayNumber}-first`])
+  })
+
+  it('does not accumulate the tool limit across user-requested proposal refinements', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '', tool_calls: [{
+      id: 'refine', name: 'propose_itinerary_edit', type: 'tool_call',
+      args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] },
+    }] }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    await graph.sendTurn(req)
+    for (let index = 0; index < 12; index++) {
+      const result = await graph.resumeTurn(req.threadId, { approved: false, feedback: '請再修改安排' })
+      expect(result.pendingToolCall?.kind).toBe('proposal')
+    }
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '已套用' }))
+    await graph.resumeTurn(req.threadId, { approved: true })
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('allows a final reply after successful tools exhaust the budget', async () => {
+    for (let index = 0; index < 10; index++) {
+      assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{
+        id: `query-${index}`, name: 'view_itinerary', args: {}, type: 'tool_call',
+      }] }))
+    }
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '根據已讀取的行程，建議縮短停留時間。' }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn(request())
+    expect(result.assistantMessage?.content).toContain('建議縮短')
+    expect(assistantGraphMocks.invokeAssistantModel.mock.calls[10][5]).toEqual({ allowTools: false })
+    const model = new ChatGoogleGenerativeAI({ model: 'gemini-2.0-flash', apiKey: 'test' })
+    const messages = assistantGraphMocks.invokeAssistantModel.mock.calls[10][0] as BaseMessage[]
+    const wireRequest = (model as unknown as { _buildGenerateContentRequest: (messages: BaseMessage[], options: object) => { tools?: unknown[] } })._buildGenerateContentRequest(messages, {})
+    expect(wireRequest.tools).toBeUndefined()
+  })
+
   it('stops repeated tool failures with a retryable error instead of exhausting graph recursion', async () => {
     assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '', tool_calls: [
       { id: 'loop', name: 'view_itinerary', args: { dayNumbers: 'bad' }, type: 'tool_call' },
     ] }))
     const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
     const req = request()
-    await expect(graph.sendTurn(req)).rejects.toThrow('工具修正次數已達上限')
+    await expect(graph.sendTurn(req)).rejects.toThrow('工具處理輪數已達上限')
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(10)
     assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '重試成功' }))
     expect((await graph.sendTurn(req)).assistantMessage?.content).toBe('重試成功')

@@ -14,7 +14,7 @@ export type AssistantProgressPhase =
   | 'saving_response'
   | 'syncing_conversation'
 
-export type AssistantProgressListener = (phase: AssistantProgressPhase) => void
+export type AssistantProgressListener = (phase: AssistantProgressPhase, detail?: string) => void
 
 export type AssistantStreamEvent = {
   type: 'assistant_text_delta'

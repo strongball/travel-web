@@ -26,7 +26,8 @@ import { summarizeWithGemini } from '../services'
 import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'
-import { routeAfterRespond } from './routing'
+import { formatToolCallLabel } from '../utils/conversationUtils'
+import { getLatestAssistantToolCalls, routeAfterRespond } from './routing'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
 import { createPrepareContextNode } from './nodes/prepareContextNode'
 import { createRespondNode } from './nodes/respondNode'
@@ -68,8 +69,8 @@ export const createAssistantGraph = (
   const charLimit = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
   const recentLimit = dependencies.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT
   const progressListeners = new Map<string, AssistantProgressListener>()
-  const emitProgress = (threadId?: string, phase?: AssistantProgressPhase) => {
-    if (threadId && phase) progressListeners.get(threadId)?.(phase)
+  const emitProgress = (threadId?: string, phase?: AssistantProgressPhase, detail?: string) => {
+    if (threadId && phase) progressListeners.get(threadId)?.(phase, detail)
   }
 
   const toolNode = new ToolNode(assistantCallableTools, { handleToolErrors: true })
@@ -86,13 +87,15 @@ export const createAssistantGraph = (
     .addNode('respond', createRespondNode({ emitProgress }))
     .addNode('execute_tools', async (state, config) => {
       if (state.request?.threadId) {
-        emitProgress(state.request.threadId, 'executing_tools')
+        const labels = getLatestAssistantToolCalls(state).map((call) => formatToolCallLabel(call.name, call.args))
+        emitProgress(state.request.threadId, 'executing_tools', `正在${labels.join('、')}（第 ${state.toolRound} 輪）`)
       }
       const toolConfig = {
         ...config,
         configurable: {
           ...config?.configurable,
           request: state.request ?? config?.configurable?.request,
+          onProgress: (phase: AssistantProgressPhase, detail?: string) => emitProgress(state.request?.threadId, phase, detail),
         },
       }
       const result = await toolNode.invoke({ ...state, messages: state.modelMessages }, toolConfig) as {
@@ -340,7 +343,7 @@ export const createAssistantGraph = (
         }
         // A failed final reply must continue after the tool, not apply its decision again.
         if (!previous.request && previous.assistantMessage) return previous
-        if (previous.pendingToolCall) return await runWorkflowStream(new Command({ resume: decision }), threadId, previous.request, onStream, signal)
+        if (previous.pendingToolCall) return await runWorkflowStream(new Command({ resume: decision, update: { toolRound: 0 } }), threadId, previous.request, onStream, signal)
         if (!previous.request) throw new Error('找不到可恢復的回合，請重新送出訊息')
         return await continueAfterFailure(previous, threadId, previous.request, onStream, signal)
       } finally {

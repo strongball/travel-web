@@ -13,18 +13,26 @@ export const MAX_ASSISTANT_TOOL_ROUNDS = 10
 const interactiveToolNames = new Set<string>(assistantProposalTools.map((tool) => tool.name))
 
 type RespondNodeOptions = {
-  emitProgress: (threadId: string, phase: AssistantProgressPhase) => void
+  emitProgress: (threadId: string, phase: AssistantProgressPhase, detail?: string) => void
 }
 
 export function createRespondNode(options: RespondNodeOptions) {
   return async (state: AssistantGraphNodeState, config: LangGraphRunnableConfig) => {
     const request = state.request
     if (!request) throw new Error('Assistant graph request is missing')
-    if (state.toolRound >= MAX_ASSISTANT_TOOL_ROUNDS) {
-      throw new Error('AI 工具修正次數已達上限，請重試或補充需求；原訊息與已確認的結果會保留。')
+    const latestResults = state.modelMessages
+      .slice(state.modelMessages.findLastIndex(AIMessage.isInstance) + 1)
+      .filter(ToolMessage.isInstance)
+    const toolBudgetExhausted = state.toolRound >= MAX_ASSISTANT_TOOL_ROUNDS
+    const lastError = latestResults.findLast((message) => message.status === 'error')
+    if (toolBudgetExhausted && lastError) {
+      throw new Error(`AI 工具處理輪數已達上限。最後遇到的問題：${String(lastError.content).slice(0, 500)} 請重試或補充需求；原訊息與已確認的結果會保留。`)
     }
 
-    options.emitProgress(request.threadId, 'generating_response')
+    const correcting = Boolean(lastError)
+    options.emitProgress(request.threadId, 'generating_response', state.toolRound > 0
+      ? `${correcting ? '工具回報問題，正在修正安排' : '已取得工具結果，正在整理安排'}（第 ${state.toolRound} 輪）`
+      : undefined)
     const systemPrompt = buildAssistantSystemPrompt(request.itinerary, state.summary || null)
     const initialHumanMessage = buildHumanMessage({ text: request.text, attachments: request.attachments })
 
@@ -41,10 +49,14 @@ export function createRespondNode(options: RespondNodeOptions) {
       state.modelMessages.length > 0
         ? state.modelMessages
         : [systemMessage, ...historyMessages, initialHumanMessage]
-    validateModelInputSize(modelMessages)
+    const invocationMessages = toolBudgetExhausted
+      ? [new SystemMessage(`${systemPrompt}\n已達本次工具呼叫上限。請根據已有工具結果完成回覆；若任務尚未完成，明確說明限制與下一步，不可宣稱未完成的操作已成功。`),
+        ...modelMessages.filter((message) => !SystemMessage.isInstance(message))]
+      : modelMessages
+    validateModelInputSize(invocationMessages)
     const writer = getWriter(config)
     const response = await invokeAssistantModel(
-      modelMessages,
+      invocationMessages,
       (text) => {
         writer?.({
           type: 'assistant_text_delta',
@@ -55,9 +67,13 @@ export function createRespondNode(options: RespondNodeOptions) {
       request.selectedModel,
       request.thinkingBudget,
       config?.signal,
+      { allowTools: !toolBudgetExhausted },
     )
     if (response.invalid_tool_calls?.length) {
       throw new Error('模型回傳了無法解析的工具參數，請重試')
+    }
+    if (toolBudgetExhausted && response.tool_calls?.length) {
+      throw new Error('AI 工具處理輪數已達上限，仍未能完成回覆，請重試或補充需求。')
     }
     const usedIds = new Set(state.modelMessages.flatMap((message) => AIMessage.isInstance(message)
       ? (message.tool_calls ?? []).map((call) => call.id) : []))
