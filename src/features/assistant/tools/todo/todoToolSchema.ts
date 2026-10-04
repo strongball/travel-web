@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const operationType = <T extends string>(value: T) => z.enum([value])
+const operationType = <T extends string>(value: T) => z.literal(value)
 const nonEmptyTextSchema = z.string().trim().min(1)
 
 export const addTodoOperationSchema = z.object({
@@ -14,7 +14,7 @@ export const addTodoCategoryOperationSchema = z.object({
   name: nonEmptyTextSchema,
 })
 
-export const todoOperationSchema = z.union([
+export const todoOperationSchema = z.discriminatedUnion('type', [
   addTodoOperationSchema,
   addTodoCategoryOperationSchema,
 ])

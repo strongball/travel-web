@@ -72,7 +72,7 @@ export const createAssistantGraph = (
     if (threadId && phase) progressListeners.get(threadId)?.(phase)
   }
 
-  const toolNode = new ToolNode(assistantCallableTools, { handleToolErrors: false })
+  const toolNode = new ToolNode(assistantCallableTools, { handleToolErrors: true })
 
   const workflow = new StateGraph(assistantGraphState)
     .addNode('prepare_context', createPrepareContextNode({

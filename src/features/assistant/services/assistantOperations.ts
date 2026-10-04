@@ -2,15 +2,29 @@ import { z } from 'zod'
 import type { Itinerary } from '../../../types/database'
 import type { AssistantOperation } from '../types'
 import {
-  itineraryOperationSchema,
+  setDayStartTimeOperationSchema,
+  addAttractionOperationSchema,
+  updateAttractionOperationSchema,
+  removeAttractionOperationSchema,
+  moveAttractionOperationSchema,
+  reorderAttractionsOperationSchema,
   normalizeAttractionDraft,
   normalizeTimeString,
 } from '../tools/itinerary/itineraryToolSchema'
-import { todoOperationSchema } from '../tools/todo/todoToolSchema'
+import {
+  addTodoOperationSchema,
+  addTodoCategoryOperationSchema,
+} from '../tools/todo/todoToolSchema'
 
-export const assistantOperationSchema = z.union([
-  itineraryOperationSchema,
-  todoOperationSchema,
+export const assistantOperationSchema = z.discriminatedUnion('type', [
+  setDayStartTimeOperationSchema,
+  addAttractionOperationSchema,
+  updateAttractionOperationSchema,
+  removeAttractionOperationSchema,
+  moveAttractionOperationSchema,
+  reorderAttractionsOperationSchema,
+  addTodoOperationSchema,
+  addTodoCategoryOperationSchema,
 ])
 
 export const assistantOperationsSchema = z.array(assistantOperationSchema).min(1)
@@ -19,7 +33,10 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
   if (!Array.isArray(value) || value.length === 0) throw new Error('Proposal requires operations')
   const parsed = assistantOperationsSchema.safeParse(value)
   if (!parsed.success) {
-    const errorDetails = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')
+    const errorDetails = parsed.error.issues.map((i) => {
+      const path = i.path.length > 0 ? i.path.join('.') : 'root'
+      return `${path}: ${i.message}`
+    }).join('; ')
     throw new Error(`Unsupported assistant operation: ${errorDetails}`)
   }
   return parsed.data.map((op): AssistantOperation => {
@@ -33,6 +50,8 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
       case 'add_attraction': {
         const draftInput = op.attraction ?? {
           name: op.name ?? '新景點',
+          description: op.description ?? '',
+          cost: op.cost ?? 0,
           duration: op.duration ?? 60,
           transportMode: op.transportMode ?? null,
           travelTime: op.travelTime ?? null,
@@ -49,6 +68,7 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
         const changes = op.changes ?? {
           ...(op.name !== undefined ? { name: op.name } : {}),
           ...(op.description !== undefined ? { description: op.description } : {}),
+          ...(op.cost !== undefined ? { cost: op.cost } : {}),
           ...(op.duration !== undefined ? { duration: op.duration } : {}),
           ...(op.transportMode !== undefined ? { transportMode: op.transportMode } : {}),
           ...(op.travelTime !== undefined ? { travelTime: op.travelTime } : {}),
@@ -93,21 +113,60 @@ export const parseAssistantOperations = (value: unknown): AssistantOperation[] =
   })
 }
 
+export function resolveDayId(days: Array<{ id: string }>, dayId: string): string {
+  if (days.some((d) => d.id === dayId)) return dayId
+  const match = dayId.match(/^day-(\d+)$/i)
+  if (match) {
+    const idx = parseInt(match[1], 10) - 1
+    if (days[idx]) return days[idx].id
+  }
+  const numMatch = dayId.match(/^(\d+)$/)
+  if (numMatch) {
+    const idx = parseInt(numMatch[1], 10) - 1
+    if (days[idx]) return days[idx].id
+  }
+  if (days.length === 1) return days[0].id
+  return dayId
+}
+
+export function normalizeOperationDayIds(
+  operations: AssistantOperation[],
+  days: Array<{ id: string }>,
+): AssistantOperation[] {
+  if (!days || days.length === 0) return operations
+  return operations.map((op) => {
+    switch (op.type) {
+      case 'set_day_start_time':
+        return { ...op, dayId: resolveDayId(days, op.dayId) }
+      case 'add_attraction':
+        return { ...op, dayId: resolveDayId(days, op.dayId) }
+      case 'move_attraction':
+        return { ...op, targetDayId: resolveDayId(days, op.targetDayId) }
+      case 'reorder_attractions':
+        return { ...op, dayId: resolveDayId(days, op.dayId) }
+      default:
+        return op
+    }
+  })
+}
+
 export function validateAssistantOperations(
   itinerary: Itinerary,
   operations: AssistantOperation[],
 ) {
-  const days = new Map((itinerary.days ?? []).map((day) => [
+  const itineraryDays = itinerary.days ?? []
+  const days = new Map(itineraryDays.map((day) => [
     day.id,
     new Set(day.attractions.map((item) => item.id)),
   ] as const))
   const attractionToDay = new Map(
-    (itinerary.days ?? []).flatMap((day) => day.attractions.map((item) => [item.id, day.id] as const)),
+    itineraryDays.flatMap((day) => day.attractions.map((item) => [item.id, day.id] as const)),
   )
 
   const requireDay = (dayId: string) => {
-    if (!days.has(dayId)) throw new Error(`找不到日期 ${dayId}`)
-    return days.get(dayId)!
+    const resolvedId = resolveDayId(itineraryDays, dayId)
+    if (!days.has(resolvedId)) throw new Error(`找不到日期 ${dayId}`)
+    return days.get(resolvedId)!
   }
 
   const requireAttraction = (attractionId: string) => {

@@ -1,6 +1,7 @@
 import { tool } from '@langchain/core/tools'
 import type { AssistantProposal } from '../../types'
 import {
+  normalizeOperationDayIds,
   parseAssistantOperations,
   validateAssistantOperations,
 } from '../../services/assistantOperations'
@@ -23,7 +24,10 @@ export const proposeItineraryEditTool = tool(
     const { request } = proposalRuntimeContext(runtime)
     const proposalId = proposalIdForRequest(request)
 
-    const operations = parseAssistantOperations(input.operations)
+    let operations = parseAssistantOperations(input.operations)
+    if (request?.itinerary?.days && request.itinerary.days.length > 0) {
+      operations = normalizeOperationDayIds(operations, request.itinerary.days)
+    }
     if (request?.itinerary) {
       validateAssistantOperations(request.itinerary, operations)
     }

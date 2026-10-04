@@ -128,6 +128,48 @@ describe('assistant operation contract', () => {
       title: '   ',
     }])).toThrow('Unsupported assistant operation')
   })
+
+  it('tolerates empty string on optional fields, omitted duration, and numeric dayId', () => {
+    const ops = parseAssistantOperations([
+      {
+        type: 'add_attraction',
+        dayId: 1,
+        name: '景點 A',
+        locationName: '',
+        transportMode: '',
+      },
+      {
+        type: 'add_attraction',
+        dayId: 'day-1',
+        attraction: {
+          name: '景點 B',
+          locationName: '   ',
+          transportMode: null,
+        },
+      },
+    ])
+
+    expect(ops).toHaveLength(2)
+    if (ops[0]?.type !== 'add_attraction' || ops[1]?.type !== 'add_attraction') {
+      throw new Error('Expected add_attraction')
+    }
+    expect(ops[0].dayId).toBe('1')
+    expect(ops[0].attraction.locationName).toBeNull()
+    expect(ops[0].attraction.transportMode).toBeNull()
+    expect(ops[0].attraction.duration).toBe(60)
+
+    expect(ops[1].attraction.locationName).toBeNull()
+    expect(ops[1].attraction.duration).toBe(60)
+  })
+
+  it('provides precise field-level error messages instead of generic Invalid input', () => {
+    expect(() => parseAssistantOperations([{
+      type: 'add_attraction',
+      dayId: 'day-1',
+      name: 'Place',
+      duration: 0,
+    }])).toThrow(/0\.duration/)
+  })
 })
 
 describe('validateAssistantOperations', () => {
@@ -169,5 +211,22 @@ describe('validateAssistantOperations', () => {
       { type: 'add_todo_category', name: '行前準備' },
       { type: 'add_todo', title: '確認票券', category: '行前準備' },
     ]))).not.toThrow()
+  })
+
+  it('resolves day-1 or 1 to actual day UUID in itinerary', () => {
+    const uuidItinerary: Itinerary = {
+      ...itinerary,
+      days: [
+        { ...itinerary.days![0], id: 'c03bf05b-1111-2222-3333-444455556666', attractions: [] },
+        { ...itinerary.days![1], id: 'd03bf05b-1111-2222-3333-444455556666', attractions: [] },
+      ],
+    }
+
+    const ops = parseAssistantOperations([
+      { type: 'add_attraction', dayId: 'day-1', name: '淺草寺' },
+      { type: 'add_attraction', dayId: '2', name: '東京鐵塔' },
+    ])
+
+    expect(() => validateAssistantOperations(uuidItinerary, ops)).not.toThrow()
   })
 })
