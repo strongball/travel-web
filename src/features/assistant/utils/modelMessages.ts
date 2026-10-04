@@ -1,6 +1,35 @@
-import { HumanMessage, type BaseMessage } from '@langchain/core/messages'
-import type { AssistantAttachment } from '../types'
+import { AIMessage, HumanMessage, type BaseMessage } from '@langchain/core/messages'
+import type { AssistantAttachment, AssistantMessage, AssistantProposal } from '../types'
 import { buildAssistantUserPrompt } from '../prompts/userPrompt'
+
+/** Keep reviewed changes visible to the model without repeating persistence metadata. */
+export function proposalModelContext(proposal: AssistantProposal) {
+  const days = (items: AssistantProposal['afterDays']) => items.map((day) => ({
+    id: day.id,
+    date: day.date,
+    startTime: day.startTime,
+    attractions: day.attractions.map(({ id, name, description, startTime, endTime, duration, travelTime, transportMode, cost, locationName }) => ({
+      id, name, description, startTime, endTime, duration, travelTime, transportMode, cost, locationName,
+    })),
+  }))
+  return {
+    title: proposal.title,
+    explanation: proposal.explanation,
+    status: proposal.status,
+    beforeDays: days(proposal.beforeDays),
+    afterDays: days(proposal.afterDays),
+    timeChecks: proposal.timeChecks,
+    proposedTodos: proposal.proposedTodos,
+    proposedCategories: proposal.proposedCategories,
+  }
+}
+
+export function buildAssistantHistoryMessage(message: AssistantMessage) {
+  if (message.role === 'user') return buildHumanMessage({ text: message.content, attachments: message.attachments })
+  return new AIMessage(message.proposal
+    ? `${message.content}\n提案紀錄（歷史內容，未套用的提案不代表目前資料）：${JSON.stringify(proposalModelContext(message.proposal))}`
+    : message.content)
+}
 
 /** Use the same multimodal input for new turns and attachment follow-up questions. */
 export function buildHumanMessage({ text, attachments = [] }: {

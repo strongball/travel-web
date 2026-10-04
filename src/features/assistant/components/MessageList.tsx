@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import { isPendingProposalCall, isPendingQuestionCall } from '../types'
 import { useActiveTurnScroll } from '../hooks'
+import { friendlyError } from '../utils/conversationUtils'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { ClarifyingQuestionCard } from './ClarifyingQuestionCard'
@@ -39,11 +40,6 @@ const StyledMessagesContainer = styled(Stack)(({ theme }) => ({
     minWidth: 0,
   },
 }))
-
-const StyledActiveTurnSpacer = styled(Box)({
-  flexShrink: 0,
-  pointerEvents: 'none',
-})
 
 const INITIAL_VISIBLE_COUNT = 40
 
@@ -195,22 +191,23 @@ export function MessageList({
     hasNewReply,
     onScroll,
     scrollToLatest,
-    activeTurnSpacerHeight,
-    activeTurnSpacerRef,
+    contentRef,
     lastUserMessageIndex,
     lastUserMessageRef,
     messagesAreaRef,
     messagesEndRef,
   } = useActiveTurnScroll(visibleMessages, sending || isStreaming, {
     conversationKey: threadId,
-    activityKey: [turn?.streaming?.content, turn?.progressLabel, pendingToolCall?.id, turn?.error].join('|'),
+    activityKey: turn?.streaming?.content || pendingToolCall?.id || turn?.error,
+    layoutKey: turn?.progressLabel,
   })
 
   const hasMessages = visibleMessages.length > 0
 
 
   return (
-    <StyledMessagesContainer onScroll={onScroll} ref={messagesAreaRef} spacing={2} key={threadId}>
+    <StyledMessagesContainer onScroll={onScroll} ref={messagesAreaRef} key={threadId}>
+      <Stack ref={contentRef} spacing={2} sx={{ minWidth: 0, flexShrink: 0 }}>
       {loading && !hasMessages && (
         <Box sx={{ textAlign: 'center', m: 'auto', p: 3 }}>
           <ConversationLoading />
@@ -284,7 +281,7 @@ export function MessageList({
               id: `failed-${threadId}`,
               turnId: messages.at(-1)?.turnId ?? threadId ?? '',
               role: 'assistant',
-              content: turn.error,
+              content: friendlyError(turn.error, 'AI 回覆失敗，請重試。'),
               createdAt: messages.at(-1)?.createdAt ?? new Date().toISOString(),
             }}
             onRetry={turn.canRetry ? onRetry : undefined}
@@ -327,15 +324,8 @@ export function MessageList({
         </Stack>
       )}
 
-      <StyledActiveTurnSpacer
-        ref={activeTurnSpacerRef}
-        sx={{
-          height: activeTurnSpacerHeight > 0 ? activeTurnSpacerHeight : (sending ? '100%' : 0),
-          minHeight: sending ? '100%' : 0,
-        }}
-      />
-
       <div ref={messagesEndRef} />
+      </Stack>
       {hasNewReply ? <Box sx={{ position: 'sticky', bottom: 12, alignSelf: 'center', zIndex: 2 }}>
         <Button variant="contained" onClick={scrollToLatest}>有新回覆 ↓</Button>
       </Box> : null}

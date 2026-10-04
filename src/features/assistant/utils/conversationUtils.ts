@@ -39,17 +39,27 @@ export const friendlyError = (value: unknown, fallback: string) => {
       : typeof errorRecord?.message === 'string'
         ? errorRecord.message
         : fallback
+  let message = raw
+  let status = errorRecord?.code
   try {
     const parsed = JSON.parse(raw) as { error?: { code?: number; message?: string } }
-    if (parsed.error?.code === 429) return 'AI 服務額度已用完，請補充 Gemini API 額度後再重試。這則訊息已保留，不會重複送出。'
-    if (parsed.error?.message) return parsed.error.message
+    status = parsed.error?.code ?? status
+    if (typeof parsed.error?.message === 'string') message = parsed.error.message
   } catch {
     // The error is already plain text.
   }
-  if (raw.includes('RESOURCE_EXHAUSTED') || raw.includes('prepayment credits')) {
+  if (/prepayment credits|insufficient credits/i.test(message)) {
     return 'AI 服務額度已用完，請補充 Gemini API 額度後再重試。這則訊息已保留，不會重複送出。'
   }
-  return raw || fallback
+  if (status === 429 || status === '429' || /\[\s*429\b|RESOURCE_EXHAUSTED/i.test(raw)) {
+    const retry = raw.match(/Please retry in (\d+(?:\.\d+)?)s|"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/i)
+    if (/PerMinute|per[ -]minute|PerSecond|per[ -]second/i.test(raw) || retry) {
+      const wait = retry ? `稍候約 ${Math.ceil(Number(retry[1] ?? retry[2]))} 秒` : '稍後'
+      return `Gemini 暫時達到流量限制，請${wait}再按「重試」。原訊息與附件已保留。`
+    }
+    return 'Gemini 目前的可用配額受限，請稍後重試或檢查 API 配額設定。原訊息與附件已保留。'
+  }
+  return message || fallback
 }
 
 export const isRecoverableGraphStateError = (value: unknown) =>

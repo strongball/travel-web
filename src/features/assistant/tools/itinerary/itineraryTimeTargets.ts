@@ -23,16 +23,7 @@ export function validateItineraryTimeTargets({
   if (targets.length === 0) return []
   const checks: NonNullable<AssistantProposal['timeChecks']> = []
   const errors: string[] = []
-  for (const day of afterDays) {
-    if (day.startTime !== beforeDays.find((before) => before.id === day.id)?.startTime) {
-      errors.push('有時間目標時請維持當天出發時間，調整前面的停留時間與景點安排')
-    }
-  }
   for (const target of targets) {
-    if ((target.attractionId !== undefined) === (target.addOperationIndex !== undefined)) {
-      errors.push('時間目標必須以 attractionId 或 addOperationIndex 擇一指定')
-      continue
-    }
     const operation = target.addOperationIndex === undefined ? undefined : operations[target.addOperationIndex]
     if (target.addOperationIndex !== undefined && operation?.type !== 'add_attraction') {
       errors.push(`時間目標 operations[${target.addOperationIndex}] 必須是新增景點操作`)
@@ -45,6 +36,10 @@ export function validateItineraryTimeTargets({
       errors.push(`找不到時間目標景點 ${attractionId}，不得移除目標活動`)
       continue
     }
+    const originalDeparture = beforeDays.find((before) => before.id === day.id)?.startTime
+    if (day.startTime !== originalDeparture) {
+      errors.push(`${day.date} 有時間目標時請維持當天出發時間（原本 ${originalDeparture}），移除該天的出發時間修改，調整前面的停留時間與景點安排`)
+    }
     // Accumulate minutes instead of reading a wrapped HH:mm (e.g. after midnight).
     let arrival = timeMinutes(day.startTime?.slice(11, 16) ?? '09:00')
     for (const item of day.attractions) {
@@ -52,11 +47,15 @@ export function validateItineraryTimeTargets({
       if (item.id === attractionId) break
       arrival += Math.max(item.duration, 0)
     }
-    const difference = arrival - timeMinutes(target.startTime)
+    const difference = target.endTime
+      ? arrival < timeMinutes(target.startTime) ? arrival - timeMinutes(target.startTime)
+        : arrival > timeMinutes(target.endTime) ? arrival - timeMinutes(target.endTime) : 0
+      : arrival - timeMinutes(target.startTime)
     const actual = `${String(Math.floor(arrival / 60)).padStart(2, '0')}:${String(arrival % 60).padStart(2, '0')}`
     checks.push({ attractionId: attraction.id, name: attraction.name, targetStartTime: target.startTime, actualStartTime: actual, differenceMinutes: difference })
+    if (target.endTime) checks.at(-1)!.targetEndTime = target.endTime
     if (Math.abs(difference) > 15) {
-      errors.push(`${attraction.name} 目標 ${target.startTime}，實際開始 ${actual}，差距 ${difference > 0 ? '+' : ''}${difference} 分鐘（允許前後 15 分鐘）`)
+      errors.push(`${attraction.name} 目標 ${target.startTime}${target.endTime ? `～${target.endTime}` : ''}，實際開始 ${actual}，差距 ${difference > 0 ? '+' : ''}${difference} 分鐘（${target.endTime ? '允許區間前後 15 分鐘' : '允許前後 15 分鐘'}）`)
     }
   }
   if (errors.length > 0) {

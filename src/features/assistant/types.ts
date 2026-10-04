@@ -139,7 +139,7 @@ export type AssistantProposal = BaseAssistantProposal & {
   operations?: AssistantOperation[]
   beforeDays: TripDay[]
   afterDays: TripDay[]
-  timeChecks?: Array<{ attractionId: string; name: string; targetStartTime: string; actualStartTime: string; differenceMinutes: number }>
+  timeChecks?: Array<{ attractionId: string; name: string; targetStartTime: string; targetEndTime?: string; actualStartTime: string; differenceMinutes: number }>
   proposedTodos: Array<{ title: string; category: string }>
   proposedCategories: string[]
 }

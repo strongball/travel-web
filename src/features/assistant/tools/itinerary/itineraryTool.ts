@@ -35,11 +35,10 @@ export const proposeItineraryEditTool = tool(
       validateAssistantOperations(request.itinerary, operations)
     }
 
-    const timeTargets = itineraryTimeTargetsSchema.parse(input.timeTargets ?? [])
-    validateRequiredItineraryTimeTargets({
+    const timeTargets = validateRequiredItineraryTimeTargets({
       text: request?.text ?? '',
       modelMessages: runtime.state?.modelMessages ?? [],
-      targets: timeTargets,
+      targets: itineraryTimeTargetsSchema.parse(input.timeTargets ?? []),
       operations,
     })
     const allBeforeDays = request?.itinerary.days ?? []

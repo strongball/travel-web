@@ -7,9 +7,10 @@ import {
 import type { AssistantProgressPhase } from '../../types'
 import type { AssistantGraphNodeState } from '../graphState'
 import { assistantProposalTools } from '../../tools'
-import { buildHumanMessage, validateModelInputSize } from '../../utils/modelMessages'
+import { buildAssistantHistoryMessage, buildHumanMessage, validateModelInputSize } from '../../utils/modelMessages'
 
 export const MAX_ASSISTANT_TOOL_ROUNDS = 10
+export const MAX_ASSISTANT_TOOL_CORRECTIONS = 2
 const interactiveToolNames = new Set<string>(assistantProposalTools.map((tool) => tool.name))
 
 type RespondNodeOptions = {
@@ -20,6 +21,16 @@ export function createRespondNode(options: RespondNodeOptions) {
   return async (state: AssistantGraphNodeState, config: LangGraphRunnableConfig) => {
     const request = state.request
     if (!request) throw new Error('Assistant graph request is missing')
+    let consecutiveFailures = 0
+    for (let index = state.modelMessages.length - 1; index >= 0 && consecutiveFailures < state.toolRound; index--) {
+      const message = state.modelMessages[index]
+      if (!AIMessage.isInstance(message)) continue
+      const results = state.modelMessages.slice(index + 1).filter(ToolMessage.isInstance)
+        .filter((result) => message.tool_calls?.some((call) => call.id === result.tool_call_id))
+      if (!results.some((result) => result.status === 'error')) break
+      consecutiveFailures++
+    }
+    const correctionBudgetExhausted = consecutiveFailures >= MAX_ASSISTANT_TOOL_CORRECTIONS
     const latestResults = state.modelMessages
       .slice(state.modelMessages.findLastIndex(AIMessage.isInstance) + 1)
       .filter(ToolMessage.isInstance)
@@ -38,19 +49,16 @@ export function createRespondNode(options: RespondNodeOptions) {
 
     const historyMessages: BaseMessage[] = state.messages
       .filter((m) => m.turnId !== request.turnId)
-      .map((m) =>
-        m.role === 'user'
-          ? buildHumanMessage({ text: m.content, attachments: m.attachments })
-          : new AIMessage(m.content),
-      )
+      .map(buildAssistantHistoryMessage)
 
     const systemMessage = new SystemMessage(systemPrompt)
     const modelMessages =
       state.modelMessages.length > 0
         ? state.modelMessages
         : [systemMessage, ...historyMessages, initialHumanMessage]
-    const invocationMessages = toolBudgetExhausted
-      ? [new SystemMessage(`${systemPrompt}\n已達本次工具呼叫上限。請根據已有工具結果完成回覆；若任務尚未完成，明確說明限制與下一步，不可宣稱未完成的操作已成功。`),
+    const finishWithoutTools = toolBudgetExhausted || correctionBudgetExhausted
+    const invocationMessages = finishWithoutTools
+      ? [new SystemMessage(`${systemPrompt}\n工具流程應在取得足夠資料後完成；目前已達工具或連續修正上限。請簡短說明工具回報的具體限制並詢問缺少的資訊，或根據已有結果完成回覆；若任務尚未完成，明確說明限制與下一步，不可宣稱未完成的操作已成功。`),
         ...modelMessages.filter((message) => !SystemMessage.isInstance(message))]
       : modelMessages
     validateModelInputSize(invocationMessages)
@@ -67,12 +75,12 @@ export function createRespondNode(options: RespondNodeOptions) {
       request.selectedModel,
       request.thinkingBudget,
       config?.signal,
-      { allowTools: !toolBudgetExhausted },
+      { allowTools: !finishWithoutTools },
     )
     if (response.invalid_tool_calls?.length) {
       throw new Error('模型回傳了無法解析的工具參數，請重試')
     }
-    if (toolBudgetExhausted && response.tool_calls?.length) {
+    if (finishWithoutTools && response.tool_calls?.length) {
       throw new Error('AI 工具處理輪數已達上限，仍未能完成回覆，請重試或補充需求。')
     }
     const usedIds = new Set(state.modelMessages.flatMap((message) => AIMessage.isInstance(message)

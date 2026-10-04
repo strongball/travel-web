@@ -66,8 +66,8 @@ export function ItineraryProposalView({
       {timeChecks.length > 0 ? <Box sx={{ p: 1.5, bgcolor: 'surfaceSubtle', borderRadius: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>時間目標驗算</Typography>
         {timeChecks.map((check, index) => <Typography key={index} variant="body2" sx={{ mt: 0.5 }}>
-          {check.name}：目標 {check.targetStartTime} → 預計 {check.actualStartTime}
-          （{check.differenceMinutes === 0 ? '準時' : `${check.differenceMinutes < 0 ? '提早' : '延後'} ${Math.abs(check.differenceMinutes)} 分鐘`}，符合前後 15 分鐘）
+          {check.name}：目標 {check.targetStartTime}{check.targetEndTime ? `～${check.targetEndTime}` : ''} → 預計 {check.actualStartTime}
+          （{check.differenceMinutes === 0 ? check.targetEndTime ? '區間內' : '準時' : `${check.differenceMinutes < 0 ? '提早' : '延後'} ${Math.abs(check.differenceMinutes)} 分鐘`}，{check.targetEndTime ? '符合區間前後 15 分鐘' : '符合前後 15 分鐘'}）
         </Typography>)}
       </Box> : null}
       {afterDays.length > 0 ? <Box sx={{ p: 1.5, bgcolor: 'surfaceSubtle', borderRadius: 2 }}>

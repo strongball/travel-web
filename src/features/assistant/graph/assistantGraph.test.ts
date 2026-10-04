@@ -490,6 +490,45 @@ describe('createAssistantGraph', () => {
     const resumed = await graph.resumeTurn(req.threadId, { approved: false, feedback: '我想自己整理' })
     expect(resumed.assistantMessage?.proposal?.status).toBe('rejected')
     expect(resumed.assistantMessage?.content).toBe('好的，我先不套用這份清單。')
+    const rejection = (assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]).find(ToolMessage.isInstance)
+    expect(JSON.parse(String(rejection?.content))).toMatchObject({
+      status: 'rejected',
+      feedback: '我想自己整理',
+      rejectedProposal: { title: '行前準備', proposedTodos: [{ title: '購買交通卡' }] },
+    })
+  })
+
+  it('continues a rejected proposal with feedback and preserves its context in the next conversation turn', async () => {
+    const proposalCall = (title: string) => new AIMessage({ content: '', tool_calls: [{
+      id: 'todo-review', name: 'propose_todo_list', type: 'tool_call',
+      args: { title: '行前準備', explanation: '交通準備', todos: [{ title }] },
+    }] })
+    assistantGraphMocks.invokeAssistantModel
+      .mockResolvedValueOnce(proposalCall('購買交通卡'))
+      .mockResolvedValueOnce(proposalCall('預約機場接送'))
+      .mockResolvedValueOnce(new AIMessage({ content: '想調整哪部分？' }))
+      .mockResolvedValueOnce(new AIMessage({ content: '可以保留剛才的接送安排。' }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = { ...request(), text: '幫我列出交通待辦' }
+    await graph.sendTurn(req)
+    const refined = await graph.resumeTurn(req.threadId, { approved: false, feedback: '不要交通卡，改預約機場接送' })
+    expect(refined.pendingToolCall?.proposal?.proposedTodos[0].title).toBe('預約機場接送')
+    const correctionMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
+    const rejection = JSON.parse(String(correctionMessages.find(ToolMessage.isInstance)?.content))
+    expect(rejection.feedback).toBe('不要交通卡，改預約機場接送')
+    expect(rejection.rejectedProposal.proposedTodos[0].title).toBe('購買交通卡')
+    expect(rejection.nextStep).toContain('再單獨提出新提案')
+    expect(correctionMessages.find(AIMessage.isInstance)?.tool_calls?.[0].args.todos).toEqual([{ title: '購買交通卡' }])
+    await graph.resumeTurn(req.threadId, { approved: false })
+    const secondRejection = JSON.parse(String((assistantGraphMocks.invokeAssistantModel.mock.calls[2][0] as BaseMessage[])
+      .filter(ToolMessage.isInstance).at(-1)?.content))
+    expect(secondRejection.nextStep).toContain('詢問使用者想調整哪部分')
+    await graph.sendTurn({ ...req, turnId: crypto.randomUUID(), text: '剛才的接送先保留' })
+    const history = assistantGraphMocks.invokeAssistantModel.mock.calls[3][0] as BaseMessage[]
+    expect(String(history.find(AIMessage.isInstance)?.content)).toContain('預約機場接送')
+    expect(String(history.find(AIMessage.isInstance)?.content)).toContain('"status":"rejected"')
+    expect(apply).not.toHaveBeenCalled()
   })
 
   it('surfaces an empty post-approval model response instead of masking it', async () => {
@@ -790,6 +829,26 @@ describe('createAssistantGraph', () => {
     expect(apply).toHaveBeenCalledOnce()
   })
 
+  it.each([false, true])('finishes arrival-window planning in two or three calls (correction: %s)', async (correction) => {
+    const req = request()
+    req.text = '早上去市場，大概11點-12點到商店'
+    const draft = { operations: [
+      { type: 'update_attraction', attractionId: 'place-1', changes: { duration: 120 } },
+      { type: 'add_attraction', dayId: 'day-1', name: '商店', travelTime: 30, duration: 60 },
+    ], timeTargets: [{ addOperationIndex: 1, startTime: '11:30' }] }
+    const proposal = (args: object) => new AIMessage({ content: '', tool_calls: [{ id: 'plan', name: 'propose_itinerary_edit', type: 'tool_call', args }] })
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{ id: 'read', name: 'view_itinerary', args: {}, type: 'tool_call' }] }))
+    if (correction) assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(proposal({ ...draft, timeTargets: [{ startTime: '11:00' }, { startTime: '00:00' }] }))
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(proposal(draft))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn(req)
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(correction ? 3 : 2)
+    const proposed = result.pendingToolCall?.kind === 'proposal' ? result.pendingToolCall.proposal : undefined
+    expect(proposed?.timeChecks).toEqual([{ attractionId: expect.any(String), name: '商店', targetStartTime: '11:00', targetEndTime: '12:00', actualStartTime: '11:30', differenceMinutes: 0 }])
+    expect(proposed?.afterDays[0].startTime).toBe(itinerary.days![0].startTime)
+    expect(proposed?.afterDays[0].attractions).toHaveLength(2)
+  })
+
   it('allows a final reply after successful tools exhaust the budget', async () => {
     for (let index = 0; index < 10; index++) {
       assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{
@@ -807,6 +866,32 @@ describe('createAssistantGraph', () => {
     expect(wireRequest.tools).toBeUndefined()
   })
 
+  it('resets the correction budget on manual retry without replaying an applied proposal', async () => {
+    const proposal = new AIMessage({ content: '', tool_calls: [{ id: 'applied', name: 'propose_itinerary_edit', type: 'tool_call', args: { operations: [{ type: 'set_day_start_time', dayId: 'day-1', startTime: '10:00' }] } }] })
+    const invalid = (id: string) => new AIMessage({ content: '', tool_calls: [{ id, name: 'view_itinerary', type: 'tool_call', args: { dayNumbers: 'bad' } }] })
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(proposal)
+      .mockResolvedValueOnce(invalid('one')).mockResolvedValueOnce(invalid('two'))
+      .mockRejectedValueOnce(new Error('API disconnected'))
+      .mockResolvedValueOnce(new AIMessage({ content: '套用结果已保留，回覆已恢復。' }))
+    const apply = vi.fn().mockResolvedValue('applied')
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: { apply } })
+    const req = request()
+    await graph.sendTurn(req)
+    await expect(graph.resumeTurn(req.threadId, { approved: true })).rejects.toThrow('API disconnected')
+    await graph.sendTurn(req)
+    expect(assistantGraphMocks.invokeAssistantModel.mock.calls[4][5]).toEqual({ allowTools: true })
+    expect(apply).toHaveBeenCalledOnce()
+  })
+
+  it('ends repeated validation failures with a clear reply after two corrections', async () => {
+    for (let index = 0; index < 2; index++) assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{ id: `invalid-${index}`, name: 'view_itinerary', args: { dayNumbers: 'bad' }, type: 'tool_call' }] }))
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '目前無法確認指定日期，請提供要調整的日期。' }))
+    const result = await createAssistantGraph(new MemorySaver(), { proposals: persistence() }).sendTurn(request())
+    expect(result.assistantMessage?.content).toContain('請提供')
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(3)
+    expect(assistantGraphMocks.invokeAssistantModel.mock.calls[2][5]).toEqual({ allowTools: false })
+  })
+
   it('stops repeated tool failures with a retryable error instead of exhausting graph recursion', async () => {
     assistantGraphMocks.invokeAssistantModel.mockResolvedValue(new AIMessage({ content: '', tool_calls: [
       { id: 'loop', name: 'view_itinerary', args: { dayNumbers: 'bad' }, type: 'tool_call' },
@@ -814,7 +899,7 @@ describe('createAssistantGraph', () => {
     const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
     const req = request()
     await expect(graph.sendTurn(req)).rejects.toThrow('工具處理輪數已達上限')
-    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(10)
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(3)
     assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '重試成功' }))
     expect((await graph.sendTurn(req)).assistantMessage?.content).toBe('重試成功')
   })
@@ -843,4 +928,3 @@ describe('createAssistantGraph', () => {
   })
 
 })
-

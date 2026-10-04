@@ -9,6 +9,7 @@ import type {
   AssistantProposal,
 } from '../types'
 import { interrupt } from '@langchain/langgraph/web'
+import { proposalModelContext } from '../utils/modelMessages'
 
 type AssistantToolState = {
   request?: AssistantTurnRequest | null
@@ -83,6 +84,12 @@ export async function reviewProposal(
           : `「${proposal.title}」無法套用，提案已${status === 'expired' ? '過期' : '保留目前狀態'}。`
         : `使用者決定不套用「${proposal.title}」。${decision.feedback ? ` 原因：${decision.feedback}` : ''}`,
       feedback: decision.feedback,
+      rejectedProposal: !decision.approved ? proposalModelContext(completedProposal) : undefined,
+      nextStep: !decision.approved
+        ? decision.feedback?.trim()
+          ? '依使用者 feedback 修改這份未套用的提案，保留未要求變更的安排，再單獨提出新提案供確認。若使用者表示停止或自行處理，尊重其決定。'
+          : '這份提案未套用，對話仍可繼續。簡短詢問使用者想調整哪部分，不要原樣重提或宣告整個任務取消。'
+        : undefined,
     }),
     { proposal: completedProposal },
   ] as const

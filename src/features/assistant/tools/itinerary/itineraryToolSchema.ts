@@ -170,16 +170,32 @@ export const itineraryTimeTargetSchema = z.object({
   attractionId: z.string().trim().min(1).optional().describe('既有目標景點 ID；與 addOperationIndex 擇一'),
   addOperationIndex: z.number().int().min(0).optional().describe('目標新增景點在 operations 中的位置（0-indexed）；與 attractionId 擇一'),
   startTime: timeSchema.describe('期望開始時間，24 小時 HH:mm；晚餐 6:30 請填 18:30'),
+  endTime: timeSchema.optional().describe('允許抵達區間的結束時間；單一預約時間不填'),
+}).superRefine((target, context) => {
+  if ((target.attractionId !== undefined) === (target.addOperationIndex !== undefined)) {
+    context.addIssue({ code: 'custom', message: '時間目標必須以 attractionId 或 addOperationIndex 擇一指定；既有活動填 attractionId，新增活動填 operations 中的新增操作位置。' })
+  }
+  if (target.endTime !== undefined && target.endTime < target.startTime) {
+    context.addIssue({ code: 'custom', message: '時間區間的 endTime 不得早於 startTime' })
+  }
 })
 
 export type ItineraryTimeTarget = z.infer<typeof itineraryTimeTargetSchema>
-export const itineraryTimeTargetsSchema = z.array(itineraryTimeTargetSchema)
+export const itineraryTimeTargetsSchema = z.array(itineraryTimeTargetSchema).superRefine((targets, context) => {
+  const seen = new Set<string>()
+  targets.forEach((target, index) => {
+    const key = target.attractionId !== undefined ? `existing:${target.attractionId}` : `added:${target.addOperationIndex}`
+    if (seen.has(key)) context.addIssue({ code: 'custom', path: [index], message: '同一活動只設定一個時間目標；時間區間請使用 startTime 與 endTime，不要拆成兩個目標。' })
+    seen.add(key)
+  })
+})
 
 // Keep provider declarations simple; enforce constraints at the execution boundary.
 const itineraryTimeTargetItemSchema = z.object({
   attractionId: z.string().optional().describe('既有目標景點 ID；與 addOperationIndex 擇一'),
   addOperationIndex: z.number().optional().describe('目標新增景點在 operations 中的位置（0-indexed）；與 attractionId 擇一'),
   startTime: z.string().describe('期望開始時間，24 小時 HH:mm；晚餐 6:30 請填 18:30'),
+  endTime: z.string().optional().describe('指定抵達區間時填結束時間 HH:mm，區間只填一個目標；單一預約時間不填'),
 })
 
 export const itineraryToolInputSchema = z.object({

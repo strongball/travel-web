@@ -25,6 +25,23 @@ const validate = (operations: AssistantOperation[], timeTargets: ItineraryTimeTa
 }
 
 describe('continuous itinerary time targets', () => {
+  it.each([75, 90, 120, 150, 165])('accepts an arrival inside the full window (%i minutes)', (duration) => {
+    expect(() => validate([{ type: 'update_attraction', attractionId: 'visit', changes: { duration } }],
+      [{ attractionId: 'dinner', startTime: '11:00', endTime: '12:00' }])).not.toThrow()
+  })
+
+  it.each([74, 166])('rejects an arrival outside the window (%i minutes)', (duration) => {
+    expect(() => validate([{ type: 'update_attraction', attractionId: 'visit', changes: { duration } }],
+      [{ attractionId: 'dinner', startTime: '11:00', endTime: '12:00' }])).toThrow('允許區間前後 15 分鐘')
+  })
+
+  it('does not constrain departure on unrelated days', () => {
+    const otherDay = { ...itinerary.days![0], id: 'other', attractions: [] }
+    const beforeDays = [...itinerary.days!, otherDay]
+    const afterDays = [...applyItineraryOperations(itinerary, [{ type: 'update_attraction', attractionId: 'visit', changes: { duration: 120 } }]), { ...otherDay, startTime: '2026-10-04T10:00:00' }]
+    expect(() => validateItineraryTimeTargets({ beforeDays, afterDays, operations: [], timeTargets: [{ attractionId: 'dinner', startTime: '11:00', endTime: '12:00' }] })).not.toThrow()
+  })
+
   it('rejects a 17:30 dinner with its calculated difference', () => {
     expect(() => validate([
       { type: 'update_attraction', attractionId: 'dinner', changes: { name: '晚餐' } },
