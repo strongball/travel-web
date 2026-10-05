@@ -1,4 +1,4 @@
-import { AIMessage, HumanMessage, type BaseMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages'
 import type { AssistantAttachment, AssistantMessage, AssistantProposal } from '../types'
 import { buildAssistantUserPrompt } from '../prompts/userPrompt'
 
@@ -29,6 +29,21 @@ export function buildAssistantHistoryMessage(message: AssistantMessage) {
   return new AIMessage(message.proposal
     ? `${message.content}\n提案紀錄（歷史內容，未套用的提案不代表目前資料）：${JSON.stringify(proposalModelContext(message.proposal))}`
     : message.content)
+}
+
+/** Retain user decisions, discard failed attempts and stale reads on manual retry. */
+export function reviewedModelMessages(messages: BaseMessage[]) {
+  const reviewed = messages.filter(ToolMessage.isInstance).filter((message) => message.artifact && message.status !== 'error')
+  const ids = new Set(reviewed.map((message) => message.tool_call_id))
+  return messages.flatMap((message): BaseMessage[] => {
+    if (ToolMessage.isInstance(message)) return ids.has(message.tool_call_id) ? [message] : []
+    if (!AIMessage.isInstance(message) || !message.tool_calls?.length) return [message]
+    const calls = message.tool_calls.filter((call) => call.id && ids.has(call.id))
+    return calls.length ? [new AIMessage({
+      content: message.content, id: message.id, additional_kwargs: message.additional_kwargs,
+      response_metadata: message.response_metadata, tool_calls: calls,
+    })] : []
+  })
 }
 
 /** Use the same multimodal input for new turns and attachment follow-up questions. */

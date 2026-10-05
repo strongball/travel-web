@@ -151,7 +151,7 @@ export const itineraryOperationItemSchema = z.object({
   ]).describe('操作類型'),
   dayId: z.string().optional().describe('目標日期 ID，使用 view_itinerary 的 Day ID。新增景點必填'),
   targetDayId: z.string().optional().describe('移動目的地天數 ID'),
-  attractionId: z.string().optional().describe('景點 ID'),
+  attractionId: z.string().optional().describe('update_attraction、remove_attraction、move_attraction 必填，使用 view_itinerary 中的景點 ID，不能以 dayId + index 代替'),
   attractionIds: z.array(z.string()).optional().describe('當天全部既有景點 ID，不得遺漏或重複。新增景點請用 index 定位，不能猜測新增 ID'),
   startTime: z.string().optional().describe('當天開始時間（HH:mm）'),
   name: z.string().optional().describe('景點名稱'),
@@ -161,7 +161,7 @@ export const itineraryOperationItemSchema = z.object({
   transportMode: z.enum(['driving', 'walking', 'transit', 'bicycling']).optional().describe('交通方式'),
   travelTime: z.number().optional().describe('前往交通時間（分鐘）'),
   locationName: z.string().optional().describe('地點名稱或地址'),
-  index: z.number().optional().describe('排序位置（0-indexed）'),
+  index: z.number().optional().describe('只用於 add_attraction 或 move_attraction 的插入位置（0-indexed）；不是修改或刪除景點的識別方式'),
   attraction: assistantAttractionItemSchema.optional().describe('新增景點之完整資訊（選填）'),
   changes: assistantAttractionItemSchema.optional().describe('修改景點之變更內容（選填）'),
 })
@@ -181,14 +181,7 @@ export const itineraryTimeTargetSchema = z.object({
 })
 
 export type ItineraryTimeTarget = z.infer<typeof itineraryTimeTargetSchema>
-export const itineraryTimeTargetsSchema = z.array(itineraryTimeTargetSchema).superRefine((targets, context) => {
-  const seen = new Set<string>()
-  targets.forEach((target, index) => {
-    const key = target.attractionId !== undefined ? `existing:${target.attractionId}` : `added:${target.addOperationIndex}`
-    if (seen.has(key)) context.addIssue({ code: 'custom', path: [index], message: '同一活動只設定一個時間目標；時間區間請使用 startTime 與 endTime，不要拆成兩個目標。' })
-    seen.add(key)
-  })
-})
+export const itineraryTimeTargetsSchema = z.array(itineraryTimeTargetSchema)
 
 // Keep provider declarations simple; enforce constraints at the execution boundary.
 const itineraryTimeTargetItemSchema = z.object({
@@ -203,5 +196,5 @@ export const itineraryToolInputSchema = z.object({
   title: z.string().optional().describe('提案標題'),
   explanation: z.string().optional().describe('提案詳細說明'),
   operations: z.array(itineraryOperationItemSchema).min(1).describe('要執行的行程操作清單'),
-  timeTargets: z.array(itineraryTimeTargetItemSchema).optional().describe('使用者指定的本次開始時間目標，全部列入；依連續排程驗算，允許前後 15 分鐘，不會鎖定或儲存時間'),
+  timeTargets: z.array(itineraryTimeTargetItemSchema).optional().describe('使用者指定的本次開始時間目標，全部列入；用來呈現連續排程推算時間與差距，僅為提案參考，不會因時間差退回或鎖定時間'),
 })

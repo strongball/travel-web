@@ -27,6 +27,7 @@ import { ToolNode } from '@langchain/langgraph/prebuilt'
 import { assistantCallableTools } from '../tools'
 import { assistantGraphState } from './graphState'
 import { formatToolCallLabel } from '../utils/conversationUtils'
+import { reviewedModelMessages } from '../utils/modelMessages'
 import { getLatestAssistantToolCalls, routeAfterRespond } from './routing'
 import { createFinalizeResponseNode } from './nodes/finalizeResponseNode'
 import { createPrepareContextNode } from './nodes/prepareContextNode'
@@ -69,8 +70,11 @@ export const createAssistantGraph = (
   const charLimit = dependencies.summaryCharacterThreshold ?? DEFAULT_SUMMARY_CHARACTER_THRESHOLD
   const recentLimit = dependencies.recentMessageCount ?? DEFAULT_RECENT_MESSAGE_COUNT
   const progressListeners = new Map<string, AssistantProgressListener>()
-  const emitProgress = (threadId?: string, phase?: AssistantProgressPhase, detail?: string) => {
-    if (threadId && phase) progressListeners.get(threadId)?.(phase, detail)
+  const emitProgress = (threadId?: string, phase?: AssistantProgressPhase, detail?: string, data?: Parameters<AssistantProgressListener>[2]) => {
+    if (threadId && phase) {
+      if (data) progressListeners.get(threadId)?.(phase, detail, data)
+      else progressListeners.get(threadId)?.(phase, detail)
+    }
   }
 
   const toolNode = new ToolNode(assistantCallableTools, { handleToolErrors: true })
@@ -87,8 +91,10 @@ export const createAssistantGraph = (
     .addNode('respond', createRespondNode({ emitProgress }))
     .addNode('execute_tools', async (state, config) => {
       if (state.request?.threadId) {
-        const labels = getLatestAssistantToolCalls(state).map((call) => formatToolCallLabel(call.name, call.args))
-        emitProgress(state.request.threadId, 'executing_tools', `正在${labels.join('、')}（第 ${state.toolRound} 輪）`)
+        const toolCalls = getLatestAssistantToolCalls(state).map((call) => ({
+          id: call.id, name: call.name, args: call.args, label: formatToolCallLabel(call.name, call.args),
+        }))
+        emitProgress(state.request.threadId, 'executing_tools', `正在${toolCalls.map((call) => call.label).join('、')}（第 ${state.toolRound} 輪）`, { toolCalls })
       }
       const toolConfig = {
         ...config,
@@ -101,6 +107,13 @@ export const createAssistantGraph = (
       const result = await toolNode.invoke({ ...state, messages: state.modelMessages }, toolConfig) as {
         messages: typeof state.modelMessages
       }
+      emitProgress(state.request?.threadId, 'executing_tools', '工具結果已回傳', {
+        results: [...state.modelMessages, ...result.messages].filter(ToolMessage.isInstance)
+          .filter((message) => getLatestAssistantToolCalls(state).some((call) => call.id === message.tool_call_id)).map((message) => ({
+          id: message.tool_call_id, status: message.status,
+          content: typeof message.content === 'string' ? message.content : JSON.stringify(message.content),
+        })),
+      })
       return { modelMessages: [...state.modelMessages, ...result.messages] }
     })
     .addNode('finalize_response', createFinalizeResponseNode({ emitProgress }))
@@ -273,10 +286,10 @@ export const createAssistantGraph = (
           }
         }
 
-        // Resume after an answered question or completed proposal, never replay the tool.
+        // Keep applied results and user feedback, but do not replay failed planning attempts.
         if (previous?.request?.turnId === request.turnId && previous.modelMessages.some((message) =>
           ToolMessage.isInstance(message) && message.artifact)) {
-          return await continueAfterFailure(previous, request.threadId, request, onStream, signal)
+          return await continueAfterFailure({ ...previous, modelMessages: reviewedModelMessages(previous.modelMessages) }, request.threadId, request, onStream, signal)
         }
 
         const existingUser = previous?.messages.find((m) => m.turnId === request.turnId && m.role === 'user') ??

@@ -54,7 +54,7 @@ export function createRespondNode(options: RespondNodeOptions) {
     const systemMessage = new SystemMessage(systemPrompt)
     const modelMessages =
       state.modelMessages.length > 0
-        ? state.modelMessages
+        ? [systemMessage, ...state.modelMessages.filter((message) => !SystemMessage.isInstance(message))]
         : [systemMessage, ...historyMessages, initialHumanMessage]
     const finishWithoutTools = toolBudgetExhausted || correctionBudgetExhausted
     const invocationMessages = finishWithoutTools

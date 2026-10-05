@@ -169,9 +169,9 @@ describe('ProposalCard', () => {
     expect(screen.getByRole('button', { name: '送出修改需求' })).toBeDisabled()
   })
 
-  it('shows validated time targets with the calculated time and difference', () => {
+  it('shows informational time targets with the calculated time and difference', () => {
     render(<ProposalCard proposal={{ ...sampleProposal, timeChecks: [{ attractionId: 'dinner', name: '晚餐', targetStartTime: '18:30', actualStartTime: '18:25', differenceMinutes: -5 }] }} busy={false} online onDecision={vi.fn()} />)
-    expect(screen.getByText('時間目標驗算')).toBeInTheDocument()
+    expect(screen.getByText('時間安排參考')).toBeInTheDocument()
     expect(screen.getByText(/晚餐：目標 18:30 → 預計 18:25/)).toHaveTextContent('提早 5 分鐘')
   })
 

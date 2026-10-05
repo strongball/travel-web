@@ -84,14 +84,14 @@ describe('AssistantChatService', () => {
       'thread-1',
       expect.objectContaining({ role: 'user', content: '用戶問題' }),
     )
-    expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', assistant)
+    expect(mocks.saveAssistantMessage).toHaveBeenCalledWith('thread-1', expect.objectContaining({ ...assistant, executionSteps: expect.any(Array), durationMs: expect.any(Number) }))
     expect(events).toEqual([
       { type: 'user_saved' },
       { type: 'progress', label: '正在思考並產生回覆…' },
       { type: 'content', text: '回答', turnId: 'turn-1' },
       { type: 'content', text: '內容', turnId: 'turn-1' },
       { type: 'progress', label: null },
-      { type: 'message', message: assistant },
+      { type: 'message', message: expect.objectContaining(assistant) },
     ])
   })
 
@@ -119,7 +119,7 @@ describe('AssistantChatService', () => {
     await expect(service.resumeProposal('thread', { approved: true }, onEvent)).rejects.toThrow('sync failed')
     expect(onEvent).not.toHaveBeenCalled()
     await service.resumeProposal('thread', { approved: true }, onEvent)
-    expect(onEvent).toHaveBeenCalledWith({ type: 'message', message: assistant })
+    expect(onEvent).toHaveBeenCalledWith({ type: 'message', message: expect.objectContaining(assistant) })
   })
   it('reports unfinished checkpoints after reload but never labels completed replies as retryable', async () => {
     const user = message('user', 'reload-turn', '晚餐 6:30')

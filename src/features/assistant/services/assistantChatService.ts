@@ -9,7 +9,10 @@ import type {
   AssistantQuestionDecision,
   AssistantTurnRequest,
   AssistantUserDecision,
+  AssistantProgressData,
+  AssistantExecutionStep,
 } from '../types'
+import { recordExecutionStep, restoredExecutionSteps } from '../utils/executionSteps'
 import {
   isRecoverableGraphStateError,
   visibleProgressLabel,
@@ -19,7 +22,7 @@ import type { AssistantConversationRuntime } from './assistantRuntime'
 
 export type ChatStreamEvent =
   | { type: 'user_saved' }
-  | { type: 'progress'; label: string | null }
+  | { type: 'progress'; label: string | null; data?: AssistantProgressData }
   | { type: 'content'; text: string; turnId: string }
   | { type: 'proposal'; pendingToolCall: AssistantPendingToolCall }
   | { type: 'message'; message: AssistantMessage }
@@ -30,6 +33,7 @@ export interface AssistantChatService {
     pendingToolCall: AssistantPendingToolCall | null
     interruptedRequest?: AssistantTurnRequest
     interruptedMessage?: AssistantMessage
+    executionSteps?: AssistantExecutionStep[]
   }>
   sendStream: (
     request: AssistantTurnRequest,
@@ -59,10 +63,16 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
       onEvent: (event: ChatStreamEvent) => void,
       signal?: AbortSignal,
     ) => {
+      const startedAt = Date.now()
+      let executionSteps: AssistantExecutionStep[] = []
       const state = await runtime.runner.resumeTurn(
         threadId,
         payload,
-        (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
+        (phase, detail, data) => {
+          const label = detail ?? visibleProgressLabel(phase)
+          executionSteps = recordExecutionStep(executionSteps, label, data)
+          onEvent({ type: 'progress', label, data })
+        },
         (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
         signal,
       )
@@ -71,9 +81,10 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
       if (state.pendingToolCall) {
         onEvent({ type: 'proposal', pendingToolCall: state.pendingToolCall })
       } else if (state.assistantMessage) {
-        await saveAssistantMessage(threadId, state.assistantMessage)
+        const message = { ...state.assistantMessage, executionSteps, durationMs: Date.now() - startedAt }
+        await saveAssistantMessage(threadId, message)
         if (state.summary) await runtime.updateSummary(threadId, state.summary)
-        onEvent({ type: 'message', message: state.assistantMessage })
+        onEvent({ type: 'message', message })
       }
     }
 
@@ -108,10 +119,18 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           pendingToolCall,
           interruptedRequest,
           interruptedMessage,
+          executionSteps: restoredExecutionSteps(graphState?.modelMessages ?? []),
         }
       },
 
       sendStream: async (request, rehydratedMessages, onEvent, signal) => {
+        const startedAt = Date.now()
+        let executionSteps: AssistantExecutionStep[] = []
+        const onProgress = (phase: Parameters<import('../types').AssistantProgressListener>[0], detail?: string, data?: AssistantProgressData) => {
+          const label = detail ?? visibleProgressLabel(phase)
+          executionSteps = recordExecutionStep(executionSteps, label, data)
+          onEvent({ type: 'progress', label, data })
+        }
         const userMessage: AssistantMessage = rehydratedMessages.find((message) =>
           message.role === 'user' && message.turnId === request.turnId) ?? {
           id: crypto.randomUUID(),
@@ -140,7 +159,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         try {
           graphState = await runtime.runner.sendTurn(
             input,
-            (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
+            onProgress,
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
             signal,
           )
@@ -150,7 +169,7 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
           await runtime.checkpointer.deleteThread(request.threadId)
           graphState = await runtime.runner.sendTurn(
             input,
-            (phase, detail) => onEvent({ type: 'progress', label: detail ?? visibleProgressLabel(phase) }),
+            onProgress,
             (event) => onEvent({ type: 'content', text: event.text, turnId: event.turnId }),
             signal,
           )
@@ -163,8 +182,9 @@ export function createAssistantChatService(runtime: AssistantConversationRuntime
         if (graphState.pendingToolCall) {
           onEvent({ type: 'proposal', pendingToolCall: graphState.pendingToolCall })
         } else if (graphState.assistantMessage) {
-          await saveAssistantMessage(request.threadId, graphState.assistantMessage)
-          onEvent({ type: 'message', message: graphState.assistantMessage })
+          const message = { ...graphState.assistantMessage, executionSteps, durationMs: Date.now() - startedAt }
+          await saveAssistantMessage(request.threadId, message)
+          onEvent({ type: 'message', message })
         }
       },
 

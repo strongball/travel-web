@@ -14,7 +14,16 @@ export type AssistantProgressPhase =
   | 'saving_response'
   | 'syncing_conversation'
 
-export type AssistantProgressListener = (phase: AssistantProgressPhase, detail?: string) => void
+export type AssistantProgressData = {
+  toolCalls?: AssistantToolCallRecord[]
+  results?: Array<{ id: string; content: string; status?: string }>
+}
+export type AssistantExecutionStep = AssistantProgressData & {
+  label: string
+  startedAt: number
+  finishedAt?: number
+}
+export type AssistantProgressListener = (phase: AssistantProgressPhase, detail?: string, data?: AssistantProgressData) => void
 
 export type AssistantStreamEvent = {
   type: 'assistant_text_delta'
@@ -84,6 +93,8 @@ export type AssistantMessage = {
   attachments?: AssistantAttachment[] | null
   generationSettings?: AssistantGenerationSettings
   toolCalls?: AssistantToolCallRecord[] | null
+  executionSteps?: AssistantExecutionStep[]
+  durationMs?: number
 }
 
 export type AssistantAttractionDraft = {

@@ -170,7 +170,7 @@ describe('createAssistantGraph', () => {
     expect((await graph.getState(turn.threadId))?.assistantMessage?.content).toBe('第一段第二段')
   })
 
-  it('feeds a missed time target back to the model before showing a corrected proposal', async () => {
+  it('shows a missed time target as proposal information without a correction loop', async () => {
     const proposalResponse = (duration: number) => new AIMessage({
       content: '',
       tool_calls: [{ id: `target-${duration}`, name: 'propose_itinerary_edit', type: 'tool_call', args: {
@@ -185,14 +185,24 @@ describe('createAssistantGraph', () => {
       .mockResolvedValueOnce(proposalResponse(540))
     const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
     const result = await graph.sendTurn({ ...request(), text: '晚餐訂在 6:30' })
-    const correctionMessages = assistantGraphMocks.invokeAssistantModel.mock.calls[1][0] as BaseMessage[]
-    const feedback = correctionMessages.find((item) => ToolMessage.isInstance(item))
-    expect(feedback?.content).toContain('實際開始 17:30')
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledOnce()
     const proposed = result.pendingToolCall?.proposal
-    expect(proposed?.afterDays[0].attractions[1].startTime).toBe('2026-09-01T18:30:00')
+    expect(proposed?.afterDays[0].attractions[1].startTime).toBe('2026-09-01T17:30:00')
+    expect(proposed?.timeChecks?.[0].differenceMinutes).toBe(-60)
     expect(proposed?.afterDays[0].startTime).toBe(itinerary.days![0].startTime)
     expect(proposed?.afterDays[0].attractions).toHaveLength(2)
     expect(proposed).not.toHaveProperty('timeTargets')
+  })
+
+  it('does not reject a proposal for missing inferred time targets', async () => {
+    assistantGraphMocks.invokeAssistantModel.mockResolvedValueOnce(new AIMessage({ content: '', tool_calls: [{
+      id: 'plan', name: 'propose_itinerary_edit', type: 'tool_call',
+      args: { operations: [{ type: 'update_attraction', attractionId: 'place-1', changes: { duration: 120 } }] },
+    }] }))
+    const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
+    const result = await graph.sendTurn({ ...request(), text: '早上逛市場，11點-12點到商店，晚餐18:30' })
+    expect(result.pendingToolCall?.kind).toBe('proposal')
+    expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledOnce()
   })
 
   it('continues a failed reply after approval without applying the proposal again', async () => {
@@ -801,8 +811,8 @@ describe('createAssistantGraph', () => {
     const progress = vi.fn()
     const graph = createAssistantGraph(new MemorySaver(), { proposals: persistence() })
     const result = await graph.sendTurn(req, progress)
-    expect(progress).toHaveBeenCalledWith('executing_tools', `正在檢視第 ${dayNumber} 天行程（第 1 輪）`)
-    expect(progress).toHaveBeenCalledWith('validating_response', '正在檢查景點操作與連續排程時間…')
+    expect(progress).toHaveBeenCalledWith('executing_tools', `正在檢視第 ${dayNumber} 天行程（第 1 輪）`, expect.objectContaining({ toolCalls: expect.any(Array) }))
+    expect(progress).toHaveBeenCalledWith('validating_response', '正在準備提案與計算排程時間…')
     expect(progress).toHaveBeenCalledWith('generating_response', '工具回報問題，正在修正安排（第 2 輪）')
     const feedback = (assistantGraphMocks.invokeAssistantModel.mock.calls[2][0] as BaseMessage[]).filter(ToolMessage.isInstance)
     expect(String(feedback.at(-1)?.content)).toContain(`place-${dayNumber}-first`)
@@ -844,7 +854,7 @@ describe('createAssistantGraph', () => {
     const result = await graph.sendTurn(req)
     expect(assistantGraphMocks.invokeAssistantModel).toHaveBeenCalledTimes(correction ? 3 : 2)
     const proposed = result.pendingToolCall?.kind === 'proposal' ? result.pendingToolCall.proposal : undefined
-    expect(proposed?.timeChecks).toEqual([{ attractionId: expect.any(String), name: '商店', targetStartTime: '11:00', targetEndTime: '12:00', actualStartTime: '11:30', differenceMinutes: 0 }])
+    expect(proposed?.timeChecks).toEqual([{ attractionId: expect.any(String), name: '商店', targetStartTime: '11:30', actualStartTime: '11:30', differenceMinutes: 0 }])
     expect(proposed?.afterDays[0].startTime).toBe(itinerary.days![0].startTime)
     expect(proposed?.afterDays[0].attractions).toHaveLength(2)
   })

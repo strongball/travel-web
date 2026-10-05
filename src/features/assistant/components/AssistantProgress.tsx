@@ -1,63 +1,16 @@
-import { useEffect, useState } from 'react'
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
-import {
-  Avatar,
-  CircularProgress,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material'
+import { Box, Skeleton, Stack, Typography } from '@mui/material'
 
-export function AssistantProgress({ label, startedAt }: { label: string; startedAt?: number }) {
-  const [elapsed, setElapsed] = useState(0)
-  useEffect(() => {
-    if (!startedAt) return
-    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
-    update()
-    const timer = setInterval(update, 1000)
-    return () => clearInterval(timer)
-  }, [startedAt])
-  return (
-    <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center' }}>
-      <Avatar
-        sx={{
-          width: 32,
-          height: 32,
-          background: (theme) => theme.palette.primaryGradient,
-          boxShadow: (theme) => theme.palette.cardShadow,
-        }}
-      >
-        <AutoAwesomeRoundedIcon sx={{ fontSize: 16, color: '#ffffff' }} />
-      </Avatar>
-      <Paper
-        elevation={0}
-        sx={{
-          px: 2,
-          py: 1.1,
-          borderRadius: '20px 20px 20px 6px',
-          bgcolor: 'background.paper',
-          border: '1px solid',
-          borderColor: 'surfaceSubtleBorder',
-          boxShadow: (theme) => theme.palette.cardShadow,
-        }}
-      >
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <CircularProgress size={14} thickness={5} sx={{ color: 'primary.main' }} />
-          <Typography
-            variant="caption"
-            aria-live="polite"
-            sx={{ fontWeight: 700, color: 'text.secondary' }}
-          >
-            {label}
-          </Typography>
-        </Stack>
-        {startedAt ? <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-          已進行 {elapsed} 秒{elapsed >= 30 ? ' · 處理時間較長，可按停止取消' : ''}
-        </Typography> : null}
-      </Paper>
-    </Stack>
-  )
+export function AssistantTypingIndicator() {
+  return <Stack direction="row" spacing={0.75} role="status" aria-label="助理正在生成回覆"
+    sx={{ width: 'fit-content', px: 1.25, py: 1.25, alignItems: 'center',
+      '@keyframes assistant-dot-pulse': { '0%, 70%, 100%': { opacity: 0.3, transform: 'translateY(0)' }, '35%': { opacity: 1, transform: 'translateY(-3px)' } },
+    }}>
+    {[0, 1, 2].map((index) => <Box key={index} aria-hidden="true" sx={{
+      width: 6, height: 6, borderRadius: '50%', bgcolor: 'primary.main',
+      animation: 'assistant-dot-pulse 1.4s ease-in-out infinite', animationDelay: `${index * 0.16}s`,
+      '@media (prefers-reduced-motion: reduce)': { animation: 'none', opacity: 0.6 },
+    }} />)}
+  </Stack>
 }
 
 export function ConversationLoading() {

@@ -41,14 +41,15 @@ it('keeps the real tool progress visible alongside streamed text', () => {
   const previous = mocks.snapshot.data.turn
   mocks.snapshot.data.turn = {
     phase: 'running', error: null, pendingToolCall: null,
+    executionSteps: [{ label: '正在檢視第 5 天行程（第 1 輪）', startedAt: Date.now() }],
     progressLabel: '正在檢視第 5 天行程（第 1 輪）', startedAt: Date.now() - 40_000,
     streaming: { id: 'stream', turnId: 'turn', role: 'assistant', content: '我先確認第五天安排', createdAt: '2026-10-04T09:00:00Z' },
   }
   try {
     render(<MessageList itineraryId="trip" threadId="thread" online onQuickPrompt={vi.fn()} onDecision={vi.fn()} />)
     expect(screen.getByText('我先確認第五天安排')).toBeInTheDocument()
-    expect(screen.getByText('正在檢視第 5 天行程（第 1 輪）')).toBeInTheDocument()
-    expect(screen.getByText(/已進行 40 秒/)).toHaveTextContent('可按停止取消')
+    expect(screen.getByRole('button', { name: /執行步驟.*正在檢視第 5 天行程/ })).toBeInTheDocument()
+    expect(screen.getByText(/已進行 40 秒/)).toBeInTheDocument()
   } finally {
     mocks.snapshot.data.turn = previous
   }

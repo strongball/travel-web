@@ -5,6 +5,7 @@ import {
 } from '@stball/react-river'
 
 import type {
+  AssistantExecutionStep,
   AssistantMessage,
   AssistantPendingToolCall,
   AssistantQuestionDecision,
@@ -13,6 +14,7 @@ import type {
 } from '../types'
 import { assistantChatServiceProvider } from './assistantChatServiceProvider'
 import type { AssistantChatService, ChatStreamEvent } from '../services/assistantChatService'
+import { recordExecutionStep } from '../utils/executionSteps'
 import { userIdProvider } from '../../../providers/authProviders'
 import { buildTurnRequest, type AssistantTurnContext } from '../services/assistantTurnFlow'
 import { dayRevisions, friendlyError } from '../utils/conversationUtils'
@@ -22,7 +24,9 @@ export type AssistantTurnOverlay = {
   streaming: AssistantMessage | null
   pendingToolCall: AssistantPendingToolCall | null
   progressLabel: string | null
+  executionSteps?: AssistantExecutionStep[]
   startedAt?: number
+  finishedAt?: number
   error: string | null
   canRetry?: boolean
   userMessageSaved?: boolean
@@ -66,7 +70,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     if (!userId || !this.threadId) return IDLE_CONVERSATION
 
     const service = this.ref.watch(assistantChatServiceProvider(this.itineraryId))
-    const { messages, pendingToolCall, interruptedRequest, interruptedMessage } = await service.fetchHistory(this.threadId)
+    const { messages, pendingToolCall, interruptedRequest, interruptedMessage, executionSteps } = await service.fetchHistory(this.threadId)
 
     if (interruptedRequest) {
       this.retryAction = (context) => this.send({
@@ -85,17 +89,18 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     }
     const currentTurn = this.state.data?.turn
     const restored = currentTurn?.phase === 'running' || currentTurn?.phase === 'error'
-      ? currentTurn
+      ? { ...currentTurn, executionSteps: currentTurn.executionSteps ?? executionSteps }
       : pendingToolCall
       ? {
           phase: 'paused' as const,
+          executionSteps,
           streaming: null,
           pendingToolCall,
           progressLabel: null,
           error: null,
         }
       : interruptedRequest || interruptedMessage
-      ? { phase: 'error' as const, streaming: null, pendingToolCall: null, progressLabel: null,
+      ? { phase: 'error' as const, executionSteps, streaming: null, pendingToolCall: null, progressLabel: null,
           error: '上次回覆未完成，可以重新送出 AI 請求。', canRetry: true }
       : null
 
@@ -159,7 +164,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           } else if (event.type === 'progress') {
             this.state = asyncData({
               ...cur,
-              turn: cur.turn ? { ...cur.turn, progressLabel: event.label } : null,
+              turn: cur.turn ? { ...cur.turn, progressLabel: event.label, executionSteps: recordExecutionStep(cur.turn.executionSteps ?? [], event.label, event.data) } : null,
             })
           } else if (event.type === 'content') {
             const streaming = cur.turn?.streaming
@@ -181,6 +186,9 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
               ...cur,
               turn: {
                 phase: 'paused',
+                executionSteps: cur.turn?.executionSteps,
+                startedAt: cur.turn?.startedAt,
+                finishedAt: Date.now(),
                 streaming: null,
                 pendingToolCall: event.pendingToolCall,
                 progressLabel: null,
@@ -216,6 +224,9 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           ...cur,
           turn: {
             phase: 'error',
+            executionSteps: cur.turn?.executionSteps,
+            startedAt: cur.turn?.startedAt,
+            finishedAt: Date.now(),
             streaming: null,
             pendingToolCall: null,
             progressLabel: null,
@@ -239,7 +250,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
     if (this.activeTurn) return this.activeTurn
     this.retryAction = () => this.resumeProposal(decision)
     return this.#resumeInterrupt({
-      progressLabel: '正在套用…',
+      progressLabel: decision.approved ? '正在套用…' : '正在依您的意見繼續討論…',
       errorMessage: '無法處理行程提案',
       runner: (service, onEvent, signal) => service.resumeProposal(this.threadId, decision, onEvent, signal),
     })
@@ -295,7 +306,7 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           if (event.type === 'progress') {
             this.state = asyncData({
               ...cur,
-              turn: cur.turn ? { ...cur.turn, progressLabel: event.label } : null,
+              turn: cur.turn ? { ...cur.turn, progressLabel: event.label, executionSteps: recordExecutionStep(cur.turn.executionSteps ?? [], event.label, event.data) } : null,
             })
           } else if (event.type === 'content') {
             const streaming = cur.turn?.streaming
@@ -317,6 +328,9 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
               ...cur,
               turn: {
                 phase: 'paused',
+                executionSteps: cur.turn?.executionSteps,
+                startedAt: cur.turn?.startedAt,
+                finishedAt: Date.now(),
                 streaming: null,
                 pendingToolCall: event.pendingToolCall,
                 progressLabel: null,
@@ -352,6 +366,9 @@ export class AssistantConversationNotifier extends AsyncNotifier<AssistantConver
           ...cur,
           turn: {
             phase: 'error',
+            executionSteps: cur.turn?.executionSteps,
+            startedAt: cur.turn?.startedAt,
+            finishedAt: Date.now(),
             streaming: null,
             pendingToolCall: null,
             progressLabel: null,

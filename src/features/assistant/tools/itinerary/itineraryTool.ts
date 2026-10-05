@@ -7,8 +7,7 @@ import {
 } from '../../services/assistantOperations'
 import { itineraryTimeTargetsSchema, itineraryToolInputSchema } from './itineraryToolSchema'
 import { applyItineraryOperations, changedDays } from './itineraryOperations'
-import { validateRequiredItineraryTimeTargets } from './itineraryTimeRequirements'
-import { validateItineraryTimeTargets } from './itineraryTimeTargets'
+import { calculateItineraryTimeChecks } from './itineraryTimeTargets'
 import {
   proposalIdForRequest,
   proposalRuntimeContext,
@@ -24,7 +23,7 @@ export const PROPOSAL_TOOL_NAME = 'propose_itinerary_edit'
 export const proposeItineraryEditTool = tool(
   async (input, runtime: AssistantProposalToolRuntime) => {
     const { request, onProgress } = proposalRuntimeContext(runtime)
-    onProgress?.('validating_response', '正在檢查景點操作與連續排程時間…')
+    onProgress?.('validating_response', '正在準備提案與計算排程時間…')
     const proposalId = proposalIdForRequest(request)
 
     let operations = parseAssistantOperations(input.operations)
@@ -35,18 +34,12 @@ export const proposeItineraryEditTool = tool(
       validateAssistantOperations(request.itinerary, operations)
     }
 
-    const timeTargets = validateRequiredItineraryTimeTargets({
-      text: request?.text ?? '',
-      modelMessages: runtime.state?.modelMessages ?? [],
-      targets: itineraryTimeTargetsSchema.parse(input.timeTargets ?? []),
-      operations,
-    })
+    const timeTargets = itineraryTimeTargetsSchema.parse(input.timeTargets ?? [])
     const allBeforeDays = request?.itinerary.days ?? []
     const allAfterDays = request?.itinerary
       ? applyItineraryOperations(request.itinerary, operations)
       : []
-    const timeChecks = validateItineraryTimeTargets({
-      beforeDays: allBeforeDays,
+    const timeChecks = calculateItineraryTimeChecks({
       afterDays: allAfterDays,
       operations,
       timeTargets,

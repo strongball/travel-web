@@ -24,7 +24,8 @@ import { friendlyError } from '../utils/conversationUtils'
 import { MessageBubble } from './MessageBubble'
 import { ProposalCard } from './ProposalCard'
 import { ClarifyingQuestionCard } from './ClarifyingQuestionCard'
-import { AssistantProgress, ConversationLoading } from './AssistantProgress'
+import { ConversationLoading } from './AssistantProgress'
+import { AssistantExecutionSteps } from './AssistantExecutionSteps'
 
 const StyledMessagesContainer = styled(Stack)(({ theme }) => ({
   flex: 1,
@@ -283,7 +284,10 @@ export function MessageList({
               role: 'assistant',
               content: friendlyError(turn.error, 'AI 回覆失敗，請重試。'),
               createdAt: messages.at(-1)?.createdAt ?? new Date().toISOString(),
+              executionSteps: turn.executionSteps,
             }}
+            startedAt={turn.startedAt}
+            finishedAt={turn.finishedAt}
             onRetry={turn.canRetry ? onRetry : undefined}
             retryDisabled={!online || sending}
           />
@@ -292,15 +296,19 @@ export function MessageList({
 
       {(sending || isStreaming) && (
         <Stack spacing={1.25}>
-          {turn?.streaming ? (
-            <MessageBubble message={turn.streaming} streaming />
-          ) : null}
-          {sending ? <AssistantProgress label={turn?.progressLabel || '正在思考並產生回覆…'} startedAt={turn?.startedAt} /> : null}
+          <MessageBubble message={{
+            ...(turn?.streaming ?? {
+              id: `running-${threadId}`, turnId: messages.at(-1)?.turnId ?? threadId ?? '', role: 'assistant' as const,
+              content: '', createdAt: new Date().toISOString(),
+            }),
+            executionSteps: turn?.executionSteps,
+          }} streaming startedAt={turn?.startedAt} />
         </Stack>
       )}
 
       {pendingToolCall && isPendingQuestionCall(pendingToolCall) && (
         <Stack key={pendingToolCall.id} data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+          {!sending && turn?.executionSteps?.length ? <AssistantExecutionSteps steps={turn.executionSteps} /> : null}
           <ClarifyingQuestionCard
             questionData={pendingToolCall.questionData}
             busy={sending}
@@ -308,11 +316,15 @@ export function MessageList({
             onAnswer={onQuestionAnswer}
             isHistory={false}
           />
+          {!sending && turn?.startedAt && turn.finishedAt ? <Typography variant="caption" color="text.secondary">
+            執行時間 {Math.floor((turn.finishedAt - turn.startedAt) / 1000)} 秒
+          </Typography> : null}
         </Stack>
       )}
 
       {pendingToolCall && isPendingProposalCall(pendingToolCall) && (
         <Stack key={pendingToolCall.id} data-tool-call-id={pendingToolCall.id} spacing={1.25}>
+          {!sending && turn?.executionSteps?.length ? <AssistantExecutionSteps steps={turn.executionSteps} /> : null}
           <ProposalCard
             proposal={pendingToolCall.proposal}
             busy={sending}
@@ -321,6 +333,9 @@ export function MessageList({
             onRefine={onRefine}
             isHistory={false}
           />
+          {!sending && turn?.startedAt && turn.finishedAt ? <Typography variant="caption" color="text.secondary">
+            執行時間 {Math.floor((turn.finishedAt - turn.startedAt) / 1000)} 秒
+          </Typography> : null}
         </Stack>
       )}
 
@@ -332,4 +347,3 @@ export function MessageList({
     </StyledMessagesContainer>
   )
 }
-
