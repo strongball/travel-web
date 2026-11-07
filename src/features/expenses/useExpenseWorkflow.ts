@@ -97,10 +97,13 @@ export function useExpenseWorkflow({
         navigateView('review')
       },
       onError: (scanError, _variables, _context, mutationRef) => {
-        mutationRef.set(
-          appErrorProvider,
-          scanError instanceof Error ? scanError.message : unexpectedErrorMessage,
-        )
+        const message =
+          scanError instanceof Error
+            ? scanError.message
+            : typeof scanError === 'object' && scanError && 'message' in scanError && typeof scanError.message === 'string'
+              ? scanError.message
+              : unexpectedErrorMessage
+        mutationRef.set(appErrorProvider, message || unexpectedErrorMessage)
       },
     },
   )

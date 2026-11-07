@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { parseReceiptResult, ReceiptScanError, receiptResponseSchema } from './receiptApi'
+import {
+  extractJsonFromText,
+  parseReceiptResult,
+  ReceiptScanError,
+  receiptResponseSchema,
+} from './receiptApi'
+
+describe('extractJsonFromText', () => {
+  it('extracts plain json directly', () => {
+    const raw = '{"sourceLocale":"ja","items":[]}'
+    expect(extractJsonFromText(raw)).toBe(raw)
+  })
+
+  it('extracts json from markdown code block', () => {
+    const raw = '```json\n{"sourceLocale":"ja","items":[]}\n```'
+    expect(extractJsonFromText(raw)).toBe('{"sourceLocale":"ja","items":[]}')
+  })
+
+  it('extracts json from markdown with surrounding commentary', () => {
+    const raw = 'Here is the result:\n```json\n{"sourceLocale":"ja","items":[]}\n```\nHope it helps!'
+    expect(extractJsonFromText(raw)).toBe('{"sourceLocale":"ja","items":[]}')
+  })
+})
 
 describe('parseReceiptResult', () => {
   it('validates items and calculates totals in the browser', () => {
@@ -38,5 +60,14 @@ describe('parseReceiptResult', () => {
     expect(receiptResponseSchema.properties).toHaveProperty('items')
     expect(receiptResponseSchema.properties).toHaveProperty('sourceLocale')
   })
+
+  it('ReceiptScanError correctly inherits from Error', () => {
+    const err = new ReceiptScanError('SCAN_FAILED', '測試錯誤')
+    expect(err).toBeInstanceOf(Error)
+    expect(err).toBeInstanceOf(ReceiptScanError)
+    expect(err.message).toBe('測試錯誤')
+    expect(err.code).toBe('SCAN_FAILED')
+  })
 })
+
 

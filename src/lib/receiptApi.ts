@@ -14,7 +14,9 @@ export class ReceiptScanError extends Error {
 
   constructor(code: string, message: string) {
     super(message)
+    this.name = 'ReceiptScanError'
     this.code = code
+    Object.setPrototypeOf(this, ReceiptScanError.prototype)
   }
 }
 
@@ -137,7 +139,26 @@ const promptFor = ({ targetLocale, currencyHint }: ReceiptScanRequest) => [
   'Exclude subtotal, tax, discount, coupon, service fee, tip, payment method, tendered cash, and change.',
   `The form currency is ${currencyHint}; use it only as a reading hint and do not convert currencies.`,
   'Detect the currency actually printed on the receipt. Return its three-letter ISO 4217 code in detectedCurrency, such as TWD, JPY, USD, EUR, KRW, or CNY. Return null when it cannot be determined.',
+  'Return only valid JSON with this exact shape: {"sourceLocale":"string","detectedCurrency":null,"items":[{"sourceName":"string","localizedName":"string","quantity":1,"unitPrice":null,"lineTotal":null}],"receiptTotal":null}.',
+  'Do not wrap the JSON in markdown or add explanatory text.',
 ].join('\n')
+
+export const extractJsonFromText = (text: string): string => {
+  const trimmed = text.trim()
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed
+  }
+  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  if (match) {
+    return match[1].trim()
+  }
+  const firstBrace = trimmed.indexOf('{')
+  const lastBrace = trimmed.lastIndexOf('}')
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1)
+  }
+  return trimmed
+}
 
 export const scanReceipt = async (
   request: ReceiptScanRequest,
@@ -177,21 +198,25 @@ export const scanReceipt = async (
       }],
       config: {
         responseMimeType: 'application/json',
-        responseSchema: receiptResponseSchema,
         temperature: 0,
       },
     })
     if (!response.text) {
       throw new ReceiptScanError('UNREADABLE_RECEIPT', 'Gemini 未回傳收據資料')
     }
-    const cleanJson = response.text
-      .replace(/^\s*```(?:json)?\s*/i, '')
-      .replace(/\s*```\s*$/i, '')
-      .trim()
+    const cleanJson = extractJsonFromText(response.text)
     return parseReceiptResult(JSON.parse(cleanJson), request.targetLocale)
   } catch (error) {
     if (error instanceof ReceiptScanError) throw error
-    const message = error instanceof Error ? error.message : 'Gemini request failed'
+    let message = '收據辨識連線失敗，請稍後再試'
+    if (error instanceof Error) {
+      try {
+        const parsed = JSON.parse(error.message)
+        message = parsed?.error?.message || parsed?.message || error.message
+      } catch {
+        message = error.message
+      }
+    }
     throw new ReceiptScanError('SCAN_FAILED', message)
   }
 }
