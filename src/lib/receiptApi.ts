@@ -1,4 +1,5 @@
-import { GoogleGenAI } from '@google/genai'
+import { GoogleGenAI, Type, type Schema } from '@google/genai'
+import { z } from 'zod'
 import { config } from '../config'
 import { supabase } from './supabase'
 import type {
@@ -17,49 +18,96 @@ export class ReceiptScanError extends Error {
   }
 }
 
-const numberOrNull = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null
+export const rawReceiptItemSchema = z.object({
+  sourceName: z.string().min(1, '收據品項原文不可為空'),
+  localizedName: z.string().nullish().transform((val) => val ?? ''),
+  quantity: z.number().positive('數量必須為正數'),
+  unitPrice: z.number().nullish().transform((val) => (val !== undefined && val !== null && Number.isFinite(val) ? val : null)),
+  lineTotal: z.number().nullish().transform((val) => (val !== undefined && val !== null && Number.isFinite(val) ? val : null)),
+})
 
-const parseItem = (value: unknown, position: number): ExpenseItem => {
-  if (!value || typeof value !== 'object') {
-    throw new ReceiptScanError('INVALID_RESPONSE', '收據品項格式錯誤')
-  }
-  const item = value as Record<string, unknown>
-  if (
-    typeof item.sourceName !== 'string' ||
-    typeof item.localizedName !== 'string' ||
-    typeof item.quantity !== 'number' ||
-    item.quantity <= 0
-  ) {
-    throw new ReceiptScanError('INVALID_RESPONSE', '收據品項資料不完整')
-  }
-  return {
-    position,
-    sourceName: item.sourceName,
-    localizedName: item.localizedName,
-    quantity: item.quantity,
-    unitPrice: numberOrNull(item.unitPrice),
-    lineTotal: numberOrNull(item.lineTotal),
-  }
+export const rawReceiptResultSchema = z.object({
+  sourceLocale: z.string().min(1, '缺少來源語言代碼'),
+  detectedCurrency: z.string().nullish().transform((val) => val ?? null),
+  items: z.array(rawReceiptItemSchema),
+  receiptTotal: z.number().nullish().transform((val) => (val !== undefined && val !== null && Number.isFinite(val) ? val : null)),
+})
+
+export const receiptResponseSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    sourceLocale: {
+      type: Type.STRING,
+      description: 'The language detected on the receipt, e.g. ja, en, zh-TW, fr',
+    },
+    detectedCurrency: {
+      type: Type.STRING,
+      description: 'ISO 4217 three-letter currency code printed on the receipt (e.g. JPY, TWD, USD, EUR), or null',
+      nullable: true,
+    },
+    items: {
+      type: Type.ARRAY,
+      description: 'List of purchased items on the receipt',
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          sourceName: {
+            type: Type.STRING,
+            description: 'Exact visible receipt wording for this item. Do not translate or change.',
+          },
+          localizedName: {
+            type: Type.STRING,
+            description: 'Translated item name into the target language.',
+          },
+          quantity: {
+            type: Type.NUMBER,
+            description: 'Quantity of items purchased. Return 1 when not printed.',
+          },
+          unitPrice: {
+            type: Type.NUMBER,
+            description: 'Unit price if printed, otherwise null.',
+            nullable: true,
+          },
+          lineTotal: {
+            type: Type.NUMBER,
+            description: 'Total price for this line item if printed, otherwise null.',
+            nullable: true,
+          },
+        },
+        required: ['sourceName', 'quantity'],
+      },
+    },
+    receiptTotal: {
+      type: Type.NUMBER,
+      description: 'The final total amount printed on the receipt, or null if unreadable.',
+      nullable: true,
+    },
+  },
+  required: ['sourceLocale', 'items'],
 }
 
 export const parseReceiptResult = (
   value: unknown,
   targetLocale: string,
 ): ReceiptScanResult => {
-  if (!value || typeof value !== 'object') {
-    throw new ReceiptScanError('INVALID_RESPONSE', 'Gemini 回傳格式錯誤')
+  const parseResult = rawReceiptResultSchema.safeParse(value)
+  if (!parseResult.success) {
+    throw new ReceiptScanError(
+      'INVALID_RESPONSE',
+      parseResult.error.issues[0]?.message || 'Gemini 回傳格式錯誤',
+    )
   }
-  const result = value as Record<string, unknown>
-  if (
-    typeof result.sourceLocale !== 'string' ||
-    !Array.isArray(result.items)
-  ) {
-    throw new ReceiptScanError('INVALID_RESPONSE', 'Gemini 回傳格式錯誤')
-  }
-  const items = result.items.map(parseItem)
+  const result = parseResult.data
+  const items: ExpenseItem[] = result.items.map((item, position) => ({
+    position,
+    sourceName: item.sourceName,
+    localizedName: item.localizedName || item.sourceName,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    lineTotal: item.lineTotal,
+  }))
   const detectedCurrency = normalizeCurrency(result.detectedCurrency)
-  const receiptTotal = numberOrNull(result.receiptTotal)
+  const receiptTotal = result.receiptTotal
   const itemsTotal = Math.round(
     items.reduce((sum, item) => sum + (item.lineTotal ?? 0), 0) * 10_000,
   ) / 10_000
@@ -89,8 +137,6 @@ const promptFor = ({ targetLocale, currencyHint }: ReceiptScanRequest) => [
   'Exclude subtotal, tax, discount, coupon, service fee, tip, payment method, tendered cash, and change.',
   `The form currency is ${currencyHint}; use it only as a reading hint and do not convert currencies.`,
   'Detect the currency actually printed on the receipt. Return its three-letter ISO 4217 code in detectedCurrency, such as TWD, JPY, USD, EUR, KRW, or CNY. Return null when it cannot be determined.',
-  'Return only valid JSON with this exact shape: {"sourceLocale":"string","detectedCurrency":null,"items":[{"sourceName":"string","localizedName":"string","quantity":1,"unitPrice":null,"lineTotal":null}],"receiptTotal":null}.',
-  'Do not wrap the JSON in markdown or add explanatory text.',
 ].join('\n')
 
 export const scanReceipt = async (
@@ -131,13 +177,18 @@ export const scanReceipt = async (
       }],
       config: {
         responseMimeType: 'application/json',
+        responseSchema: receiptResponseSchema,
         temperature: 0,
       },
     })
     if (!response.text) {
       throw new ReceiptScanError('UNREADABLE_RECEIPT', 'Gemini 未回傳收據資料')
     }
-    return parseReceiptResult(JSON.parse(response.text), request.targetLocale)
+    const cleanJson = response.text
+      .replace(/^\s*```(?:json)?\s*/i, '')
+      .replace(/\s*```\s*$/i, '')
+      .trim()
+    return parseReceiptResult(JSON.parse(cleanJson), request.targetLocale)
   } catch (error) {
     if (error instanceof ReceiptScanError) throw error
     const message = error instanceof Error ? error.message : 'Gemini request failed'
