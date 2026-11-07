@@ -44,8 +44,7 @@ export const receiptResponseSchema: Schema = {
     },
     detectedCurrency: {
       type: Type.STRING,
-      description: 'ISO 4217 three-letter currency code printed on the receipt (e.g. JPY, TWD, USD, EUR), or null',
-      nullable: true,
+      description: 'ISO 4217 three-letter currency code printed on the receipt (e.g. JPY, TWD, USD, EUR)',
     },
     items: {
       type: Type.ARRAY,
@@ -67,13 +66,11 @@ export const receiptResponseSchema: Schema = {
           },
           unitPrice: {
             type: Type.NUMBER,
-            description: 'Unit price if printed, otherwise null.',
-            nullable: true,
+            description: 'Unit price if printed.',
           },
           lineTotal: {
             type: Type.NUMBER,
-            description: 'Total price for this line item if printed, otherwise null.',
-            nullable: true,
+            description: 'Total price for this line item if printed.',
           },
         },
         required: ['sourceName', 'quantity'],
@@ -81,8 +78,7 @@ export const receiptResponseSchema: Schema = {
     },
     receiptTotal: {
       type: Type.NUMBER,
-      description: 'The final total amount printed on the receipt, or null if unreadable.',
-      nullable: true,
+      description: 'The final total amount printed on the receipt.',
     },
   },
   required: ['sourceLocale', 'items'],
@@ -198,6 +194,7 @@ export const scanReceipt = async (
       }],
       config: {
         responseMimeType: 'application/json',
+        responseSchema: receiptResponseSchema,
         temperature: 0,
       },
     })
